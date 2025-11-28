@@ -45,12 +45,12 @@ logger.setLevel(logging.INFO)
 if logger.handlers:
     logger.handlers.clear()
 
-# Handler para arquivo (modo 'w' para truncar arquivo a cada execucao)
+# Handler para arquivo (modo 'a' para append - log é truncado apenas no orchestrator)
 # Arquivo na raiz do projeto
 try:
     log_file_path = os.path.join(os.path.dirname(__file__), '..', 'log_execution.txt')
     log_file_path = os.path.abspath(log_file_path)
-    file_handler = logging.FileHandler(log_file_path, mode='w', encoding='utf-8')
+    file_handler = logging.FileHandler(log_file_path, mode='a', encoding='utf-8')
     file_handler.setLevel(logging.INFO)
     file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     file_handler.setFormatter(file_formatter)
@@ -91,6 +91,92 @@ class StoresMigration:
         self.store_brand_id_map = {}    # Map: legado_id -> uuid
         self.store_id_map = {}          # Map: legado_id -> uuid
         self.limit_rows = limit_rows     # 0 = todos, > 0 = limitar quantidade
+    
+    def should_include_legacy_id(self):
+        """Retorna True se deve incluir legacy_id (apenas em HML)"""
+        destino = DatabaseConnection.get_destino()
+        return destino == 'HML'
+    
+    def _get_or_create_default_store_brand(self, schema: str, include_legacy: bool):
+        """Obtém ou cria um store_brand padrão chamado 'Teste store_brands'"""
+        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+        cursor_pg = conn_pg.cursor()
+        
+        try:
+            # Tentar buscar store_brand padrão por descrição
+            cursor_pg.execute(f"SELECT id FROM {schema}.store_brands WHERE description = %s", ('Teste store_brands',))
+            result = cursor_pg.fetchone()
+            
+            if result:
+                # Já existe, retornar o ID
+                default_id = result[0]
+                cursor_pg.close()
+                conn_pg.close()
+                print(f"[ETAPA 4] Store brand padrão encontrado: {default_id}")
+                return default_id
+            
+            # Não existe, criar um novo
+            default_id = uuid.uuid4()
+            now = datetime.now()
+            
+            # Buscar um retail_chain_id padrão (primeiro disponível ou None)
+            cursor_pg.execute(f"SELECT id FROM {schema}.retail_chains LIMIT 1")
+            retail_chain_result = cursor_pg.fetchone()
+            retail_chain_id = str(retail_chain_result[0]) if retail_chain_result else None
+            
+            # Buscar um store_segment_id padrão (primeiro disponível ou None)
+            cursor_pg.execute(f"SELECT id FROM {schema}.store_segments LIMIT 1")
+            store_segment_result = cursor_pg.fetchone()
+            store_segment_id = str(store_segment_result[0]) if store_segment_result else None
+            
+            if include_legacy:
+                insert_query = f"""
+                INSERT INTO {schema}.store_brands (
+                    id, description, abras_code, retail_chain_id, store_segment_id,
+                    is_active, created_at, updated_at, legacy_id
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cursor_pg.execute(insert_query, (
+                    str(default_id),
+                    'Teste store_brands',
+                    'empty',
+                    retail_chain_id,
+                    store_segment_id,
+                    True,
+                    now,
+                    now,
+                    0  # legacy_id padrão = 0
+                ))
+            else:
+                insert_query = f"""
+                INSERT INTO {schema}.store_brands (
+                    id, description, abras_code, retail_chain_id, store_segment_id,
+                    is_active, created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cursor_pg.execute(insert_query, (
+                    str(default_id),
+                    'Teste store_brands',
+                    'empty',
+                    retail_chain_id,
+                    store_segment_id,
+                    True,
+                    now,
+                    now
+                ))
+            
+            conn_pg.commit()
+            cursor_pg.close()
+            conn_pg.close()
+            print(f"[ETAPA 4] Store brand padrão criado: {default_id}")
+            logger.info(f"Store brand padrão 'Teste store_brands' criado: {default_id}")
+            return default_id
+            
+        except Exception as e:
+            logger.error(f"Erro ao criar/buscar store_brand padrão: {e}")
+            cursor_pg.close()
+            conn_pg.close()
+            raise
     
     def clean_string(self, value: Optional[str], max_length: Optional[int] = None) -> Optional[str]:
         """Limpa e trunca string"""
@@ -285,20 +371,35 @@ class StoresMigration:
                         legado_id = row[0]
                         self.store_segment_id_map[legado_id] = segment_id
                         
-                        insert_query = f"""
-                        INSERT INTO {schema}.store_segments (
-                            id, name, is_active, created_at, updated_at, legacy_id
-                        ) VALUES (%s, %s, %s, %s, %s, %s)
-                        """
-                        
-                        cursor_pg.execute(insert_query, (
-                            str(segment_id),
-                            self.clean_string(row[1]),  # Nome
-                            row[2] if row[2] is not None else False,  # Ativo
-                            row[3],  # DataInclusao -> created_at
-                            row[4] if row[4] else row[3],  # DataAlteracao -> updated_at
-                            legado_id  # legacy_id
-                        ))
+                        # Construir INSERT condicionalmente (legacy_id apenas em HML)
+                        include_legacy = self.should_include_legacy_id()
+                        if include_legacy:
+                            insert_query = f"""
+                            INSERT INTO {schema}.store_segments (
+                                id, name, is_active, created_at, updated_at, legacy_id
+                            ) VALUES (%s, %s, %s, %s, %s, %s)
+                            """
+                            cursor_pg.execute(insert_query, (
+                                str(segment_id),
+                                self.clean_string(row[1]),  # Nome
+                                row[2] if row[2] is not None else False,  # Ativo
+                                row[3],  # DataInclusao -> created_at
+                                row[4] if row[4] else row[3],  # DataAlteracao -> updated_at
+                                legado_id  # legacy_id
+                            ))
+                        else:
+                            insert_query = f"""
+                            INSERT INTO {schema}.store_segments (
+                                id, name, is_active, created_at, updated_at
+                            ) VALUES (%s, %s, %s, %s, %s)
+                            """
+                            cursor_pg.execute(insert_query, (
+                                str(segment_id),
+                                self.clean_string(row[1]),  # Nome
+                                row[2] if row[2] is not None else False,  # Ativo
+                                row[3],  # DataInclusao -> created_at
+                                row[4] if row[4] else row[3]  # DataAlteracao -> updated_at
+                            ))
                         
                         self.stats['store_segments'] += 1
                         total_processed += 1
@@ -458,21 +559,37 @@ class StoresMigration:
                         legado_id = row[0]
                         self.retail_chain_id_map[legado_id] = retail_chain_id
                         
-                        insert_query = f"""
-                        INSERT INTO {schema}.retail_chains (
-                            id, name, description, is_active, created_at, updated_at, legacy_id
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """
-                        
-                        cursor_pg.execute(insert_query, (
-                            str(retail_chain_id),
-                            self.clean_string(row[1]),  # Nome -> name
-                            str(row[2]) if row[2] is not None else '',  # Codigo -> description (converter para string)
-                            row[3] if row[3] is not None else False,  # Ativo -> is_active
-                            row[4],  # DataInclusao -> created_at
-                            row[5] if row[5] else row[4],  # DataAlteracao -> updated_at
-                            legado_id  # legacy_id
-                        ))
+                        # Construir INSERT condicionalmente (legacy_id apenas em HML)
+                        include_legacy = self.should_include_legacy_id()
+                        if include_legacy:
+                            insert_query = f"""
+                            INSERT INTO {schema}.retail_chains (
+                                id, name, description, is_active, created_at, updated_at, legacy_id
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            """
+                            cursor_pg.execute(insert_query, (
+                                str(retail_chain_id),
+                                self.clean_string(row[1]),  # Nome -> name
+                                str(row[2]) if row[2] is not None else '',  # Codigo -> description (converter para string)
+                                row[3] if row[3] is not None else False,  # Ativo -> is_active
+                                row[4],  # DataInclusao -> created_at
+                                row[5] if row[5] else row[4],  # DataAlteracao -> updated_at
+                                legado_id  # legacy_id
+                            ))
+                        else:
+                            insert_query = f"""
+                            INSERT INTO {schema}.retail_chains (
+                                id, name, description, is_active, created_at, updated_at
+                            ) VALUES (%s, %s, %s, %s, %s, %s)
+                            """
+                            cursor_pg.execute(insert_query, (
+                                str(retail_chain_id),
+                                self.clean_string(row[1]),  # Nome -> name
+                                str(row[2]) if row[2] is not None else '',  # Codigo -> description (converter para string)
+                                row[3] if row[3] is not None else False,  # Ativo -> is_active
+                                row[4],  # DataInclusao -> created_at
+                                row[5] if row[5] else row[4]  # DataAlteracao -> updated_at
+                            ))
                         
                         self.stats['retail_chains'] += 1
                         total_processed += 1
@@ -593,19 +710,29 @@ class StoresMigration:
         cursor_pg = conn_pg.cursor()
         
         # Carregar retail_chains
-        cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.retail_chains")
-        retail_chain_map = {}
-        for row in cursor_pg.fetchall():
-            retail_chain_map[row[1]] = row[0]
+        include_legacy = self.should_include_legacy_id()
+        if include_legacy:
+            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.retail_chains")
+            retail_chain_map = {}
+            for row in cursor_pg.fetchall():
+                retail_chain_map[row[1]] = row[0]
+        else:
+            # Em PRD, usar o mapeamento já criado (retail_chain_id_map)
+            retail_chain_map = self.retail_chain_id_map
         
         # Carregar store_segments (precisamos buscar pelo Estabelecimento.IdCanalEstabelecimento)
-        cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.store_segments")
-        store_segment_map = {}
-        for row in cursor_pg.fetchall():
-            store_segment_map[row[1]] = row[0]
+        if include_legacy:
+            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.store_segments")
+            store_segment_map = {}
+            for row in cursor_pg.fetchall():
+                store_segment_map[row[1]] = row[0]
+        else:
+            # Em PRD, usar o mapeamento já criado (store_segment_id_map)
+            store_segment_map = self.store_segment_id_map
         
-        cursor_pg.close()
-        conn_pg.close()
+        if include_legacy:
+            cursor_pg.close()
+            conn_pg.close()
         
         print(f"[ETAPA 3] {len(retail_chain_map)} retail_chains e {len(store_segment_map)} store_segments carregados")
         
@@ -693,24 +820,43 @@ class StoresMigration:
                         # abras_code: usar Codigo se disponível, senão "empty"
                         abras_code = str(row[2]) if row[2] is not None else "empty"
                         
-                        insert_query = f"""
-                        INSERT INTO {schema}.store_brands (
-                            id, description, abras_code, retail_chain_id, store_segment_id,
-                            is_active, created_at, updated_at, legacy_id
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """
-                        
-                        cursor_pg.execute(insert_query, (
-                            str(store_brand_id),
-                            self.clean_string(row[1]),  # NomeFantasia -> description
-                            abras_code,  # abras_code (não pode ser nulo)
-                            str(retail_chain_id),  # retail_chain_id (lookup)
-                            str(store_segment_id) if store_segment_id else None,  # store_segment_id (lookup)
-                            row[4] if row[4] is not None else False,  # Ativo -> is_active
-                            row[5],  # DataInclusao -> created_at
-                            row[6] if row[6] else row[5],  # DataAlteracao -> updated_at
-                            bandeira_id  # legacy_id
-                        ))
+                        # Construir INSERT condicionalmente (legacy_id apenas em HML)
+                        include_legacy = self.should_include_legacy_id()
+                        if include_legacy:
+                            insert_query = f"""
+                            INSERT INTO {schema}.store_brands (
+                                id, description, abras_code, retail_chain_id, store_segment_id,
+                                is_active, created_at, updated_at, legacy_id
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """
+                            cursor_pg.execute(insert_query, (
+                                str(store_brand_id),
+                                self.clean_string(row[1]),  # NomeFantasia -> description
+                                abras_code,  # abras_code (não pode ser nulo)
+                                str(retail_chain_id),  # retail_chain_id (lookup)
+                                str(store_segment_id) if store_segment_id else None,  # store_segment_id (lookup)
+                                row[4] if row[4] is not None else False,  # Ativo -> is_active
+                                row[5],  # DataInclusao -> created_at
+                                row[6] if row[6] else row[5],  # DataAlteracao -> updated_at
+                                bandeira_id  # legacy_id
+                            ))
+                        else:
+                            insert_query = f"""
+                            INSERT INTO {schema}.store_brands (
+                                id, description, abras_code, retail_chain_id, store_segment_id,
+                                is_active, created_at, updated_at
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            """
+                            cursor_pg.execute(insert_query, (
+                                str(store_brand_id),
+                                self.clean_string(row[1]),  # NomeFantasia -> description
+                                abras_code,  # abras_code (não pode ser nulo)
+                                str(retail_chain_id),  # retail_chain_id (lookup)
+                                str(store_segment_id) if store_segment_id else None,  # store_segment_id (lookup)
+                                row[4] if row[4] is not None else False,  # Ativo -> is_active
+                                row[5],  # DataInclusao -> created_at
+                                row[6] if row[6] else row[5]  # DataAlteracao -> updated_at
+                            ))
                         
                         self.stats['store_brands'] += 1
                         total_processed += 1
@@ -827,40 +973,74 @@ class StoresMigration:
         
         # Carregar mapeamento de store_brands
         print("[ETAPA 4] Carregando mapeamento de store_brands...")
-        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
-        cursor_pg = conn_pg.cursor()
-        cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.store_brands")
-        store_brand_map = {}
-        for row in cursor_pg.fetchall():
-            store_brand_map[row[1]] = row[0]
-        cursor_pg.close()
-        conn_pg.close()
+        include_legacy = self.should_include_legacy_id()
+        if include_legacy:
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.store_brands")
+            store_brand_map = {}
+            for row in cursor_pg.fetchall():
+                store_brand_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+        else:
+            # Em PRD, usar o mapeamento já criado (store_brand_id_map)
+            # Mas também verificar quais realmente existem no banco
+            store_brand_map = {}
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            # Buscar todos os store_brands do banco para verificar quais existem
+            cursor_pg.execute(f"SELECT id FROM {schema}.store_brands")
+            existing_store_brand_ids = {str(row[0]) for row in cursor_pg.fetchall()}
+            cursor_pg.close()
+            conn_pg.close()
+            # Filtrar apenas os que realmente existem no banco
+            for legado_id, uuid_id in self.store_brand_id_map.items():
+                if str(uuid_id) in existing_store_brand_ids:
+                    store_brand_map[legado_id] = uuid_id
+        
         print(f"[ETAPA 4] {len(store_brand_map)} store_brands carregados")
         
+        # Obter ou criar store_brand padrão
+        default_store_brand_id = self._get_or_create_default_store_brand(schema, include_legacy)
+        
         if not store_brand_map:
-            print("AVISO: Nenhum store_brand encontrado. Execute a etapa 3 primeiro.")
-            logger.warning("Nenhum store_brand encontrado para migrar stores")
-            return
+            print(f"AVISO: Nenhum store_brand encontrado no mapeamento. Usando store_brand padrão 'Teste store_brands'.")
+            logger.warning("Nenhum store_brand encontrado no mapeamento. Usando padrão.")
         
         # Buscar dados do SQL Server
         # Se houver limite, filtrar apenas estabelecimentos cujas bandeiras foram migradas
         print("[ETAPA 4] Buscando dados do SQL Server...")
         if self.limit_rows > 0:
-            # Buscar apenas estabelecimentos cujas bandeiras foram migradas
-            bandeiras_ids = tuple(store_brand_map.keys())
-            sql_query = f"""
-            SELECT 
-                e.Id,
-                e.NomeFantasia,
-                e.IdBandeira,
-                e.Ativo,
-                e.DataInclusao,
-                e.DataAlteracao
-            FROM Estabelecimento e
-            WHERE e.IdBandeira IN {bandeiras_ids}
-            ORDER BY e.Id
-            OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY
-            """
+            if store_brand_map:
+                # Buscar apenas estabelecimentos cujas bandeiras foram migradas
+                bandeiras_ids = tuple(store_brand_map.keys())
+                sql_query = f"""
+                SELECT 
+                    e.Id,
+                    e.NomeFantasia,
+                    e.IdBandeira,
+                    e.Ativo,
+                    e.DataInclusao,
+                    e.DataAlteracao
+                FROM Estabelecimento e
+                WHERE e.IdBandeira IN {bandeiras_ids}
+                ORDER BY e.Id
+                OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY
+                """
+            else:
+                # Se não há store_brands no mapeamento, buscar todos (usará padrão)
+                sql_query = f"""
+                SELECT TOP {self.limit_rows}
+                    Id,
+                    NomeFantasia,
+                    IdBandeira,
+                    Ativo,
+                    DataInclusao,
+                    DataAlteracao
+                FROM Estabelecimento
+                ORDER BY Id
+                """
         else:
             sql_query = """
             SELECT 
@@ -905,23 +1085,40 @@ class StoresMigration:
                         # Lookup store_brand_id
                         store_brand_id = store_brand_map.get(row[2])  # IdBandeira
                         if not store_brand_id:
-                            raise ValueError(f"Store brand não encontrado para IdBandeira={row[2]}")
+                            # Usar store_brand padrão quando não encontrado
+                            logger.warning(f"Store brand não encontrado para IdBandeira={row[2]}. Usando store_brand padrão 'Teste store_brands'")
+                            store_brand_id = default_store_brand_id
                         
-                        insert_query = f"""
-                        INSERT INTO {schema}.stores (
-                            id, name, store_brand_id, is_active, created_at, updated_at, legacy_id
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """
-                        
-                        cursor_pg.execute(insert_query, (
-                            str(store_id),
-                            self.clean_string(row[1], 255),  # NomeFantasia -> name
-                            str(store_brand_id),  # store_brand_id (lookup)
-                            row[3] if row[3] is not None else False,  # Ativo -> is_active
-                            row[4],  # DataInclusao -> created_at
-                            row[5] if row[5] else row[4],  # DataAlteracao -> updated_at
-                            legado_id  # legacy_id
-                        ))
+                        # Construir INSERT condicionalmente (legacy_id apenas em HML)
+                        if include_legacy:
+                            insert_query = f"""
+                            INSERT INTO {schema}.stores (
+                                id, name, store_brand_id, is_active, created_at, updated_at, legacy_id
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            """
+                            cursor_pg.execute(insert_query, (
+                                str(store_id),
+                                self.clean_string(row[1], 255),  # NomeFantasia -> name
+                                str(store_brand_id),  # store_brand_id (lookup)
+                                row[3] if row[3] is not None else False,  # Ativo -> is_active
+                                row[4],  # DataInclusao -> created_at
+                                row[5] if row[5] else row[4],  # DataAlteracao -> updated_at
+                                legado_id  # legacy_id
+                            ))
+                        else:
+                            insert_query = f"""
+                            INSERT INTO {schema}.stores (
+                                id, name, store_brand_id, is_active, created_at, updated_at
+                            ) VALUES (%s, %s, %s, %s, %s, %s)
+                            """
+                            cursor_pg.execute(insert_query, (
+                                str(store_id),
+                                self.clean_string(row[1], 255),  # NomeFantasia -> name
+                                str(store_brand_id),  # store_brand_id (lookup)
+                                row[3] if row[3] is not None else False,  # Ativo -> is_active
+                                row[4],  # DataInclusao -> created_at
+                                row[5] if row[5] else row[4]  # DataAlteracao -> updated_at
+                            ))
                         
                         self.stats['stores'] += 1
                         total_processed += 1
@@ -1366,36 +1563,67 @@ class StoresMigration:
                             street_value = self.clean_string(row[1], 500) or ''
                             neighborhood_value = self.clean_string(row[4], 100) or ''
                             
-                            insert_query = f"""
-                            INSERT INTO {schema}.addresses (
-                                id, legacy_id, addressable_id, addressable_type, type,
-                                postal_code, street, number, address_line_2, neighborhood,
-                                city, state, municipal_code, latitude, longitude, zone, region,
-                                created_at, updated_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            """
-                            
-                            cursor_pg.execute(insert_query, (
-                                str(uuid.uuid4()),
-                                legado_id,
-                                str(store_id),
-                                'stores',
-                                'main',
-                                cep,
-                                street_value,
-                                number_value,
-                                self.clean_string(row[3], 200),
-                                neighborhood_value,
-                                city_value,
-                                state_value,
-                                0,  # municipal_code (padrão 0)
-                                lat,
-                                lon,
-                                zone_value,
-                                region_value,
-                                row[10],
-                                row[11] if row[11] else row[10]
-                            ))
+                            # Construir INSERT condicionalmente (legacy_id apenas em HML)
+                            include_legacy = self.should_include_legacy_id()
+                            if include_legacy:
+                                insert_query = f"""
+                                INSERT INTO {schema}.addresses (
+                                    id, legacy_id, addressable_id, addressable_type, type,
+                                    postal_code, street, number, address_line_2, neighborhood,
+                                    city, state, municipal_code, latitude, longitude, zone, region,
+                                    created_at, updated_at
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                """
+                                cursor_pg.execute(insert_query, (
+                                    str(uuid.uuid4()),
+                                    legado_id,
+                                    str(store_id),
+                                    'stores',
+                                    'main',
+                                    cep,
+                                    street_value,
+                                    number_value,
+                                    self.clean_string(row[3], 200),
+                                    neighborhood_value,
+                                    city_value,
+                                    state_value,
+                                    0,  # municipal_code (padrão 0)
+                                    lat,
+                                    lon,
+                                    zone_value,
+                                    region_value,
+                                    row[10],
+                                    row[11] if row[11] else row[10]
+                                ))
+                            else:
+                                insert_query = f"""
+                                INSERT INTO {schema}.addresses (
+                                    id, addressable_id, addressable_type, type,
+                                    postal_code, street, number, address_line_2, neighborhood,
+                                    city, state, municipal_code, latitude, longitude, zone, region,
+                                    created_at, updated_at
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                """
+                                cursor_pg.execute(insert_query, (
+                                    str(uuid.uuid4()),
+                                    str(store_id),
+                                    'stores',
+                                    'main',
+                                    cep,
+                                    street_value,
+                                    number_value,
+                                    self.clean_string(row[3], 200),
+                                    neighborhood_value,
+                                    city_value,
+                                    state_value,
+                                    0,  # municipal_code (padrão 0)
+                                    lat,
+                                    lon,
+                                    zone_value,
+                                    region_value,
+                                    row[10],
+                                    row[11] if row[11] else row[10]
+                                ))
                             
                             self.stats['addresses'] += 1
                             

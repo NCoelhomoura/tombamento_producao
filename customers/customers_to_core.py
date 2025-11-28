@@ -11,7 +11,9 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
 # Adicionar diretório utils ao path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
+utils_path = os.path.join(os.path.dirname(__file__), '..', 'utils')
+if utils_path not in sys.path:
+    sys.path.insert(0, utils_path)
 from database_connection import DatabaseConnection
 
 # ============================================================================
@@ -44,12 +46,12 @@ logger.setLevel(logging.INFO)
 if logger.handlers:
     logger.handlers.clear()
 
-# Handler para arquivo (modo 'w' para truncar arquivo a cada execucao)
+# Handler para arquivo (modo 'a' para append - log é truncado apenas no orchestrator)
 # Arquivo na raiz do projeto
 try:
     log_file_path = os.path.join(os.path.dirname(__file__), '..', 'log_execution.txt')
     log_file_path = os.path.abspath(log_file_path)  # Converter para caminho absoluto
-    file_handler = logging.FileHandler(log_file_path, mode='w', encoding='utf-8')
+    file_handler = logging.FileHandler(log_file_path, mode='a', encoding='utf-8')
     file_handler.setLevel(logging.INFO)
     file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     file_handler.setFormatter(file_formatter)
@@ -1194,8 +1196,8 @@ class CustomersMigration:
                             telefone_value = re.sub(r'[^\d]', '', str(row[2]))
                             
                             if telefone_value:
-                                insert_query = """
-                                INSERT INTO gmcore.contacts (
+                                insert_query = f"""
+                                INSERT INTO {schema}.contacts (
                                     id, contactable_id, contactable_type, type, value,
                                     created_at, updated_at
                                 ) VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -1232,8 +1234,8 @@ class CustomersMigration:
                             celular_value = re.sub(r'[^\d]', '', str(row[3]))
                             
                             if celular_value:
-                                insert_query = """
-                                INSERT INTO gmcore.contacts (
+                                insert_query = f"""
+                                INSERT INTO {schema}.contacts (
                                     id, contactable_id, contactable_type, type, value,
                                     created_at, updated_at
                                 ) VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -1292,8 +1294,10 @@ class CustomersMigration:
     
     def run(self):
         """Executa a migração completa"""
+        # Sempre ler o destino dinamicamente (não cachear)
         destino = DatabaseConnection.get_destino()
         schema = get_schema_atual()
+        
         print("\n" + "="*80)
         print(f"INICIANDO MIGRACAO: SQL Server PRD -> PostgreSQL {destino} ({schema})")
         print("="*80)

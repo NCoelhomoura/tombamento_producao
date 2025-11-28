@@ -43,12 +43,12 @@ class DatabaseConnection:
         'password': 'Taztaz@21'
     }
     
-    # Configurações PostgreSQL PRD AWS (Destino - Leitura/Escrita, schema gmcore)
+    # Configurações PostgreSQL PRD AWS (Destino - Leitura/Escrita, schema core)
     # Credenciais do DESTINO SCHEMAS TABELAS PRD (diretrizes_migracao.txt)
     POSTGRESQL_PRD_DESTINO_CONFIG = {
         'host': 'gmcore-eks-dev-postgres.ckksg9kcwfzj.us-east-2.rds.amazonaws.com',
         'database': 'gmcoredb',
-        'schema': 'gmcore',
+        'schema': 'core',
         'port': 5432,
         'user': 'postgres',
         'password': 'lmlVyIGz8eWT6iBtzLJU'
@@ -56,7 +56,7 @@ class DatabaseConnection:
     
     # Chaveador de destino: 'HML' ou 'PRD'
     # Pode ser alterado via variável de ambiente MIGRATION_DESTINO ou método set_destino()
-    _destino_atual = 'HML'  # Padrão: HML
+    _destino_atual = 'PRD'  # Padrão: PRD (alterado de HML)
     
     @staticmethod
     def get_sql_server_prd_connection():
