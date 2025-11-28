@@ -1,6 +1,6 @@
 """
 Script de migração de dados: SQL Server PRD -> PostgreSQL HML (gmcore)
-Migra dados das tabelas: customers, customer_segments, addresses
+Migra dados das tabelas: customers, customer_segments, addresses, contacts
 """
 
 import sys
@@ -56,6 +56,7 @@ class CustomersMigration:
             'customers': 0,
             'customer_segments': 0,
             'addresses': 0,
+            'contacts': 0,
             'errors': []
         }
         self.customer_id_map = {}  # Map: legado_id -> uuid
@@ -827,6 +828,303 @@ class CustomersMigration:
             cursor_pg.close()
             conn_pg.close()
     
+    def validate_step4_contacts(self):
+        """Validação e relatório de qualidade - ETAPA 4"""
+        print("\n" + "-"*80)
+        print("RELATORIO DE QUALIDADE - ETAPA 4: CONTACTS")
+        print("-"*80)
+        
+        try:
+            # Contar origem - emails
+            conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql = conn_sql.cursor()
+            cursor_sql.execute("""
+                SELECT COUNT(*) 
+                FROM Cliente 
+                WHERE Email IS NOT NULL AND LTRIM(RTRIM(Email)) != ''
+            """)
+            origem_email = cursor_sql.fetchone()[0]
+            
+            # Contar origem - telefones
+            cursor_sql.execute("""
+                SELECT COUNT(*) 
+                FROM Cliente 
+                WHERE Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != ''
+            """)
+            origem_phone = cursor_sql.fetchone()[0]
+            
+            # Contar origem - celulares
+            cursor_sql.execute("""
+                SELECT COUNT(*) 
+                FROM Cliente 
+                WHERE Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != ''
+            """)
+            origem_cellphone = cursor_sql.fetchone()[0]
+            
+            origem_total = origem_email + origem_phone + origem_cellphone
+            cursor_sql.close()
+            conn_sql.close()
+            
+            # Contar destino
+            conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+            cursor_pg = conn_pg.cursor()
+            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.contacts WHERE contactable_type = 'customers'")
+            destino_total = cursor_pg.fetchone()[0]
+            
+            # Contar por tipo
+            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.contacts WHERE contactable_type = 'customers' AND type = 'email'")
+            destino_email = cursor_pg.fetchone()[0]
+            
+            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.contacts WHERE contactable_type = 'customers' AND type = 'phone'")
+            destino_phone = cursor_pg.fetchone()[0]
+            
+            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.contacts WHERE contactable_type = 'customers' AND type = 'cellphone'")
+            destino_cellphone = cursor_pg.fetchone()[0]
+            
+            # Verificar contactable_id preenchido
+            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.contacts WHERE contactable_type = 'customers' AND contactable_id IS NOT NULL")
+            com_contactable_id = cursor_pg.fetchone()[0]
+            
+            cursor_pg.close()
+            conn_pg.close()
+            
+            print(f"\nORIGEM (SQL Server PRD - Cliente):")
+            print(f"  Emails: {origem_email}")
+            print(f"  Telefones: {origem_phone}")
+            print(f"  Celulares: {origem_cellphone}")
+            print(f"  Total esperado: {origem_total}")
+            
+            print(f"\nDESTINO (PostgreSQL HML - gmcore.contacts):")
+            print(f"  Emails (type='email'): {destino_email}")
+            print(f"  Telefones (type='phone'): {destino_phone}")
+            print(f"  Celulares (type='cellphone'): {destino_cellphone}")
+            print(f"  Total inserido: {destino_total}")
+            print(f"  Com contactable_id: {com_contactable_id}")
+            
+            diferenca = origem_total - destino_total
+            
+            if diferenca == 0:
+                print(f"\nOK - Todos os contacts foram migrados com sucesso!")
+                logger.info(f"VALIDACAO ETAPA 4: OK - Origem: {origem_total}, Destino: {destino_total}")
+            else:
+                print(f"\nAVISO - Diferenca encontrada: {diferenca} contacts")
+                print(f"  {abs(diferenca)} contacts {'faltando' if diferenca > 0 else 'extras'} no destino")
+                logger.warning(f"VALIDACAO ETAPA 4: Diferenca - Origem: {origem_total}, Destino: {destino_total}, Diferenca: {diferenca}")
+            
+            return diferenca == 0
+            
+        except Exception as e:
+            logger.error(f"Erro na validacao ETAPA 4: {e}")
+            print(f"ERRO na validacao: {e}")
+            return False
+    
+    def step4_migrate_contacts(self):
+        """ETAPA 4: Migrar contacts"""
+        print("\n" + "="*80)
+        print("ETAPA 4: MIGRANDO CONTACTS")
+        print("="*80)
+        logger.info("="*80)
+        logger.info("ETAPA 4: Migrando contacts")
+        logger.info("="*80)
+        
+        # Truncate apenas contacts de customers
+        print("\n[ETAPA 4] Limpando contacts de customers...")
+        conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+        cursor_pg = conn_pg.cursor()
+        cursor_pg.execute("DELETE FROM gmcore.contacts WHERE contactable_type = 'customers'")
+        conn_pg.commit()
+        cursor_pg.close()
+        conn_pg.close()
+        
+        # Buscar dados do SQL Server
+        print("[ETAPA 4] Buscando dados do SQL Server...")
+        sql_query = """
+        SELECT 
+            Id,
+            Email,
+            Telefone,
+            Celular,
+            DataInclusao,
+            DataAlteracao
+        FROM Cliente
+        WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
+           OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
+           OR (Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != '')
+        ORDER BY Id
+        """
+        
+        conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+        cursor_sql = conn_sql.cursor()
+        cursor_sql.execute(sql_query)
+        
+        # Processar em chunks
+        conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+        cursor_pg = conn_pg.cursor()
+        
+        chunk_num = 0
+        total_processed = 0
+        
+        try:
+            while True:
+                rows = cursor_sql.fetchmany(CHUNK_SIZE)
+                if not rows:
+                    break
+                
+                chunk_num += 1
+                print(f"[ETAPA 4] Processando chunk {chunk_num} ({len(rows)} registros)...")
+                logger.info(f"[ETAPA 4] Processando chunk {chunk_num} ({len(rows)} registros)...")
+                
+                chunk_errors = 0
+                for row in rows:
+                    legado_id = row[0]
+                    customer_id = self.customer_id_map.get(legado_id)
+                    
+                    if not customer_id:
+                        continue
+                    
+                    import re
+                    data_inclusao = row[4]
+                    data_alteracao = row[5] if row[5] else row[4]
+                    
+                    # REGISTRO 1 - Email
+                    if row[1] and str(row[1]).strip():
+                        try:
+                            email_value = str(row[1]).strip().lower()
+                            
+                            insert_query = """
+                            INSERT INTO gmcore.contacts (
+                                id, contactable_id, contactable_type, type, value,
+                                created_at, updated_at
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            """
+                            
+                            cursor_pg.execute(insert_query, (
+                                str(uuid.uuid4()),  # id
+                                str(customer_id),  # contactable_id
+                                'customers',  # contactable_type
+                                'email',  # type
+                                email_value,  # value (em minusculo)
+                                data_inclusao,  # created_at
+                                data_alteracao  # updated_at
+                            ))
+                            
+                            self.stats['contacts'] += 1
+                            total_processed += 1
+                            
+                        except Exception as e:
+                            error_msg = f"Erro ao inserir email para Cliente Id={legado_id}: {e}"
+                            logger.error(error_msg)
+                            print(f"ERRO - {error_msg}")
+                            self.stats['errors'].append(error_msg)
+                            chunk_errors += 1
+                            try:
+                                conn_pg.rollback()
+                                cursor_pg = conn_pg.cursor()
+                            except Exception as rollback_error:
+                                logger.error(f"Erro ao fazer rollback: {rollback_error}")
+                    
+                    # REGISTRO 2 - Telefone
+                    if row[2] and str(row[2]).strip():
+                        try:
+                            telefone_value = re.sub(r'[^\d]', '', str(row[2]))
+                            
+                            if telefone_value:
+                                insert_query = """
+                                INSERT INTO gmcore.contacts (
+                                    id, contactable_id, contactable_type, type, value,
+                                    created_at, updated_at
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                """
+                                
+                                cursor_pg.execute(insert_query, (
+                                    str(uuid.uuid4()),  # id
+                                    str(customer_id),  # contactable_id
+                                    'customers',  # contactable_type
+                                    'phone',  # type
+                                    telefone_value,  # value (apenas numeros)
+                                    data_inclusao,  # created_at
+                                    data_alteracao  # updated_at
+                                ))
+                                
+                                self.stats['contacts'] += 1
+                                total_processed += 1
+                            
+                        except Exception as e:
+                            error_msg = f"Erro ao inserir telefone para Cliente Id={legado_id}: {e}"
+                            logger.error(error_msg)
+                            print(f"ERRO - {error_msg}")
+                            self.stats['errors'].append(error_msg)
+                            chunk_errors += 1
+                            try:
+                                conn_pg.rollback()
+                                cursor_pg = conn_pg.cursor()
+                            except Exception as rollback_error:
+                                logger.error(f"Erro ao fazer rollback: {rollback_error}")
+                    
+                    # REGISTRO 3 - Celular
+                    if row[3] and str(row[3]).strip():
+                        try:
+                            celular_value = re.sub(r'[^\d]', '', str(row[3]))
+                            
+                            if celular_value:
+                                insert_query = """
+                                INSERT INTO gmcore.contacts (
+                                    id, contactable_id, contactable_type, type, value,
+                                    created_at, updated_at
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                """
+                                
+                                cursor_pg.execute(insert_query, (
+                                    str(uuid.uuid4()),  # id
+                                    str(customer_id),  # contactable_id
+                                    'customers',  # contactable_type
+                                    'cellphone',  # type
+                                    celular_value,  # value (apenas numeros)
+                                    data_inclusao,  # created_at
+                                    data_alteracao  # updated_at
+                                ))
+                                
+                                self.stats['contacts'] += 1
+                                total_processed += 1
+                            
+                        except Exception as e:
+                            error_msg = f"Erro ao inserir celular para Cliente Id={legado_id}: {e}"
+                            logger.error(error_msg)
+                            print(f"ERRO - {error_msg}")
+                            self.stats['errors'].append(error_msg)
+                            chunk_errors += 1
+                            try:
+                                conn_pg.rollback()
+                                cursor_pg = conn_pg.cursor()
+                            except Exception as rollback_error:
+                                logger.error(f"Erro ao fazer rollback: {rollback_error}")
+                
+                # Commit do chunk apenas se não houve erro crítico
+                try:
+                    conn_pg.commit()
+                    print(f"[ETAPA 4] Chunk {chunk_num} processado: {total_processed} contacts inseridos, {chunk_errors} erros")
+                    logger.info(f"[ETAPA 4] Chunk {chunk_num} processado: {total_processed} contacts inseridos, {chunk_errors} erros")
+                except Exception as commit_error:
+                    logger.error(f"Erro no commit do chunk {chunk_num}: {commit_error}")
+                    conn_pg.rollback()
+                    cursor_pg = conn_pg.cursor()
+            
+            print(f"\n[ETAPA 4] CONCLUIDA! Total de contacts migrados: {self.stats['contacts']}")
+            logger.info(f"ETAPA 4 concluida: {self.stats['contacts']} registros")
+            
+            # Validação e relatório de qualidade
+            self.validate_step4_contacts()
+            
+        except Exception as e:
+            conn_pg.rollback()
+            logger.error(f"Erro na ETAPA 4: {e}")
+            raise
+        finally:
+            cursor_sql.close()
+            conn_sql.close()
+            cursor_pg.close()
+            conn_pg.close()
+    
     def run(self):
         """Executa a migração completa"""
         print("\n" + "="*80)
@@ -851,6 +1149,9 @@ class CustomersMigration:
             # ETAPA 3: Addresses (terceiro, referencia customers)
             self.step3_migrate_addresses()
             
+            # ETAPA 4: Contacts (quarto, referencia customers)
+            self.step4_migrate_contacts()
+            
             end_time = datetime.now()
             duration = end_time - start_time
             
@@ -866,12 +1167,14 @@ class CustomersMigration:
             print(f"  Customer Segments: {self.stats['customer_segments']}")
             print(f"  Customers: {self.stats['customers']}")
             print(f"  Addresses: {self.stats['addresses']}")
+            print(f"  Contacts: {self.stats['contacts']}")
             print(f"  Erros: {len(self.stats['errors'])}")
             
             logger.info(f"Duracao: {duration}")
             logger.info(f"Customer Segments: {self.stats['customer_segments']}")
             logger.info(f"Customers: {self.stats['customers']}")
             logger.info(f"Addresses: {self.stats['addresses']}")
+            logger.info(f"Contacts: {self.stats['contacts']}")
             logger.info(f"Erros: {len(self.stats['errors'])}")
             
             if self.stats['errors']:
@@ -896,7 +1199,7 @@ if __name__ == "__main__":
     
     migration = CustomersMigration()
     
-    # Verificar se deve executar apenas a etapa 3
+    # Verificar se deve executar apenas uma etapa específica
     if len(sys.argv) > 1 and sys.argv[1] == "--step3":
         print("\n" + "="*80)
         print("EXECUTANDO APENAS ETAPA 3: MIGRACAO DE ADDRESSES")
@@ -955,6 +1258,68 @@ if __name__ == "__main__":
         except Exception as e:
             logger.error("="*80)
             logger.error("ERRO CRITICO NA ETAPA 3!")
+            logger.error("="*80)
+            logger.error(f"Erro: {str(e)}")
+            print(f"\nERRO CRITICO: {e}")
+            raise
+    elif len(sys.argv) > 1 and sys.argv[1] == "--step4":
+        print("\n" + "="*80)
+        print("EXECUTANDO APENAS ETAPA 4: MIGRACAO DE CONTACTS")
+        print("="*80)
+        print(f"Data/Hora: {datetime.now()}")
+        print("="*80)
+        logger.info("="*80)
+        logger.info("EXECUTANDO APENAS ETAPA 4: MIGRACAO DE CONTACTS")
+        logger.info(f"Data/Hora: {datetime.now()}")
+        logger.info("="*80)
+        
+        start_time = datetime.now()
+        
+        try:
+            # Carregar mapeamento de customer IDs (necessário para contacts)
+            print("\n[ETAPA 4] Carregando mapeamento de customers...")
+            conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+            cursor_pg = conn_pg.cursor()
+            cursor_pg.execute("SELECT id, legacy_id FROM gmcore.customers")
+            for row in cursor_pg.fetchall():
+                migration.customer_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            print(f"[ETAPA 4] {len(migration.customer_id_map)} customers carregados")
+            
+            # Executar apenas a etapa 4
+            migration.step4_migrate_contacts()
+            
+            end_time = datetime.now()
+            duration = end_time - start_time
+            
+            print("\n" + "="*80)
+            print("ETAPA 4 CONCLUIDA!")
+            print("="*80)
+            logger.info("="*80)
+            logger.info("ETAPA 4 CONCLUIDA!")
+            logger.info("="*80)
+            
+            print(f"\nDuracao: {duration}")
+            print(f"\nESTATISTICAS ETAPA 4:")
+            print(f"  Contacts: {migration.stats['contacts']}")
+            print(f"  Erros: {len(migration.stats['errors'])}")
+            
+            logger.info(f"Duracao: {duration}")
+            logger.info(f"Contacts: {migration.stats['contacts']}")
+            logger.info(f"Erros: {len(migration.stats['errors'])}")
+            
+            if migration.stats['errors']:
+                print(f"\nAVISO - Total de erros: {len(migration.stats['errors'])}")
+                print("Verifique o arquivo customers_to_core_log.txt para detalhes")
+                logger.warning(f"Total de erros: {len(migration.stats['errors'])}")
+            else:
+                print("\nOK - Nenhum erro encontrado!")
+                logger.info("Nenhum erro encontrado!")
+                
+        except Exception as e:
+            logger.error("="*80)
+            logger.error("ERRO CRITICO NA ETAPA 4!")
             logger.error("="*80)
             logger.error(f"Erro: {str(e)}")
             print(f"\nERRO CRITICO: {e}")

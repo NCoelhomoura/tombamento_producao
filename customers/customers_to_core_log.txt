@@ -4520,3 +4520,27 @@ DETAIL:  Failing row contains (8734990b-e2a9-461c-9b78-486d6e2ddcec, 213, 635da1
 2025-11-26 11:43:09,332 - INFO - [ETAPA 2] Processando chunk 1 (1000 registros)...
 2025-11-26 11:45:06,820 - INFO - [ETAPA 2] Chunk 1 processado: 1000 registros inseridos, 0 erros
 2025-11-26 11:45:06,829 - INFO - [ETAPA 2] Processando chunk 2 (1000 registros)...
+2025-11-27 22:36:20,660 - INFO - ================================================================================
+2025-11-27 22:36:20,660 - INFO - EXECUTANDO APENAS ETAPA 4: MIGRACAO DE CONTACTS
+2025-11-27 22:36:20,660 - INFO - Data/Hora: 2025-11-27 22:36:20.660589
+2025-11-27 22:36:20,661 - INFO - ================================================================================
+2025-11-27 22:36:22,823 - INFO - ================================================================================
+2025-11-27 22:36:22,824 - INFO - ETAPA 4: Migrando contacts
+2025-11-27 22:36:22,825 - INFO - ================================================================================
+2025-11-27 22:36:25,749 - INFO - [ETAPA 4] Processando chunk 1 (1000 registros)...
+2025-11-27 22:40:13,811 - INFO - [ETAPA 4] Chunk 1 processado: 1951 contacts inseridos, 0 erros
+2025-11-27 22:40:13,816 - INFO - [ETAPA 4] Processando chunk 2 (1000 registros)...
+2025-11-27 22:40:13,817 - INFO - [ETAPA 4] Chunk 2 processado: 1951 contacts inseridos, 0 erros
+2025-11-27 22:40:13,819 - INFO - [ETAPA 4] Processando chunk 3 (1000 registros)...
+2025-11-27 22:40:13,820 - INFO - [ETAPA 4] Chunk 3 processado: 1951 contacts inseridos, 0 erros
+2025-11-27 22:40:13,821 - INFO - [ETAPA 4] Processando chunk 4 (72 registros)...
+2025-11-27 22:40:13,821 - INFO - [ETAPA 4] Chunk 4 processado: 1951 contacts inseridos, 0 erros
+2025-11-27 22:40:13,822 - INFO - ETAPA 4 concluida: 1951 registros
+2025-11-27 22:40:15,895 - WARNING - VALIDACAO ETAPA 4: Diferenca - Origem: 4805, Destino: 1951, Diferenca: 2854
+2025-11-27 22:40:15,909 - INFO - ================================================================================
+2025-11-27 22:40:15,909 - INFO - ETAPA 4 CONCLUIDA!
+2025-11-27 22:40:15,909 - INFO - ================================================================================
+2025-11-27 22:40:15,910 - INFO - Duracao: 0:03:55.247767
+2025-11-27 22:40:15,910 - INFO - Contacts: 1951
+2025-11-27 22:40:15,910 - INFO - Erros: 0
+2025-11-27 22:40:15,910 - INFO - Nenhum erro encontrado!
