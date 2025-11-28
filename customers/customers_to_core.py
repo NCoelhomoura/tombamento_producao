@@ -115,7 +115,7 @@ class CustomersMigration:
         return 'inactive'
     
     def truncate_table(self, table_name: str, schema: str = None):
-        """Faz TRUNCATE em uma tabela"""
+        """Faz TRUNCATE em uma tabela (apenas para tabelas não polimórficas)"""
         if schema is None:
             schema = get_schema_atual()
         
@@ -136,6 +136,37 @@ class CustomersMigration:
             
         except Exception as e:
             logger.error(f"Erro ao truncar tabela {schema}.{table_name}: {e}")
+            if conn:
+                conn.rollback()
+                conn.close()
+            raise
+    
+    def delete_polymorphic_table(self, table_name: str, entity_type: str, type_column: str, schema: str = None):
+        """
+        Faz DELETE em tabela polimórfica filtrando por tipo de entidade
+        Exemplo: delete_polymorphic_table('contacts', 'customers', 'contactable_type')
+        """
+        if schema is None:
+            schema = get_schema_atual()
+        
+        conn = None
+        try:
+            conn = DatabaseConnection.get_postgresql_destino_connection()
+            cursor = conn.cursor()
+            
+            query = f"DELETE FROM {schema}.{table_name} WHERE {type_column} = %s"
+            cursor.execute(query, (entity_type,))
+            deleted_count = cursor.rowcount
+            conn.commit()
+            
+            logger.info(f"Tabela {schema}.{table_name}: {deleted_count} registros deletados (tipo: {entity_type})")
+            print(f"OK - Tabela {schema}.{table_name}: {deleted_count} registros deletados (tipo: {entity_type})")
+            
+            cursor.close()
+            conn.close()
+            
+        except Exception as e:
+            logger.error(f"Erro ao deletar registros da tabela {schema}.{table_name} (tipo: {entity_type}): {e}")
             if conn:
                 conn.rollback()
                 conn.close()
@@ -635,9 +666,9 @@ class CustomersMigration:
         logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
-        # Truncate
-        print("\n[ETAPA 3] Limpando tabela addresses...")
-        self.truncate_table('addresses')
+        # Delete apenas addresses de customers (tabela polimórfica)
+        print("\n[ETAPA 3] Limpando addresses de customers...")
+        self.delete_polymorphic_table('addresses', 'customers', 'addressable_type')
         
         # Buscar dados do SQL Server
         print("[ETAPA 3] Buscando dados do SQL Server...")
@@ -1051,15 +1082,9 @@ class CustomersMigration:
         logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
-        # Truncate apenas contacts de customers
+        # Delete apenas contacts de customers (tabela polimórfica)
         print("\n[ETAPA 4] Limpando contacts de customers...")
-        schema = get_schema_atual()
-        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
-        cursor_pg = conn_pg.cursor()
-        cursor_pg.execute(f"DELETE FROM {schema}.contacts WHERE contactable_type = 'customers'")
-        conn_pg.commit()
-        cursor_pg.close()
-        conn_pg.close()
+        self.delete_polymorphic_table('contacts', 'customers', 'contactable_type')
         
         # Buscar dados do SQL Server
         print("[ETAPA 4] Buscando dados do SQL Server...")
