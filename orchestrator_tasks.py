@@ -120,9 +120,88 @@ def run_stores_task(step=None, limit_rows=0):
         print(f"Etapa: {step}")
     print("="*80)
     
-    # TODO: Implementar quando stores_to_core.py estiver pronto
-    print("AVISO: Task de stores ainda nao implementada")
-    print("Aguardando criacao do arquivo stores/stores_to_core.py")
+    # Adicionar diretório stores ao path
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'stores'))
+    from stores.stores_to_core import StoresMigration
+    
+    migration = StoresMigration(limit_rows=limit_rows)
+    
+    if step:
+        # Executar apenas uma etapa específica
+        if step == '1':
+            migration.step1_migrate_store_segments()
+        elif step == '2':
+            migration.step2_migrate_retail_chains()
+        elif step == '3':
+            # Carregar mapeamentos necessários
+            from stores.stores_to_core import get_schema_atual
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.retail_chains")
+            for row in cursor_pg.fetchall():
+                migration.retail_chain_id_map[row[1]] = row[0]
+            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.store_segments")
+            for row in cursor_pg.fetchall():
+                migration.store_segment_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step3_migrate_store_brands()
+        elif step == '4':
+            # Carregar mapeamento de store_brands
+            from stores.stores_to_core import get_schema_atual
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.store_brands")
+            for row in cursor_pg.fetchall():
+                migration.store_brand_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step4_migrate_stores()
+        elif step == '5':
+            # Carregar mapeamento de stores
+            from stores.stores_to_core import get_schema_atual
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.stores")
+            for row in cursor_pg.fetchall():
+                migration.store_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step5_migrate_store_cnpjs()
+        elif step == '6':
+            # Carregar mapeamento de stores
+            from stores.stores_to_core import get_schema_atual
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.stores")
+            for row in cursor_pg.fetchall():
+                migration.store_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step6_migrate_addresses()
+        elif step == '7':
+            # Carregar mapeamento de stores
+            from stores.stores_to_core import get_schema_atual
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.stores")
+            for row in cursor_pg.fetchall():
+                migration.store_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step7_migrate_contacts()
+        else:
+            print(f"ERRO: Etapa '{step}' invalida para stores")
+            print("Etapas disponiveis: 1, 2, 3, 4, 5, 6, 7")
+            return
+    else:
+        # Executar migração completa
+        migration.run()
 
 
 def main():

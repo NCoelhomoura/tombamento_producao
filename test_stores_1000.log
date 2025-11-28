@@ -741,3 +741,229 @@
 2025-11-28 00:30:27,735 - INFO - Contacts: 383
 2025-11-28 00:30:27,735 - INFO - Erros: 0
 2025-11-28 00:30:27,735 - INFO - Nenhum erro encontrado!
+
+================================================================================
+ORCHESTRATOR DE MIGRACAO DE DADOS
+================================================================================
+Data/Hora: 2025-11-28 00:19:11.736035
+================================================================================
+Destino configurado para: HML
+
+Destino configurado: HML
+================================================================================
+
+================================================================================
+TASK 2: STORES
+================================================================================
+Data/Hora: 2025-11-28 00:19:11.986315
+Destino: HML
+Limite de linhas: 1000
+================================================================================
+
+================================================================================
+INICIANDO MIGRACAO: SQL Server PRD -> PostgreSQL HML (gmcore)
+================================================================================
+Data/Hora: 2025-11-28 00:19:12.041555
+================================================================================
+
+================================================================================
+ETAPA 1: MIGRANDO STORE_SEGMENTS
+================================================================================
+
+[ETAPA 1] Limpando tabela store_segments...
+OK - Tabela gmcore.store_segments truncada
+[ETAPA 1] Buscando dados do SQL Server...
+[ETAPA 1] Processando chunk 1 (14 registros)...
+[ETAPA 1] Chunk 1 processado: 14 registros inseridos, 0 erros
+
+[ETAPA 1] CONCLUIDA! Total de store_segments migrados: 14
+
+--------------------------------------------------------------------------------
+RELATORIO DE QUALIDADE - ETAPA 1: STORE_SEGMENTS
+--------------------------------------------------------------------------------
+
+ORIGEM (SQL Server PRD - CanalEstabelecimento):
+  Total de registros: 14
+
+DESTINO (PostgreSQL HML - gmcore.store_segments):
+  Total de registros: 14
+
+OK - Todos os registros foram migrados com sucesso!
+
+================================================================================
+ETAPA 2: MIGRANDO RETAIL_CHAINS
+================================================================================
+
+[ETAPA 2] Limpando tabela retail_chains...
+OK - Tabela gmcore.retail_chains truncada
+[ETAPA 2] Buscando dados do SQL Server...
+[ETAPA 2] Processando chunk 1 (1000 registros)...
+[ETAPA 2] Chunk 1 processado: 1000 registros inseridos, 0 erros
+
+[ETAPA 2] CONCLUIDA! Total de retail_chains migrados: 1000
+
+--------------------------------------------------------------------------------
+RELATORIO DE QUALIDADE - ETAPA 2: RETAIL_CHAINS
+--------------------------------------------------------------------------------
+
+ORIGEM (SQL Server PRD - Rede):
+  Total de registros: 1000
+
+DESTINO (PostgreSQL HML - gmcore.retail_chains):
+  Total de registros: 1000
+
+OK - Todos os registros foram migrados com sucesso!
+
+================================================================================
+ETAPA 3: MIGRANDO STORE_BRANDS
+================================================================================
+
+[ETAPA 3] Limpando tabela store_brands...
+OK - Tabela gmcore.store_brands truncada
+[ETAPA 3] Carregando mapeamentos de retail_chains e store_segments...
+[ETAPA 3] 1000 retail_chains e 14 store_segments carregados
+[ETAPA 3] Buscando dados do SQL Server...
+[ETAPA 3] Processando chunk 1 (1000 registros)...
+[ETAPA 3] Chunk 1 processado: 1000 registros inseridos, 0 erros
+
+[ETAPA 3] CONCLUIDA! Total de store_brands migrados: 1000
+
+--------------------------------------------------------------------------------
+RELATORIO DE QUALIDADE - ETAPA 3: STORE_BRANDS
+--------------------------------------------------------------------------------
+
+ORIGEM (SQL Server PRD - Bandeira):
+  Total de registros: 1000
+
+DESTINO (PostgreSQL HML - gmcore.store_brands):
+  Total de registros: 1000
+
+OK - Todos os registros foram migrados com sucesso!
+
+================================================================================
+ETAPA 4: MIGRANDO STORES
+================================================================================
+
+[ETAPA 4] Limpando tabela stores...
+OK - Tabela gmcore.stores truncada
+[ETAPA 4] Carregando mapeamento de store_brands...
+[ETAPA 4] 1000 store_brands carregados
+[ETAPA 4] Buscando dados do SQL Server...
+[ETAPA 4] Processando chunk 1 (1000 registros)...
+[ETAPA 4] Chunk 1 processado: 1000 registros inseridos, 0 erros
+
+[ETAPA 4] CONCLUIDA! Total de stores migrados: 1000
+
+--------------------------------------------------------------------------------
+RELATORIO DE QUALIDADE - ETAPA 4: STORES
+--------------------------------------------------------------------------------
+
+ORIGEM (SQL Server PRD - Estabelecimento):
+  Total de registros: 1000
+
+DESTINO (PostgreSQL HML - gmcore.stores):
+  Total de registros: 1000
+
+OK - Todos os registros foram migrados com sucesso!
+
+================================================================================
+ETAPA 5: MIGRANDO STORE_CNPJS
+================================================================================
+
+[ETAPA 5] Limpando tabela store_cnpjs...
+OK - Tabela gmcore.store_cnpjs truncada
+[ETAPA 5] Buscando dados do SQL Server...
+[ETAPA 5] Processando chunk 1 (1000 registros)...
+[ETAPA 5] Chunk 1 processado: 1000 registros inseridos, 0 erros
+
+[ETAPA 5] CONCLUIDA! Total de store_cnpjs migrados: 1000
+
+--------------------------------------------------------------------------------
+RELATORIO DE QUALIDADE - ETAPA 5: STORE_CNPJS
+--------------------------------------------------------------------------------
+
+ORIGEM (SQL Server PRD - Estabelecimento com CNPJ):
+  Total de registros: 1000
+
+DESTINO (PostgreSQL HML - gmcore.store_cnpjs):
+  Total de registros: 1000
+
+OK - Todos os registros foram migrados com sucesso!
+
+================================================================================
+ETAPA 6: MIGRANDO ADDRESSES (STORES)
+================================================================================
+
+[ETAPA 6] Limpando addresses de stores...
+OK - Tabela gmcore.addresses: 10 registros deletados (tipo: stores)
+[ETAPA 6] Buscando dados do SQL Server...
+[ETAPA 6] Processando chunk 1 (1000 registros)...
+[ETAPA 6] Chunk 1 processado: 1000 enderecos inseridos, 0 erros
+
+[ETAPA 6] CONCLUIDA! Total de addresses migrados: 1000
+
+--------------------------------------------------------------------------------
+RELATORIO DE QUALIDADE - ETAPA 6: ADDRESSES (STORES)
+--------------------------------------------------------------------------------
+
+ORIGEM (SQL Server PRD - Estabelecimento):
+  Total de enderecos: 1000
+
+DESTINO (PostgreSQL HML - gmcore.addresses):
+  Total inserido (addressable_type='stores'): 1000
+
+OK - Todos os enderecos foram migrados com sucesso!
+
+================================================================================
+ETAPA 7: MIGRANDO CONTACTS (STORES)
+================================================================================
+
+[ETAPA 7] Limpando contacts de stores...
+OK - Tabela gmcore.contacts: 6 registros deletados (tipo: stores)
+[ETAPA 7] Buscando dados do SQL Server...
+[ETAPA 7] Processando chunk 1 (381 registros)...
+[ETAPA 7] Chunk 1 processado: 383 contacts inseridos, 0 erros
+
+[ETAPA 7] CONCLUIDA! Total de contacts migrados: 383
+
+--------------------------------------------------------------------------------
+RELATORIO DE QUALIDADE - ETAPA 7: CONTACTS (STORES)
+--------------------------------------------------------------------------------
+
+ORIGEM (SQL Server PRD - Estabelecimento):
+  Emails: 381
+  Telefones: 1
+  Celulares Gerente: 1
+  Total esperado: 383
+
+DESTINO (PostgreSQL HML - gmcore.contacts):
+  Emails (type='email'): 381
+  Telefones (type='phone'): 1
+  Celulares (type='cellphone'): 1
+  Total inserido: 383
+
+OK - Todos os contacts foram migrados com sucesso!
+
+================================================================================
+MIGRACAO CONCLUIDA COM SUCESSO!
+================================================================================
+
+Duracao total: 0:11:15.692624
+
+ESTATISTICAS FINAIS:
+  Store Segments: 14
+  Retail Chains: 1000
+  Store Brands: 1000
+  Stores: 1000
+  Store CNPJs: 1000
+  Addresses: 1000
+  Contacts: 383
+  Erros: 0
+
+OK - Nenhum erro encontrado!
+
+Destino utilizado: HML
+
+================================================================================
+ORCHESTRATOR CONCLUIDO
+================================================================================
