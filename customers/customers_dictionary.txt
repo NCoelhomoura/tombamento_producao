@@ -1,0 +1,889 @@
+====================================================================================================
+DICIONARIO DE MIGRACAO DE DADOS
+====================================================================================================
+
+ORIGEM: SQL Server PRD (Database: FINANCEIRO)
+DESTINO: PostgreSQL HML (Database: supera_dev_seed, Schema: gmcore)
+
+====================================================================================================
+
+====================================================================================================
+TABELA DESTINO: ADDRESSES
+TABELA ORIGEM: Cliente
+====================================================================================================
+
+ORIGEM - SQL Server PRD - Tabela: Cliente
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+Codigo                                   int                            10              SIM        NAO  
+TipoPessoa                               nvarchar(1)                    1               NAO        NAO  
+CpfCnpj                                  nvarchar(30)                   30              SIM        NAO  
+InscricaoEstadual                        nvarchar(30)                   30              SIM        NAO  
+InscricaoMunicipal                       nvarchar(30)                   30              SIM        NAO  
+RazaoSocial                              nvarchar(255)                  255             NAO        NAO  
+NomeFantasia                             nvarchar(255)                  255             NAO        NAO  
+NomeSistema                              nvarchar(255)                  255             SIM        NAO  
+Email                                    nvarchar(255)                  255             SIM        NAO  
+Telefone                                 nvarchar(20)                   20              SIM        NAO  
+Celular                                  nvarchar(20)                   20              SIM        NAO  
+PessoaContato                            nvarchar(255)                  255             SIM        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+Endereco                                 nvarchar(400)                  400             SIM        NAO  
+Numero                                   nvarchar(100)                  100             SIM        NAO  
+Complemento                              nvarchar(300)                  300             SIM        NAO  
+Bairro                                   nvarchar(400)                  400             SIM        NAO  
+CEP                                      nvarchar(20)                   20              SIM        NAO  
+Cidade                                   nvarchar(400)                  400             SIM        NAO  
+CodigoMunicipio                          nvarchar(100)                  100             SIM        NAO  
+UF                                       nvarchar(5)                    5               SIM        NAO  
+CepCobranca                              nvarchar(20)                   20              SIM        NAO  
+EnderecoCobranca                         nvarchar(400)                  400             SIM        NAO  
+NumeroCobranca                           nvarchar(100)                  100             SIM        NAO  
+ComplementoCobranca                      nvarchar(300)                  300             SIM        NAO  
+BairroCobranca                           nvarchar(400)                  400             SIM        NAO  
+CidadeCobranca                           nvarchar(400)                  400             SIM        NAO  
+CodigoMunicipioCobranca                  nvarchar(100)                  100             SIM        NAO  
+UFCobranca                               nvarchar(5)                    5               SIM        NAO  
+DataInclusao                             datetime                       -               NAO        NAO  
+DataAlteracao                            datetime                       -               SIM        NAO  
+IdUsuarioInclusao                        int                            10              NAO        NAO  
+IdUsuarioAlteracao                       int                            10              SIM        NAO  
+NomeSocio                                nvarchar(400)                  400             SIM        NAO  
+EnderecoSocio                            nvarchar(400)                  400             SIM        NAO  
+NumeroSocio                              nvarchar(100)                  100             SIM        NAO  
+BairroSocio                              nvarchar(400)                  400             SIM        NAO  
+CEPSocio                                 nvarchar(50)                   50              SIM        NAO  
+CidadeSocio                              nvarchar(400)                  400             SIM        NAO  
+CodigoMunicipioSocio                     nvarchar(100)                  100             SIM        NAO  
+UFSocio                                  nvarchar(5)                    5               SIM        NAO  
+TelefoneSocio                            nvarchar(50)                   50              SIM        NAO  
+EmailSocio                               nvarchar(255)                  255             SIM        NAO  
+RGSocio                                  nvarchar(255)                  255             SIM        NAO  
+CPFSocio                                 nvarchar(50)                   50              SIM        NAO  
+NacionalidadeSocio                       nvarchar(150)                  150             SIM        NAO  
+EstCivilSocio                            int                            10              NAO        NAO  
+CargoSocio                               nvarchar(400)                  400             SIM        NAO  
+FuncaoPgtoFaturamento                    nvarchar(255)                  255             SIM        NAO  
+ResponsavelCompra                        nvarchar(255)                  255             SIM        NAO  
+FuncaoResponsavel                        nvarchar(255)                  255             SIM        NAO  
+TelefoneResponsavel                      nvarchar(255)                  255             SIM        NAO  
+EmailResponsavel                         nvarchar(255)                  255             SIM        NAO  
+OptanteSimplesNacional                   bit                            -               NAO        NAO  
+Juros                                    decimal(18,2)                  18,2            SIM        NAO  
+Multa                                    decimal(18,2)                  18,2            SIM        NAO  
+CodigoServicoNfse                        nvarchar(50)                   50              SIM        NAO  
+DescricaoServicoNfse                     nvarchar(400)                  400             SIM        NAO  
+AliquotaIssNfse                          decimal(18,2)                  18,2            SIM        NAO  
+Latitude                                 nvarchar(30)                   30              SIM        NAO  
+Longitude                                nvarchar(30)                   30              SIM        NAO  
+ComplementoSocio                         nvarchar(400)                  400             SIM        NAO  
+DiscriminacaoNFse                        nvarchar(400)                  400             SIM        NAO  
+TipoAbatimentoISS                        nvarchar(1)                    1               SIM        NAO  
+IntegradoComPdvActionGmPromo             bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionGmPromo      int                            10              SIM        NAO  
+DataIntegracaoPdvActionGmPromo           datetime                       -               SIM        NAO  
+IntegradoComPdvActionSiga                bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionSiga         int                            10              SIM        NAO  
+DataIntegracaoPdvActionSiga              datetime                       -               SIM        NAO  
+IdClientePai                             int                            10              SIM        NAO  
+NomePagador                              nvarchar(30)                   30              SIM        NAO  
+DataAtivacao                             datetime                       -               SIM        NAO  
+IdUsuarioAtivacao                        int                            10              SIM        NAO  
+DataInativacao                           datetime                       -               SIM        NAO  
+IdUsuarioInativacao                      int                            10              SIM        NAO  
+DiaMesAniversarioContrato                nvarchar(8)                    8               SIM        NAO  
+IdUsuarioComercialResponsavel            int                            10              SIM        NAO  
+EmailUsuarioComercialResponsavel         nvarchar(MAX)                  -1              SIM        NAO  
+EmailCobranca                            nvarchar(800)                  800             SIM        NAO  
+DiaFaturamento                           int                            10              SIM        NAO  
+DiaVencimento                            int                            10              SIM        NAO  
+BoletoAutomatico                         nvarchar(1)                    1               SIM        NAO  
+Observacoes                              nvarchar(800)                  800             SIM        NAO  
+IdBanco                                  int                            10              SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcore.addresses
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+legacy_id                                INTEGER                        32              SIM        NAO  
+addressable_id                           UUID                           -               NAO        NAO  
+addressable_type                         VARCHAR(255)                   255             NAO        NAO  
+type                                     VARCHAR(50)                    50              NAO        NAO  
+postal_code                              VARCHAR(10)                    10              NAO        NAO  
+street                                   VARCHAR(500)                   500             NAO        NAO  
+number                                   VARCHAR(20)                    20              NAO        NAO  
+address_line_2                           VARCHAR(200)                   200             SIM        NAO  
+neighborhood                             VARCHAR(100)                   100             NAO        NAO  
+city                                     VARCHAR(100)                   100             NAO        NAO  
+state                                    VARCHAR(2)                     2               NAO        NAO  
+latitude                                 DOUBLE PRECISION               53              SIM        NAO  
+longitude                                DOUBLE PRECISION               53              SIM        NAO  
+zone                                     VARCHAR(100)                   100             NAO        NAO  
+region                                   VARCHAR(100)                   100             NAO        NAO  
+municipal_code                           INTEGER                        32              NAO        NAO  
+deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+====================================================================================================
+TABELA DESTINO: CUSTOMER_SEGMENTS
+TABELA ORIGEM: SegmentoProduto
+====================================================================================================
+
+ORIGEM - SQL Server PRD - Tabela: SegmentoProduto
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+Codigo                                   int                            10              NAO        NAO  
+Nome                                     nvarchar(MAX)                  -1              SIM        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+IdUsuarioInclusao                        int                            10              NAO        NAO  
+DataInclusao                             datetime                       -               NAO        NAO  
+IdUsuarioAlteracao                       int                            10              SIM        NAO  
+DataAlteracao                            datetime                       -               SIM        NAO  
+IntegradoComPdvActionGmPromo             bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionGmPromo      int                            10              SIM        NAO  
+DataIntegracaoPdvActionGmPromo           datetime                       -               SIM        NAO  
+IntegradoComPdvActionSiga                bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionSiga         int                            10              SIM        NAO  
+DataIntegracaoPdvActionSiga              datetime                       -               SIM        NAO  
+DataAtivacao                             datetime                       -               SIM        NAO  
+IdUsuarioAtivacao                        int                            10              SIM        NAO  
+DataInativacao                           datetime                       -               SIM        NAO  
+IdUsuarioInativacao                      int                            10              SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcore.customer_segments
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+name                                     VARCHAR(255)                   255             NAO        NAO  
+is_active                                BOOLEAN                        -               NAO        NAO  
+deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+====================================================================================================
+TABELA DESTINO: CUSTOMERS
+TABELA ORIGEM: Cliente
+====================================================================================================
+
+ORIGEM - SQL Server PRD - Tabela: Cliente
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+Codigo                                   int                            10              SIM        NAO  
+TipoPessoa                               nvarchar(1)                    1               NAO        NAO  
+CpfCnpj                                  nvarchar(30)                   30              SIM        NAO  
+InscricaoEstadual                        nvarchar(30)                   30              SIM        NAO  
+InscricaoMunicipal                       nvarchar(30)                   30              SIM        NAO  
+RazaoSocial                              nvarchar(255)                  255             NAO        NAO  
+NomeFantasia                             nvarchar(255)                  255             NAO        NAO  
+NomeSistema                              nvarchar(255)                  255             SIM        NAO  
+Email                                    nvarchar(255)                  255             SIM        NAO  
+Telefone                                 nvarchar(20)                   20              SIM        NAO  
+Celular                                  nvarchar(20)                   20              SIM        NAO  
+PessoaContato                            nvarchar(255)                  255             SIM        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+Endereco                                 nvarchar(400)                  400             SIM        NAO  
+Numero                                   nvarchar(100)                  100             SIM        NAO  
+Complemento                              nvarchar(300)                  300             SIM        NAO  
+Bairro                                   nvarchar(400)                  400             SIM        NAO  
+CEP                                      nvarchar(20)                   20              SIM        NAO  
+Cidade                                   nvarchar(400)                  400             SIM        NAO  
+CodigoMunicipio                          nvarchar(100)                  100             SIM        NAO  
+UF                                       nvarchar(5)                    5               SIM        NAO  
+CepCobranca                              nvarchar(20)                   20              SIM        NAO  
+EnderecoCobranca                         nvarchar(400)                  400             SIM        NAO  
+NumeroCobranca                           nvarchar(100)                  100             SIM        NAO  
+ComplementoCobranca                      nvarchar(300)                  300             SIM        NAO  
+BairroCobranca                           nvarchar(400)                  400             SIM        NAO  
+CidadeCobranca                           nvarchar(400)                  400             SIM        NAO  
+CodigoMunicipioCobranca                  nvarchar(100)                  100             SIM        NAO  
+UFCobranca                               nvarchar(5)                    5               SIM        NAO  
+DataInclusao                             datetime                       -               NAO        NAO  
+DataAlteracao                            datetime                       -               SIM        NAO  
+IdUsuarioInclusao                        int                            10              NAO        NAO  
+IdUsuarioAlteracao                       int                            10              SIM        NAO  
+NomeSocio                                nvarchar(400)                  400             SIM        NAO  
+EnderecoSocio                            nvarchar(400)                  400             SIM        NAO  
+NumeroSocio                              nvarchar(100)                  100             SIM        NAO  
+BairroSocio                              nvarchar(400)                  400             SIM        NAO  
+CEPSocio                                 nvarchar(50)                   50              SIM        NAO  
+CidadeSocio                              nvarchar(400)                  400             SIM        NAO  
+CodigoMunicipioSocio                     nvarchar(100)                  100             SIM        NAO  
+UFSocio                                  nvarchar(5)                    5               SIM        NAO  
+TelefoneSocio                            nvarchar(50)                   50              SIM        NAO  
+EmailSocio                               nvarchar(255)                  255             SIM        NAO  
+RGSocio                                  nvarchar(255)                  255             SIM        NAO  
+CPFSocio                                 nvarchar(50)                   50              SIM        NAO  
+NacionalidadeSocio                       nvarchar(150)                  150             SIM        NAO  
+EstCivilSocio                            int                            10              NAO        NAO  
+CargoSocio                               nvarchar(400)                  400             SIM        NAO  
+FuncaoPgtoFaturamento                    nvarchar(255)                  255             SIM        NAO  
+ResponsavelCompra                        nvarchar(255)                  255             SIM        NAO  
+FuncaoResponsavel                        nvarchar(255)                  255             SIM        NAO  
+TelefoneResponsavel                      nvarchar(255)                  255             SIM        NAO  
+EmailResponsavel                         nvarchar(255)                  255             SIM        NAO  
+OptanteSimplesNacional                   bit                            -               NAO        NAO  
+Juros                                    decimal(18,2)                  18,2            SIM        NAO  
+Multa                                    decimal(18,2)                  18,2            SIM        NAO  
+CodigoServicoNfse                        nvarchar(50)                   50              SIM        NAO  
+DescricaoServicoNfse                     nvarchar(400)                  400             SIM        NAO  
+AliquotaIssNfse                          decimal(18,2)                  18,2            SIM        NAO  
+Latitude                                 nvarchar(30)                   30              SIM        NAO  
+Longitude                                nvarchar(30)                   30              SIM        NAO  
+ComplementoSocio                         nvarchar(400)                  400             SIM        NAO  
+DiscriminacaoNFse                        nvarchar(400)                  400             SIM        NAO  
+TipoAbatimentoISS                        nvarchar(1)                    1               SIM        NAO  
+IntegradoComPdvActionGmPromo             bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionGmPromo      int                            10              SIM        NAO  
+DataIntegracaoPdvActionGmPromo           datetime                       -               SIM        NAO  
+IntegradoComPdvActionSiga                bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionSiga         int                            10              SIM        NAO  
+DataIntegracaoPdvActionSiga              datetime                       -               SIM        NAO  
+IdClientePai                             int                            10              SIM        NAO  
+NomePagador                              nvarchar(30)                   30              SIM        NAO  
+DataAtivacao                             datetime                       -               SIM        NAO  
+IdUsuarioAtivacao                        int                            10              SIM        NAO  
+DataInativacao                           datetime                       -               SIM        NAO  
+IdUsuarioInativacao                      int                            10              SIM        NAO  
+DiaMesAniversarioContrato                nvarchar(8)                    8               SIM        NAO  
+IdUsuarioComercialResponsavel            int                            10              SIM        NAO  
+EmailUsuarioComercialResponsavel         nvarchar(MAX)                  -1              SIM        NAO  
+EmailCobranca                            nvarchar(800)                  800             SIM        NAO  
+DiaFaturamento                           int                            10              SIM        NAO  
+DiaVencimento                            int                            10              SIM        NAO  
+BoletoAutomatico                         nvarchar(1)                    1               SIM        NAO  
+Observacoes                              nvarchar(800)                  800             SIM        NAO  
+IdBanco                                  int                            10              SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcore.customers
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+legacy_id                                INTEGER                        32              SIM        NAO  
+cnpj                                     VARCHAR(20)                    20              NAO        NAO  
+cnpj_status                              VARCHAR(50)                    50              NAO        NAO  
+state_registration                       VARCHAR(20)                    20              SIM        NAO  
+municipal_registration                   VARCHAR(20)                    20              SIM        NAO  
+legal_name                               VARCHAR(255)                   255             NAO        NAO  
+trade_name                               VARCHAR(255)                   255             NAO        NAO  
+company_size                             VARCHAR(50)                    50              SIM        NAO  
+status                                   VARCHAR(50)                    50              NAO        NAO  
+deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+
+====================================================================================================
+MAPEAMENTO DETALHADO CAMPO A CAMPO
+====================================================================================================
+
+Formato: origem.dbo.tabela.campo : destino.schema.tabela.campo
+
+
+====================================================================================================
+MIGRACAO: CLIENTE -> ADDRESSES
+====================================================================================================
+
+ORIGEM: FINANCEIRO.dbo.Cliente
+DESTINO: supera_dev_seed.gmcore.addresses
+
+----------------------------------------------------------------------------------------------------
+ORIGEM                                             : DESTINO                                           
+----------------------------------------------------------------------------------------------------
+
+CAMPOS DISPONIVEIS NA ORIGEM:
+  FINANCEIRO.dbo.Cliente.Id
+  FINANCEIRO.dbo.Cliente.Codigo
+  FINANCEIRO.dbo.Cliente.TipoPessoa
+  FINANCEIRO.dbo.Cliente.CpfCnpj
+  FINANCEIRO.dbo.Cliente.InscricaoEstadual
+  FINANCEIRO.dbo.Cliente.InscricaoMunicipal
+  FINANCEIRO.dbo.Cliente.RazaoSocial
+  FINANCEIRO.dbo.Cliente.NomeFantasia
+  FINANCEIRO.dbo.Cliente.NomeSistema
+  FINANCEIRO.dbo.Cliente.Email
+  FINANCEIRO.dbo.Cliente.Telefone
+  FINANCEIRO.dbo.Cliente.Celular
+  FINANCEIRO.dbo.Cliente.PessoaContato
+  FINANCEIRO.dbo.Cliente.Ativo
+  FINANCEIRO.dbo.Cliente.Endereco
+  FINANCEIRO.dbo.Cliente.Numero
+  FINANCEIRO.dbo.Cliente.Complemento
+  FINANCEIRO.dbo.Cliente.Bairro
+  FINANCEIRO.dbo.Cliente.CEP
+  FINANCEIRO.dbo.Cliente.Cidade
+  FINANCEIRO.dbo.Cliente.CodigoMunicipio
+  FINANCEIRO.dbo.Cliente.UF
+  FINANCEIRO.dbo.Cliente.CepCobranca
+  FINANCEIRO.dbo.Cliente.EnderecoCobranca
+  FINANCEIRO.dbo.Cliente.NumeroCobranca
+  FINANCEIRO.dbo.Cliente.ComplementoCobranca
+  FINANCEIRO.dbo.Cliente.BairroCobranca
+  FINANCEIRO.dbo.Cliente.CidadeCobranca
+  FINANCEIRO.dbo.Cliente.CodigoMunicipioCobranca
+  FINANCEIRO.dbo.Cliente.UFCobranca
+  FINANCEIRO.dbo.Cliente.DataInclusao
+  FINANCEIRO.dbo.Cliente.DataAlteracao
+  FINANCEIRO.dbo.Cliente.IdUsuarioInclusao
+  FINANCEIRO.dbo.Cliente.IdUsuarioAlteracao
+  FINANCEIRO.dbo.Cliente.NomeSocio
+  FINANCEIRO.dbo.Cliente.EnderecoSocio
+  FINANCEIRO.dbo.Cliente.NumeroSocio
+  FINANCEIRO.dbo.Cliente.BairroSocio
+  FINANCEIRO.dbo.Cliente.CEPSocio
+  FINANCEIRO.dbo.Cliente.CidadeSocio
+  FINANCEIRO.dbo.Cliente.CodigoMunicipioSocio
+  FINANCEIRO.dbo.Cliente.UFSocio
+  FINANCEIRO.dbo.Cliente.TelefoneSocio
+  FINANCEIRO.dbo.Cliente.EmailSocio
+  FINANCEIRO.dbo.Cliente.RGSocio
+  FINANCEIRO.dbo.Cliente.CPFSocio
+  FINANCEIRO.dbo.Cliente.NacionalidadeSocio
+  FINANCEIRO.dbo.Cliente.EstCivilSocio
+  FINANCEIRO.dbo.Cliente.CargoSocio
+  FINANCEIRO.dbo.Cliente.FuncaoPgtoFaturamento
+  FINANCEIRO.dbo.Cliente.ResponsavelCompra
+  FINANCEIRO.dbo.Cliente.FuncaoResponsavel
+  FINANCEIRO.dbo.Cliente.TelefoneResponsavel
+  FINANCEIRO.dbo.Cliente.EmailResponsavel
+  FINANCEIRO.dbo.Cliente.OptanteSimplesNacional
+  FINANCEIRO.dbo.Cliente.Juros
+  FINANCEIRO.dbo.Cliente.Multa
+  FINANCEIRO.dbo.Cliente.CodigoServicoNfse
+  FINANCEIRO.dbo.Cliente.DescricaoServicoNfse
+  FINANCEIRO.dbo.Cliente.AliquotaIssNfse
+  FINANCEIRO.dbo.Cliente.Latitude
+  FINANCEIRO.dbo.Cliente.Longitude
+  FINANCEIRO.dbo.Cliente.ComplementoSocio
+  FINANCEIRO.dbo.Cliente.DiscriminacaoNFse
+  FINANCEIRO.dbo.Cliente.TipoAbatimentoISS
+  FINANCEIRO.dbo.Cliente.IntegradoComPdvActionGmPromo
+  FINANCEIRO.dbo.Cliente.IdUsuarioIntegracaoPdvActionGmPromo
+  FINANCEIRO.dbo.Cliente.DataIntegracaoPdvActionGmPromo
+  FINANCEIRO.dbo.Cliente.IntegradoComPdvActionSiga
+  FINANCEIRO.dbo.Cliente.IdUsuarioIntegracaoPdvActionSiga
+  FINANCEIRO.dbo.Cliente.DataIntegracaoPdvActionSiga
+  FINANCEIRO.dbo.Cliente.IdClientePai
+  FINANCEIRO.dbo.Cliente.NomePagador
+  FINANCEIRO.dbo.Cliente.DataAtivacao
+  FINANCEIRO.dbo.Cliente.IdUsuarioAtivacao
+  FINANCEIRO.dbo.Cliente.DataInativacao
+  FINANCEIRO.dbo.Cliente.IdUsuarioInativacao
+  FINANCEIRO.dbo.Cliente.DiaMesAniversarioContrato
+  FINANCEIRO.dbo.Cliente.IdUsuarioComercialResponsavel
+  FINANCEIRO.dbo.Cliente.EmailUsuarioComercialResponsavel
+  FINANCEIRO.dbo.Cliente.EmailCobranca
+  FINANCEIRO.dbo.Cliente.DiaFaturamento
+  FINANCEIRO.dbo.Cliente.DiaVencimento
+  FINANCEIRO.dbo.Cliente.BoletoAutomatico
+  FINANCEIRO.dbo.Cliente.Observacoes
+  FINANCEIRO.dbo.Cliente.IdBanco
+
+CAMPOS DISPONIVEIS NO DESTINO:
+  supera_dev_seed.gmcore.addresses.id
+  supera_dev_seed.gmcore.addresses.legacy_id
+  supera_dev_seed.gmcore.addresses.addressable_id
+  supera_dev_seed.gmcore.addresses.addressable_type
+  supera_dev_seed.gmcore.addresses.type
+  supera_dev_seed.gmcore.addresses.postal_code
+  supera_dev_seed.gmcore.addresses.street
+  supera_dev_seed.gmcore.addresses.number
+  supera_dev_seed.gmcore.addresses.address_line_2
+  supera_dev_seed.gmcore.addresses.neighborhood
+  supera_dev_seed.gmcore.addresses.city
+  supera_dev_seed.gmcore.addresses.state
+  supera_dev_seed.gmcore.addresses.latitude
+  supera_dev_seed.gmcore.addresses.longitude
+  supera_dev_seed.gmcore.addresses.zone
+  supera_dev_seed.gmcore.addresses.region
+  supera_dev_seed.gmcore.addresses.municipal_code
+  supera_dev_seed.gmcore.addresses.deleted_at
+  supera_dev_seed.gmcore.addresses.created_at
+  supera_dev_seed.gmcore.addresses.updated_at
+
+MAPEAMENTO SUGERIDO (baseado em nomes similares):
+----------------------------------------------------------------------------------------------------
+[GERADO AUTOMATICAMENTE]                           : supera_dev_seed.gmcore.addresses.id
+FINANCEIRO.dbo.Cliente.Id                          : supera_dev_seed.gmcore.addresses.legacy_id        
+[PREENCHIDO PELA LOGICA DE MIGRACAO]               : supera_dev_seed.gmcore.addresses.addressable_id
+[PREENCHIDO PELA LOGICA DE MIGRACAO]               : supera_dev_seed.gmcore.addresses.addressable_type
+FINANCEIRO.dbo.Cliente.CEP                         : supera_dev_seed.gmcore.addresses.postal_code      
+FINANCEIRO.dbo.Cliente.Endereco                    : supera_dev_seed.gmcore.addresses.street           
+FINANCEIRO.dbo.Cliente.Numero                      : supera_dev_seed.gmcore.addresses.number           
+FINANCEIRO.dbo.Cliente.Complemento                 : supera_dev_seed.gmcore.addresses.address_line_2   
+FINANCEIRO.dbo.Cliente.Bairro                      : supera_dev_seed.gmcore.addresses.neighborhood     
+FINANCEIRO.dbo.Cliente.Cidade                      : supera_dev_seed.gmcore.addresses.city             
+FINANCEIRO.dbo.Cliente.UF                          : supera_dev_seed.gmcore.addresses.state            
+FINANCEIRO.dbo.Cliente.Latitude                    : supera_dev_seed.gmcore.addresses.latitude         
+FINANCEIRO.dbo.Cliente.Longitude                   : supera_dev_seed.gmcore.addresses.longitude        
+FINANCEIRO.dbo.Cliente.CodigoMunicipio             : supera_dev_seed.gmcore.addresses.municipal_code   
+FINANCEIRO.dbo.Cliente.DataInclusao                : supera_dev_seed.gmcore.addresses.created_at       
+FINANCEIRO.dbo.Cliente.DataAlteracao               : supera_dev_seed.gmcore.addresses.updated_at       
+
+CAMPOS DE DESTINO NAO MAPEADOS:
+  supera_dev_seed.gmcore.addresses.type              : [MAPEAMENTO MANUAL NECESSARIO]
+  supera_dev_seed.gmcore.addresses.zone              : [MAPEAMENTO MANUAL NECESSARIO]
+  supera_dev_seed.gmcore.addresses.region            : [MAPEAMENTO MANUAL NECESSARIO]
+  supera_dev_seed.gmcore.addresses.deleted_at        : [MAPEAMENTO MANUAL NECESSARIO]
+
+CAMPOS DE ORIGEM NAO MAPEADOS:
+  FINANCEIRO.dbo.Cliente.Codigo                      : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.TipoPessoa                  : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CpfCnpj                     : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.InscricaoEstadual           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.InscricaoMunicipal          : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.RazaoSocial                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.NomeFantasia                : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.NomeSistema                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Email                       : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Telefone                    : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Celular                     : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.PessoaContato               : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Ativo                       : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CepCobranca                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.EnderecoCobranca            : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.NumeroCobranca              : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.ComplementoCobranca         : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.BairroCobranca              : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CidadeCobranca              : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CodigoMunicipioCobranca     : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.UFCobranca                  : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdUsuarioInclusao           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdUsuarioAlteracao          : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.NomeSocio                   : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.EnderecoSocio               : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.NumeroSocio                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.BairroSocio                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CEPSocio                    : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CidadeSocio                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CodigoMunicipioSocio        : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.UFSocio                     : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.TelefoneSocio               : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.EmailSocio                  : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.RGSocio                     : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CPFSocio                    : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.NacionalidadeSocio          : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.EstCivilSocio               : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CargoSocio                  : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.FuncaoPgtoFaturamento       : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.ResponsavelCompra           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.FuncaoResponsavel           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.TelefoneResponsavel         : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.EmailResponsavel            : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.OptanteSimplesNacional      : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Juros                       : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Multa                       : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CodigoServicoNfse           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DescricaoServicoNfse        : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.AliquotaIssNfse             : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.ComplementoSocio            : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DiscriminacaoNFse           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.TipoAbatimentoISS           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IntegradoComPdvActionGmPromo : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdUsuarioIntegracaoPdvActionGmPromo : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DataIntegracaoPdvActionGmPromo : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IntegradoComPdvActionSiga   : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdUsuarioIntegracaoPdvActionSiga : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DataIntegracaoPdvActionSiga : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdClientePai                : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.NomePagador                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DataAtivacao                : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdUsuarioAtivacao           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DataInativacao              : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdUsuarioInativacao         : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DiaMesAniversarioContrato   : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdUsuarioComercialResponsavel : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.EmailUsuarioComercialResponsavel : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.EmailCobranca               : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DiaFaturamento              : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DiaVencimento               : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.BoletoAutomatico            : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Observacoes                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdBanco                     : [NAO MAPEADO]
+
+
+
+====================================================================================================
+MIGRACAO: SEGMENTOPRODUTO -> CUSTOMER_SEGMENTS
+====================================================================================================
+
+ORIGEM: FINANCEIRO.dbo.SegmentoProduto
+DESTINO: supera_dev_seed.gmcore.customer_segments
+
+----------------------------------------------------------------------------------------------------
+ORIGEM                                             : DESTINO                                           
+----------------------------------------------------------------------------------------------------
+
+CAMPOS DISPONIVEIS NA ORIGEM:
+  FINANCEIRO.dbo.SegmentoProduto.Id
+  FINANCEIRO.dbo.SegmentoProduto.Codigo
+  FINANCEIRO.dbo.SegmentoProduto.Nome
+  FINANCEIRO.dbo.SegmentoProduto.Ativo
+  FINANCEIRO.dbo.SegmentoProduto.IdUsuarioInclusao
+  FINANCEIRO.dbo.SegmentoProduto.DataInclusao
+  FINANCEIRO.dbo.SegmentoProduto.IdUsuarioAlteracao
+  FINANCEIRO.dbo.SegmentoProduto.DataAlteracao
+  FINANCEIRO.dbo.SegmentoProduto.IntegradoComPdvActionGmPromo
+  FINANCEIRO.dbo.SegmentoProduto.IdUsuarioIntegracaoPdvActionGmPromo
+  FINANCEIRO.dbo.SegmentoProduto.DataIntegracaoPdvActionGmPromo
+  FINANCEIRO.dbo.SegmentoProduto.IntegradoComPdvActionSiga
+  FINANCEIRO.dbo.SegmentoProduto.IdUsuarioIntegracaoPdvActionSiga
+  FINANCEIRO.dbo.SegmentoProduto.DataIntegracaoPdvActionSiga
+  FINANCEIRO.dbo.SegmentoProduto.DataAtivacao
+  FINANCEIRO.dbo.SegmentoProduto.IdUsuarioAtivacao
+  FINANCEIRO.dbo.SegmentoProduto.DataInativacao
+  FINANCEIRO.dbo.SegmentoProduto.IdUsuarioInativacao
+
+CAMPOS DISPONIVEIS NO DESTINO:
+  supera_dev_seed.gmcore.customer_segments.id
+  supera_dev_seed.gmcore.customer_segments.name
+  supera_dev_seed.gmcore.customer_segments.is_active
+  supera_dev_seed.gmcore.customer_segments.deleted_at
+  supera_dev_seed.gmcore.customer_segments.created_at
+  supera_dev_seed.gmcore.customer_segments.updated_at
+
+MAPEAMENTO SUGERIDO (baseado em nomes similares):
+----------------------------------------------------------------------------------------------------
+[GERADO AUTOMATICAMENTE]                           : supera_dev_seed.gmcore.customer_segments.id
+FINANCEIRO.dbo.SegmentoProduto.Nome                : supera_dev_seed.gmcore.customer_segments.name     
+FINANCEIRO.dbo.SegmentoProduto.Ativo               : supera_dev_seed.gmcore.customer_segments.is_active
+FINANCEIRO.dbo.SegmentoProduto.DataInclusao        : supera_dev_seed.gmcore.customer_segments.created_at
+FINANCEIRO.dbo.SegmentoProduto.DataAlteracao       : supera_dev_seed.gmcore.customer_segments.updated_at
+
+CAMPOS DE DESTINO NAO MAPEADOS:
+  supera_dev_seed.gmcore.customer_segments.deleted_at : [MAPEAMENTO MANUAL NECESSARIO]
+
+CAMPOS DE ORIGEM NAO MAPEADOS:
+  FINANCEIRO.dbo.SegmentoProduto.Id                  : [NAO MAPEADO]
+  FINANCEIRO.dbo.SegmentoProduto.Codigo              : [NAO MAPEADO]
+  FINANCEIRO.dbo.SegmentoProduto.IdUsuarioInclusao   : [NAO MAPEADO]
+  FINANCEIRO.dbo.SegmentoProduto.IdUsuarioAlteracao  : [NAO MAPEADO]
+  FINANCEIRO.dbo.SegmentoProduto.IntegradoComPdvActionGmPromo : [NAO MAPEADO]
+  FINANCEIRO.dbo.SegmentoProduto.IdUsuarioIntegracaoPdvActionGmPromo : [NAO MAPEADO]
+  FINANCEIRO.dbo.SegmentoProduto.DataIntegracaoPdvActionGmPromo : [NAO MAPEADO]
+  FINANCEIRO.dbo.SegmentoProduto.IntegradoComPdvActionSiga : [NAO MAPEADO]
+  FINANCEIRO.dbo.SegmentoProduto.IdUsuarioIntegracaoPdvActionSiga : [NAO MAPEADO]
+  FINANCEIRO.dbo.SegmentoProduto.DataIntegracaoPdvActionSiga : [NAO MAPEADO]
+  FINANCEIRO.dbo.SegmentoProduto.DataAtivacao        : [NAO MAPEADO]
+  FINANCEIRO.dbo.SegmentoProduto.IdUsuarioAtivacao   : [NAO MAPEADO]
+  FINANCEIRO.dbo.SegmentoProduto.DataInativacao      : [NAO MAPEADO]
+  FINANCEIRO.dbo.SegmentoProduto.IdUsuarioInativacao : [NAO MAPEADO]
+
+
+
+====================================================================================================
+MIGRACAO: CLIENTE -> CUSTOMERS
+====================================================================================================
+
+ORIGEM: FINANCEIRO.dbo.Cliente
+DESTINO: supera_dev_seed.gmcore.customers
+
+----------------------------------------------------------------------------------------------------
+ORIGEM                                             : DESTINO                                           
+----------------------------------------------------------------------------------------------------
+
+CAMPOS DISPONIVEIS NA ORIGEM:
+  FINANCEIRO.dbo.Cliente.Id
+  FINANCEIRO.dbo.Cliente.Codigo
+  FINANCEIRO.dbo.Cliente.TipoPessoa
+  FINANCEIRO.dbo.Cliente.CpfCnpj
+  FINANCEIRO.dbo.Cliente.InscricaoEstadual
+  FINANCEIRO.dbo.Cliente.InscricaoMunicipal
+  FINANCEIRO.dbo.Cliente.RazaoSocial
+  FINANCEIRO.dbo.Cliente.NomeFantasia
+  FINANCEIRO.dbo.Cliente.NomeSistema
+  FINANCEIRO.dbo.Cliente.Email
+  FINANCEIRO.dbo.Cliente.Telefone
+  FINANCEIRO.dbo.Cliente.Celular
+  FINANCEIRO.dbo.Cliente.PessoaContato
+  FINANCEIRO.dbo.Cliente.Ativo
+  FINANCEIRO.dbo.Cliente.Endereco
+  FINANCEIRO.dbo.Cliente.Numero
+  FINANCEIRO.dbo.Cliente.Complemento
+  FINANCEIRO.dbo.Cliente.Bairro
+  FINANCEIRO.dbo.Cliente.CEP
+  FINANCEIRO.dbo.Cliente.Cidade
+  FINANCEIRO.dbo.Cliente.CodigoMunicipio
+  FINANCEIRO.dbo.Cliente.UF
+  FINANCEIRO.dbo.Cliente.CepCobranca
+  FINANCEIRO.dbo.Cliente.EnderecoCobranca
+  FINANCEIRO.dbo.Cliente.NumeroCobranca
+  FINANCEIRO.dbo.Cliente.ComplementoCobranca
+  FINANCEIRO.dbo.Cliente.BairroCobranca
+  FINANCEIRO.dbo.Cliente.CidadeCobranca
+  FINANCEIRO.dbo.Cliente.CodigoMunicipioCobranca
+  FINANCEIRO.dbo.Cliente.UFCobranca
+  FINANCEIRO.dbo.Cliente.DataInclusao
+  FINANCEIRO.dbo.Cliente.DataAlteracao
+  FINANCEIRO.dbo.Cliente.IdUsuarioInclusao
+  FINANCEIRO.dbo.Cliente.IdUsuarioAlteracao
+  FINANCEIRO.dbo.Cliente.NomeSocio
+  FINANCEIRO.dbo.Cliente.EnderecoSocio
+  FINANCEIRO.dbo.Cliente.NumeroSocio
+  FINANCEIRO.dbo.Cliente.BairroSocio
+  FINANCEIRO.dbo.Cliente.CEPSocio
+  FINANCEIRO.dbo.Cliente.CidadeSocio
+  FINANCEIRO.dbo.Cliente.CodigoMunicipioSocio
+  FINANCEIRO.dbo.Cliente.UFSocio
+  FINANCEIRO.dbo.Cliente.TelefoneSocio
+  FINANCEIRO.dbo.Cliente.EmailSocio
+  FINANCEIRO.dbo.Cliente.RGSocio
+  FINANCEIRO.dbo.Cliente.CPFSocio
+  FINANCEIRO.dbo.Cliente.NacionalidadeSocio
+  FINANCEIRO.dbo.Cliente.EstCivilSocio
+  FINANCEIRO.dbo.Cliente.CargoSocio
+  FINANCEIRO.dbo.Cliente.FuncaoPgtoFaturamento
+  FINANCEIRO.dbo.Cliente.ResponsavelCompra
+  FINANCEIRO.dbo.Cliente.FuncaoResponsavel
+  FINANCEIRO.dbo.Cliente.TelefoneResponsavel
+  FINANCEIRO.dbo.Cliente.EmailResponsavel
+  FINANCEIRO.dbo.Cliente.OptanteSimplesNacional
+  FINANCEIRO.dbo.Cliente.Juros
+  FINANCEIRO.dbo.Cliente.Multa
+  FINANCEIRO.dbo.Cliente.CodigoServicoNfse
+  FINANCEIRO.dbo.Cliente.DescricaoServicoNfse
+  FINANCEIRO.dbo.Cliente.AliquotaIssNfse
+  FINANCEIRO.dbo.Cliente.Latitude
+  FINANCEIRO.dbo.Cliente.Longitude
+  FINANCEIRO.dbo.Cliente.ComplementoSocio
+  FINANCEIRO.dbo.Cliente.DiscriminacaoNFse
+  FINANCEIRO.dbo.Cliente.TipoAbatimentoISS
+  FINANCEIRO.dbo.Cliente.IntegradoComPdvActionGmPromo
+  FINANCEIRO.dbo.Cliente.IdUsuarioIntegracaoPdvActionGmPromo
+  FINANCEIRO.dbo.Cliente.DataIntegracaoPdvActionGmPromo
+  FINANCEIRO.dbo.Cliente.IntegradoComPdvActionSiga
+  FINANCEIRO.dbo.Cliente.IdUsuarioIntegracaoPdvActionSiga
+  FINANCEIRO.dbo.Cliente.DataIntegracaoPdvActionSiga
+  FINANCEIRO.dbo.Cliente.IdClientePai
+  FINANCEIRO.dbo.Cliente.NomePagador
+  FINANCEIRO.dbo.Cliente.DataAtivacao
+  FINANCEIRO.dbo.Cliente.IdUsuarioAtivacao
+  FINANCEIRO.dbo.Cliente.DataInativacao
+  FINANCEIRO.dbo.Cliente.IdUsuarioInativacao
+  FINANCEIRO.dbo.Cliente.DiaMesAniversarioContrato
+  FINANCEIRO.dbo.Cliente.IdUsuarioComercialResponsavel
+  FINANCEIRO.dbo.Cliente.EmailUsuarioComercialResponsavel
+  FINANCEIRO.dbo.Cliente.EmailCobranca
+  FINANCEIRO.dbo.Cliente.DiaFaturamento
+  FINANCEIRO.dbo.Cliente.DiaVencimento
+  FINANCEIRO.dbo.Cliente.BoletoAutomatico
+  FINANCEIRO.dbo.Cliente.Observacoes
+  FINANCEIRO.dbo.Cliente.IdBanco
+
+CAMPOS DISPONIVEIS NO DESTINO:
+  supera_dev_seed.gmcore.customers.id
+  supera_dev_seed.gmcore.customers.legacy_id
+  supera_dev_seed.gmcore.customers.cnpj
+  supera_dev_seed.gmcore.customers.cnpj_status
+  supera_dev_seed.gmcore.customers.state_registration
+  supera_dev_seed.gmcore.customers.municipal_registration
+  supera_dev_seed.gmcore.customers.legal_name
+  supera_dev_seed.gmcore.customers.trade_name
+  supera_dev_seed.gmcore.customers.company_size
+  supera_dev_seed.gmcore.customers.status
+  supera_dev_seed.gmcore.customers.deleted_at
+  supera_dev_seed.gmcore.customers.created_at
+  supera_dev_seed.gmcore.customers.updated_at
+
+MAPEAMENTO SUGERIDO (baseado em nomes similares):
+----------------------------------------------------------------------------------------------------
+[GERADO AUTOMATICAMENTE]                           : supera_dev_seed.gmcore.customers.id
+FINANCEIRO.dbo.Cliente.Id                          : supera_dev_seed.gmcore.customers.legacy_id        
+FINANCEIRO.dbo.Cliente.CpfCnpj                     : supera_dev_seed.gmcore.customers.cnpj             
+FINANCEIRO.dbo.Cliente.CpfCnpj                     : supera_dev_seed.gmcore.customers.cnpj_status      
+FINANCEIRO.dbo.Cliente.InscricaoEstadual           : supera_dev_seed.gmcore.customers.state_registration
+FINANCEIRO.dbo.Cliente.InscricaoMunicipal          : supera_dev_seed.gmcore.customers.municipal_registration
+FINANCEIRO.dbo.Cliente.RazaoSocial                 : supera_dev_seed.gmcore.customers.legal_name       
+FINANCEIRO.dbo.Cliente.NomeFantasia                : supera_dev_seed.gmcore.customers.trade_name       
+FINANCEIRO.dbo.Cliente.DataInclusao                : supera_dev_seed.gmcore.customers.created_at       
+FINANCEIRO.dbo.Cliente.DataAlteracao               : supera_dev_seed.gmcore.customers.updated_at       
+
+CAMPOS DE DESTINO NAO MAPEADOS:
+  supera_dev_seed.gmcore.customers.company_size      : [MAPEAMENTO MANUAL NECESSARIO]
+  supera_dev_seed.gmcore.customers.status            : [MAPEAMENTO MANUAL NECESSARIO]
+  supera_dev_seed.gmcore.customers.deleted_at        : [MAPEAMENTO MANUAL NECESSARIO]
+
+CAMPOS DE ORIGEM NAO MAPEADOS:
+  FINANCEIRO.dbo.Cliente.Codigo                      : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.TipoPessoa                  : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.NomeSistema                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Email                       : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Telefone                    : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Celular                     : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.PessoaContato               : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Ativo                       : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Endereco                    : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Numero                      : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Complemento                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Bairro                      : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CEP                         : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Cidade                      : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CodigoMunicipio             : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.UF                          : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CepCobranca                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.EnderecoCobranca            : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.NumeroCobranca              : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.ComplementoCobranca         : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.BairroCobranca              : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CidadeCobranca              : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CodigoMunicipioCobranca     : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.UFCobranca                  : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdUsuarioInclusao           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdUsuarioAlteracao          : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.NomeSocio                   : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.EnderecoSocio               : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.NumeroSocio                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.BairroSocio                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CEPSocio                    : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CidadeSocio                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CodigoMunicipioSocio        : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.UFSocio                     : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.TelefoneSocio               : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.EmailSocio                  : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.RGSocio                     : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CPFSocio                    : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.NacionalidadeSocio          : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.EstCivilSocio               : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CargoSocio                  : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.FuncaoPgtoFaturamento       : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.ResponsavelCompra           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.FuncaoResponsavel           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.TelefoneResponsavel         : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.EmailResponsavel            : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.OptanteSimplesNacional      : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Juros                       : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Multa                       : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.CodigoServicoNfse           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DescricaoServicoNfse        : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.AliquotaIssNfse             : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Latitude                    : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Longitude                   : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.ComplementoSocio            : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DiscriminacaoNFse           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.TipoAbatimentoISS           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IntegradoComPdvActionGmPromo : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdUsuarioIntegracaoPdvActionGmPromo : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DataIntegracaoPdvActionGmPromo : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IntegradoComPdvActionSiga   : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdUsuarioIntegracaoPdvActionSiga : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DataIntegracaoPdvActionSiga : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdClientePai                : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.NomePagador                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DataAtivacao                : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdUsuarioAtivacao           : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DataInativacao              : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdUsuarioInativacao         : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DiaMesAniversarioContrato   : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdUsuarioComercialResponsavel : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.EmailUsuarioComercialResponsavel : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.EmailCobranca               : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DiaFaturamento              : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.DiaVencimento               : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.BoletoAutomatico            : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.Observacoes                 : [NAO MAPEADO]
+  FINANCEIRO.dbo.Cliente.IdBanco                     : [NAO MAPEADO]
+
+
+====================================================================================================
+MIGRACAO: CLIENTE : CONTACTS
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcore.contacts.id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre "customers"] : supera_dev_seed.gmcore.contacts.contactable_type
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - Cliente.Id -> customers.legacy_id -> customers.id] : supera_dev_seed.gmcore.contacts.contactable_id
+
+  REGISTRO 1 - Email:
+    FINANCEIRO.dbo.Cliente.Email : supera_dev_seed.gmcore.contacts.value (type="email", value em minusculo)
+
+  REGISTRO 2 - Telefone:
+    FINANCEIRO.dbo.Cliente.Telefone : supera_dev_seed.gmcore.contacts.value (type="phone", apenas numeros ddd+number)
+
+  REGISTRO 3 - Celular:
+    FINANCEIRO.dbo.Cliente.Celular : supera_dev_seed.gmcore.contacts.value (type="cellphone", apenas numeros ddd+number)
+
+  FINANCEIRO.dbo.Cliente.DataInclusao : supera_dev_seed.gmcore.contacts.created_at
+  FINANCEIRO.dbo.Cliente.DataAlteracao : supera_dev_seed.gmcore.contacts.updated_at
+
+  CAMPOS DESTINO NAO MAPEADOS:
+    - contacts.deleted_at
+
+  CAMPOS ORIGEM NAO MAPEADOS:
+    - Cliente.Codigo
+    - Cliente.TipoPessoa
+    - Cliente.CpfCnpj
+    - Cliente.InscricaoEstadual
+    - Cliente.InscricaoMunicipal
+    - Cliente.RazaoSocial
+    - Cliente.NomeFantasia
+    - Cliente.NomeSistema
+    - Cliente.PessoaContato
+    - Cliente.Ativo
+    - Cliente.Endereco
+    - Cliente.Numero
+    - Cliente.Complemento
+    - Cliente.Bairro
+    - Cliente.CEP
+    - Cliente.Cidade
+    - Cliente.CodigoMunicipio
+    - Cliente.UF
+    - Cliente.CepCobranca
+    - Cliente.EnderecoCobranca
+    - Cliente.NumeroCobranca
+    - Cliente.ComplementoCobranca
+    - Cliente.BairroCobranca
+    - Cliente.CidadeCobranca
+    - Cliente.CodigoMunicipioCobranca
+    - Cliente.UFCobranca
+    - Cliente.IdUsuarioInclusao
+    - Cliente.IdUsuarioAlteracao
+    - Cliente.NomeSocio
+    - Cliente.EnderecoSocio
+    - Cliente.NumeroSocio
+    - Cliente.ComplementoSocio
+    - Cliente.BairroSocio
+    - Cliente.CepSocio
+    - Cliente.CidadeSocio
+    - Cliente.CodigoMunicipioSocio
+    - Cliente.UFSocio
+    - Cliente.CpfSocio
+    - Cliente.RgSocio
+    - Cliente.DataNascimentoSocio
+    - Cliente.TelefoneSocio
+    - Cliente.CelularSocio
+    - Cliente.EmailSocio
+    - Cliente.IdSegmentoProduto
+    - Cliente.IntegradoComPdvActionGmPromo
+    - Cliente.IdUsuarioIntegracaoPdvActionGmPromo
+    - Cliente.DataIntegracaoPdvActionGmPromo
+    - Cliente.IntegradoComPdvActionSiga
+    - Cliente.IdUsuarioIntegracaoPdvActionSiga
+    - Cliente.DataIntegracaoPdvActionSiga
+    - Cliente.IdClientePai
+    - Cliente.NomePagador
+    - Cliente.DataAtivacao
+    - Cliente.IdUsuarioAtivacao
+    - Cliente.DataInativacao
+    - Cliente.IdUsuarioInativacao
+    - Cliente.DiaMesAniversarioContrato
+    - Cliente.IdUsuarioComercialResponsavel
+    - Cliente.EmailUsuarioComercialResponsavel
+    - Cliente.EmailCobranca
+    - Cliente.DiaFaturamento
+    - Cliente.DiaVencimento
+    - Cliente.BoletoAutomatico
+    - Cliente.Observacoes
+    - Cliente.IdBanco

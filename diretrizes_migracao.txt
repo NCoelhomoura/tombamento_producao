@@ -1,0 +1,42 @@
+
+
+
+conexões
+
+ORIGEM SQL PRD
+Host: ec2-54-207-169-15.sa-east-1.compute.amazonaws.com
+Database: FINANCEIRO
+User: azure_datalake
+Senha: CFcoY5oDtduRsKWO1f
+
+
+DESTINO HML
+host: apgsql-gmpromo-prd.eastus.cloudapp.azure.com
+database: supera_dev_seed
+schema: gmcore
+port: 5432
+user: postgres
+senha: Taztaz@21
+
+
+ORIGEM SCHEMAS TABELAS PRD
+Server=gmcore-eks-dev-postgres.ckksg9kcwfzj.us-east-2.rds.amazonaws.com
+Port=5432
+Database=gmcoredb
+User Id=postgres
+Password=lmlVyIGz8eWT6iBtzLJU
+a
+
+etapas
+00 - Testar as conexões nos 3 ambientes - OK
+10 - pegar os schemas das tabelas da Origem PRD - OK
+20 - Criar essas tabelas no Destino HML - OK
+30 - Criar dicionarios de dados entre tabelas ORIGEM SQl e DESTINO HML - OK
+40 - Abaixo as tabelas de destino que serão populadas e a origem: Destino : Origem - OK
+- addresses : Cliente - OK
+- customer_segments : SegmentoProduto - OK
+- customers : Cliente - OK
+
+
+
+

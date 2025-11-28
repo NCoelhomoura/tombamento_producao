@@ -1,0 +1,385 @@
+2025-11-25 13:29:56,771 - INFO - Encontradas 24 tabelas no schema 'core'
+2025-11-25 13:29:56,771 - INFO - Processando tabela 1/24: addresses
+2025-11-25 13:29:56,788 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:29:59,970 - ERROR - Erro ao criar tabela addresses no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:30:00,087 - ERROR - Erro ao processar tabela addresses: schema "gmgmcore" does not exist
+
+2025-11-25 13:30:00,088 - INFO - Processando tabela 2/24: attachments
+2025-11-25 13:30:00,106 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:30:03,418 - ERROR - Erro ao criar tabela attachments no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:30:03,537 - ERROR - Erro ao processar tabela attachments: schema "gmgmcore" does not exist
+
+2025-11-25 13:30:03,538 - INFO - Processando tabela 3/24: audits
+2025-11-25 13:30:03,553 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:30:06,743 - ERROR - Erro ao criar tabela audits no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:30:06,860 - ERROR - Erro ao processar tabela audits: schema "gmgmcore" does not exist
+
+2025-11-25 13:30:06,861 - INFO - Processando tabela 4/24: contacts
+2025-11-25 13:30:06,875 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:30:10,124 - ERROR - Erro ao criar tabela contacts no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:30:10,242 - ERROR - Erro ao processar tabela contacts: schema "gmgmcore" does not exist
+
+2025-11-25 13:30:10,243 - INFO - Processando tabela 5/24: customer_brands
+2025-11-25 13:30:10,257 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:30:13,397 - ERROR - Erro ao criar tabela customer_brands no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:30:13,515 - ERROR - Erro ao processar tabela customer_brands: schema "gmgmcore" does not exist
+
+2025-11-25 13:30:13,516 - INFO - Processando tabela 6/24: customer_customer_brand
+2025-11-25 13:30:13,531 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:30:16,681 - ERROR - Erro ao criar tabela customer_customer_brand no HML: column "customer_brand_id" appears twice in primary key constraint
+LINE 3:     PRIMARY KEY (customer_brand_id, customer_brand_id, custo...
+            ^
+
+2025-11-25 13:30:16,799 - ERROR - Erro ao processar tabela customer_customer_brand: column "customer_brand_id" appears twice in primary key constraint
+LINE 3:     PRIMARY KEY (customer_brand_id, customer_brand_id, custo...
+            ^
+
+2025-11-25 13:30:16,799 - INFO - Processando tabela 7/24: customer_segments
+2025-11-25 13:30:16,815 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:30:19,938 - ERROR - Erro ao criar tabela customer_segments no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:30:20,058 - ERROR - Erro ao processar tabela customer_segments: schema "gmgmcore" does not exist
+
+2025-11-25 13:30:20,059 - INFO - Processando tabela 8/24: customers
+2025-11-25 13:30:20,073 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:33:28,912 - INFO - Database PRD: gmcoredb, Schema: core, Tabelas encontradas: 24
+2025-11-25 13:33:28,913 - INFO - Processando tabela 1/24: addresses
+2025-11-25 13:33:28,928 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:33:31,998 - INFO - Criando tabela addresses no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:33:32,276 - ERROR - Erro ao criar tabela addresses no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:33:32,393 - ERROR - Erro ao processar tabela addresses: schema "gmgmcore" does not exist
+
+2025-11-25 13:33:32,394 - INFO - Processando tabela 2/24: attachments
+2025-11-25 13:33:32,408 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:33:35,485 - INFO - Criando tabela attachments no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:33:35,749 - ERROR - Erro ao criar tabela attachments no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:33:35,869 - ERROR - Erro ao processar tabela attachments: schema "gmgmcore" does not exist
+
+2025-11-25 13:33:35,870 - INFO - Processando tabela 3/24: audits
+2025-11-25 13:33:35,888 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:33:38,927 - INFO - Criando tabela audits no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:33:39,186 - ERROR - Erro ao criar tabela audits no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:33:39,303 - ERROR - Erro ao processar tabela audits: schema "gmgmcore" does not exist
+
+2025-11-25 13:33:39,304 - INFO - Processando tabela 4/24: contacts
+2025-11-25 13:33:39,318 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:33:42,406 - INFO - Criando tabela contacts no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:33:42,665 - ERROR - Erro ao criar tabela contacts no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:33:42,786 - ERROR - Erro ao processar tabela contacts: schema "gmgmcore" does not exist
+
+2025-11-25 13:33:42,787 - INFO - Processando tabela 5/24: customer_brands
+2025-11-25 13:33:42,802 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:33:45,879 - INFO - Criando tabela customer_brands no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:33:46,140 - ERROR - Erro ao criar tabela customer_brands no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:33:46,259 - ERROR - Erro ao processar tabela customer_brands: schema "gmgmcore" does not exist
+
+2025-11-25 13:33:46,260 - INFO - Processando tabela 6/24: customer_customer_brand
+2025-11-25 13:33:46,274 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:33:49,313 - INFO - Criando tabela customer_customer_brand no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:33:49,570 - ERROR - Erro ao criar tabela customer_customer_brand no HML: column "customer_brand_id" appears twice in primary key constraint
+LINE 3:     PRIMARY KEY (customer_brand_id, customer_brand_id, custo...
+            ^
+
+2025-11-25 13:33:49,691 - ERROR - Erro ao processar tabela customer_customer_brand: column "customer_brand_id" appears twice in primary key constraint
+LINE 3:     PRIMARY KEY (customer_brand_id, customer_brand_id, custo...
+            ^
+
+2025-11-25 13:33:49,693 - INFO - Processando tabela 7/24: customer_segments
+2025-11-25 13:33:49,709 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:33:52,814 - INFO - Criando tabela customer_segments no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:33:53,072 - ERROR - Erro ao criar tabela customer_segments no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:33:53,188 - ERROR - Erro ao processar tabela customer_segments: schema "gmgmcore" does not exist
+
+2025-11-25 13:33:53,189 - INFO - Processando tabela 8/24: customers
+2025-11-25 13:33:53,205 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:33:56,215 - INFO - Criando tabela customers no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:33:56,473 - ERROR - Erro ao criar tabela customers no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:33:56,589 - ERROR - Erro ao processar tabela customers: schema "gmgmcore" does not exist
+
+2025-11-25 13:33:56,590 - INFO - Processando tabela 9/24: notifications
+2025-11-25 13:33:56,607 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:33:59,662 - INFO - Criando tabela notifications no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:33:59,928 - ERROR - Erro ao criar tabela notifications no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:00,046 - ERROR - Erro ao processar tabela notifications: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:00,047 - INFO - Processando tabela 10/24: people
+2025-11-25 13:34:00,073 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:03,168 - INFO - Criando tabela people no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:03,427 - ERROR - Erro ao criar tabela people no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:03,545 - ERROR - Erro ao processar tabela people: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:03,545 - INFO - Processando tabela 11/24: refresh_tokens
+2025-11-25 13:34:03,561 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:06,516 - INFO - Criando tabela refresh_tokens no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:06,773 - ERROR - Erro ao criar tabela refresh_tokens no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:06,891 - ERROR - Erro ao processar tabela refresh_tokens: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:06,892 - INFO - Processando tabela 12/24: reminders
+2025-11-25 13:34:06,907 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:09,901 - INFO - Criando tabela reminders no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:10,178 - ERROR - Erro ao criar tabela reminders no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:10,295 - ERROR - Erro ao processar tabela reminders: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:10,296 - INFO - Processando tabela 13/24: retail_chains
+2025-11-25 13:34:10,311 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:13,403 - INFO - Criando tabela retail_chains no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:13,664 - ERROR - Erro ao criar tabela retail_chains no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:13,784 - ERROR - Erro ao processar tabela retail_chains: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:13,785 - INFO - Processando tabela 14/24: role_claims
+2025-11-25 13:34:13,802 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:16,844 - INFO - Criando tabela role_claims no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:17,106 - ERROR - Erro ao criar tabela role_claims no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:17,225 - ERROR - Erro ao processar tabela role_claims: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:17,226 - INFO - Processando tabela 15/24: roles
+2025-11-25 13:34:17,240 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:20,291 - INFO - Criando tabela roles no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:20,612 - ERROR - Erro ao criar tabela roles no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:20,732 - ERROR - Erro ao processar tabela roles: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:20,733 - INFO - Processando tabela 16/24: store_brands
+2025-11-25 13:34:20,748 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:23,889 - INFO - Criando tabela store_brands no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:24,253 - ERROR - Erro ao criar tabela store_brands no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:24,370 - ERROR - Erro ao processar tabela store_brands: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:24,371 - INFO - Processando tabela 17/24: store_cnpjs
+2025-11-25 13:34:24,385 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:27,384 - INFO - Criando tabela store_cnpjs no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:27,652 - ERROR - Erro ao criar tabela store_cnpjs no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:27,770 - ERROR - Erro ao processar tabela store_cnpjs: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:27,771 - INFO - Processando tabela 18/24: store_segments
+2025-11-25 13:34:27,791 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:30,823 - INFO - Criando tabela store_segments no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:31,103 - ERROR - Erro ao criar tabela store_segments no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:31,220 - ERROR - Erro ao processar tabela store_segments: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:31,221 - INFO - Processando tabela 19/24: stores
+2025-11-25 13:34:31,236 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:34,342 - INFO - Criando tabela stores no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:34,644 - ERROR - Erro ao criar tabela stores no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:34,762 - ERROR - Erro ao processar tabela stores: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:34,764 - INFO - Processando tabela 20/24: user_claims
+2025-11-25 13:34:34,778 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:37,821 - INFO - Criando tabela user_claims no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:38,108 - ERROR - Erro ao criar tabela user_claims no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:38,226 - ERROR - Erro ao processar tabela user_claims: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:38,226 - INFO - Processando tabela 21/24: user_logins
+2025-11-25 13:34:38,242 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:41,322 - INFO - Criando tabela user_logins no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:41,568 - ERROR - Erro ao criar tabela user_logins no HML: column "login_provider" appears twice in primary key constraint
+LINE 5:     PRIMARY KEY (login_provider, login_provider, provider_ke...
+            ^
+
+2025-11-25 13:34:41,687 - ERROR - Erro ao processar tabela user_logins: column "login_provider" appears twice in primary key constraint
+LINE 5:     PRIMARY KEY (login_provider, login_provider, provider_ke...
+            ^
+
+2025-11-25 13:34:41,688 - INFO - Processando tabela 22/24: user_roles
+2025-11-25 13:34:41,701 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:44,757 - INFO - Criando tabela user_roles no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:44,994 - ERROR - Erro ao criar tabela user_roles no HML: column "user_id" appears twice in primary key constraint
+LINE 3:     PRIMARY KEY (user_id, user_id, role_id, role_id)
+            ^
+
+2025-11-25 13:34:45,111 - ERROR - Erro ao processar tabela user_roles: column "user_id" appears twice in primary key constraint
+LINE 3:     PRIMARY KEY (user_id, user_id, role_id, role_id)
+            ^
+
+2025-11-25 13:34:45,111 - INFO - Processando tabela 23/24: user_tokens
+2025-11-25 13:34:45,126 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:48,126 - INFO - Criando tabela user_tokens no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:48,363 - ERROR - Erro ao criar tabela user_tokens no HML: column "user_id" appears twice in primary key constraint
+LINE 5:     PRIMARY KEY (user_id, user_id, login_provider, login_pro...
+            ^
+
+2025-11-25 13:34:48,480 - ERROR - Erro ao processar tabela user_tokens: column "user_id" appears twice in primary key constraint
+LINE 5:     PRIMARY KEY (user_id, user_id, login_provider, login_pro...
+            ^
+
+2025-11-25 13:34:48,481 - INFO - Processando tabela 24/24: users
+2025-11-25 13:34:48,496 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:34:51,552 - INFO - Criando tabela users no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:34:51,825 - ERROR - Erro ao criar tabela users no HML: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:51,944 - ERROR - Erro ao processar tabela users: schema "gmgmcore" does not exist
+
+2025-11-25 13:34:55,033 - WARNING - Validação com diferenças - PRD: gmcoredb.core (24 tabelas) vs HML: supera_dev_seed.gmcore (0 tabelas)
+2025-11-25 13:35:25,152 - ERROR - Erro ao listar tabelas: 'charmap' codec can't encode character '\u2713' in position 0: character maps to <undefined>
+2025-11-25 13:35:25,153 - ERROR - Erro crítico no processo: 'charmap' codec can't encode character '\u2713' in position 0: character maps to <undefined>
+2025-11-25 13:35:49,430 - INFO - Database PRD: gmcoredb, Schema: core, Tabelas encontradas: 24
+2025-11-25 13:35:49,431 - INFO - Processando tabela 1/24: addresses
+2025-11-25 13:35:49,431 - ERROR - Erro ao processar tabela addresses: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,432 - INFO - Processando tabela 2/24: attachments
+2025-11-25 13:35:49,432 - ERROR - Erro ao processar tabela attachments: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,432 - INFO - Processando tabela 3/24: audits
+2025-11-25 13:35:49,432 - ERROR - Erro ao processar tabela audits: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,433 - INFO - Processando tabela 4/24: contacts
+2025-11-25 13:35:49,433 - ERROR - Erro ao processar tabela contacts: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,433 - INFO - Processando tabela 5/24: customer_brands
+2025-11-25 13:35:49,433 - ERROR - Erro ao processar tabela customer_brands: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,433 - INFO - Processando tabela 6/24: customer_customer_brand
+2025-11-25 13:35:49,433 - ERROR - Erro ao processar tabela customer_customer_brand: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,434 - INFO - Processando tabela 7/24: customer_segments
+2025-11-25 13:35:49,434 - ERROR - Erro ao processar tabela customer_segments: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,434 - INFO - Processando tabela 8/24: customers
+2025-11-25 13:35:49,434 - ERROR - Erro ao processar tabela customers: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,434 - INFO - Processando tabela 9/24: notifications
+2025-11-25 13:35:49,434 - ERROR - Erro ao processar tabela notifications: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,434 - INFO - Processando tabela 10/24: people
+2025-11-25 13:35:49,435 - ERROR - Erro ao processar tabela people: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,435 - INFO - Processando tabela 11/24: refresh_tokens
+2025-11-25 13:35:49,435 - ERROR - Erro ao processar tabela refresh_tokens: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,435 - INFO - Processando tabela 12/24: reminders
+2025-11-25 13:35:49,435 - ERROR - Erro ao processar tabela reminders: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,435 - INFO - Processando tabela 13/24: retail_chains
+2025-11-25 13:35:49,436 - ERROR - Erro ao processar tabela retail_chains: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,436 - INFO - Processando tabela 14/24: role_claims
+2025-11-25 13:35:49,436 - ERROR - Erro ao processar tabela role_claims: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,436 - INFO - Processando tabela 15/24: roles
+2025-11-25 13:35:49,436 - ERROR - Erro ao processar tabela roles: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,437 - INFO - Processando tabela 16/24: store_brands
+2025-11-25 13:35:49,437 - ERROR - Erro ao processar tabela store_brands: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,437 - INFO - Processando tabela 17/24: store_cnpjs
+2025-11-25 13:35:49,437 - ERROR - Erro ao processar tabela store_cnpjs: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,437 - INFO - Processando tabela 18/24: store_segments
+2025-11-25 13:35:49,437 - ERROR - Erro ao processar tabela store_segments: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,438 - INFO - Processando tabela 19/24: stores
+2025-11-25 13:35:49,438 - ERROR - Erro ao processar tabela stores: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,438 - INFO - Processando tabela 20/24: user_claims
+2025-11-25 13:35:49,438 - ERROR - Erro ao processar tabela user_claims: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,438 - INFO - Processando tabela 21/24: user_logins
+2025-11-25 13:35:49,438 - ERROR - Erro ao processar tabela user_logins: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,438 - INFO - Processando tabela 22/24: user_roles
+2025-11-25 13:35:49,438 - ERROR - Erro ao processar tabela user_roles: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,439 - INFO - Processando tabela 23/24: user_tokens
+2025-11-25 13:35:49,439 - ERROR - Erro ao processar tabela user_tokens: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:49,439 - INFO - Processando tabela 24/24: users
+2025-11-25 13:35:49,439 - ERROR - Erro ao processar tabela users: 'charmap' codec can't encode character '\u2192' in position 2: character maps to <undefined>
+2025-11-25 13:35:52,431 - WARNING - Validação com diferenças - PRD: gmcoredb.core (24 tabelas) vs HML: supera_dev_seed.gmcore (0 tabelas)
+2025-11-25 13:37:25,261 - INFO - Database PRD: gmcoredb, Schema: core, Tabelas encontradas: 24
+2025-11-25 13:37:25,262 - INFO - Processando tabela 1/24: addresses
+2025-11-25 13:37:25,278 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:37:28,340 - INFO - Criando tabela addresses no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:37:28,982 - INFO - Tabela addresses criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:37:28,982 - INFO - Processando tabela 2/24: attachments
+2025-11-25 13:37:28,997 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:37:32,030 - INFO - Criando tabela attachments no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:37:32,671 - INFO - Tabela attachments criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:37:32,671 - INFO - Processando tabela 3/24: audits
+2025-11-25 13:37:32,687 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:37:35,661 - INFO - Criando tabela audits no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:37:36,363 - INFO - Tabela audits criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:37:36,364 - INFO - Processando tabela 4/24: contacts
+2025-11-25 13:37:36,381 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:37:39,442 - INFO - Criando tabela contacts no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:37:40,063 - INFO - Tabela contacts criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:37:40,063 - INFO - Processando tabela 5/24: customer_brands
+2025-11-25 13:37:40,078 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:37:43,043 - INFO - Criando tabela customer_brands no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:37:43,718 - INFO - Tabela customer_brands criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:37:43,719 - INFO - Processando tabela 6/24: customer_customer_brand
+2025-11-25 13:37:43,734 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:37:46,814 - INFO - Criando tabela customer_customer_brand no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:37:47,472 - INFO - Tabela customer_customer_brand criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:37:47,472 - INFO - Processando tabela 7/24: customer_segments
+2025-11-25 13:37:47,486 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:37:50,575 - INFO - Criando tabela customer_segments no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:37:51,175 - INFO - Tabela customer_segments criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:37:51,175 - INFO - Processando tabela 8/24: customers
+2025-11-25 13:37:51,191 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:37:54,206 - INFO - Criando tabela customers no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:37:54,914 - INFO - Tabela customers criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:37:54,914 - INFO - Processando tabela 9/24: notifications
+2025-11-25 13:37:54,931 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:37:57,956 - INFO - Criando tabela notifications no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:37:58,670 - INFO - Tabela notifications criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:37:58,671 - INFO - Processando tabela 10/24: people
+2025-11-25 13:37:58,687 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:01,905 - INFO - Criando tabela people no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:02,611 - INFO - Tabela people criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:02,613 - INFO - Processando tabela 11/24: refresh_tokens
+2025-11-25 13:38:02,626 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:05,622 - INFO - Criando tabela refresh_tokens no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:06,223 - INFO - Tabela refresh_tokens criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:06,224 - INFO - Processando tabela 12/24: reminders
+2025-11-25 13:38:06,242 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:09,322 - INFO - Criando tabela reminders no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:09,966 - INFO - Tabela reminders criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:09,968 - INFO - Processando tabela 13/24: retail_chains
+2025-11-25 13:38:09,981 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:13,018 - INFO - Criando tabela retail_chains no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:13,640 - INFO - Tabela retail_chains criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:13,640 - INFO - Processando tabela 14/24: role_claims
+2025-11-25 13:38:13,656 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:16,658 - INFO - Criando tabela role_claims no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:17,309 - INFO - Tabela role_claims criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:17,310 - INFO - Processando tabela 15/24: roles
+2025-11-25 13:38:17,326 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:20,292 - INFO - Criando tabela roles no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:20,901 - INFO - Tabela roles criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:20,902 - INFO - Processando tabela 16/24: store_brands
+2025-11-25 13:38:20,917 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:23,893 - INFO - Criando tabela store_brands no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:24,507 - INFO - Tabela store_brands criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:24,507 - INFO - Processando tabela 17/24: store_cnpjs
+2025-11-25 13:38:24,521 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:27,525 - INFO - Criando tabela store_cnpjs no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:28,130 - INFO - Tabela store_cnpjs criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:28,130 - INFO - Processando tabela 18/24: store_segments
+2025-11-25 13:38:28,145 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:31,221 - INFO - Criando tabela store_segments no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:31,825 - INFO - Tabela store_segments criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:31,826 - INFO - Processando tabela 19/24: stores
+2025-11-25 13:38:31,841 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:34,847 - INFO - Criando tabela stores no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:35,452 - INFO - Tabela stores criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:35,452 - INFO - Processando tabela 20/24: user_claims
+2025-11-25 13:38:35,468 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:38,520 - INFO - Criando tabela user_claims no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:39,128 - INFO - Tabela user_claims criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:39,129 - INFO - Processando tabela 21/24: user_logins
+2025-11-25 13:38:39,145 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:42,134 - INFO - Criando tabela user_logins no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:42,740 - INFO - Tabela user_logins criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:42,740 - INFO - Processando tabela 22/24: user_roles
+2025-11-25 13:38:42,757 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:45,788 - INFO - Criando tabela user_roles no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:46,393 - INFO - Tabela user_roles criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:46,394 - INFO - Processando tabela 23/24: user_tokens
+2025-11-25 13:38:46,408 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:49,427 - INFO - Criando tabela user_tokens no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:50,027 - INFO - Tabela user_tokens criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:50,027 - INFO - Processando tabela 24/24: users
+2025-11-25 13:38:50,042 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-11-25 13:38:53,053 - INFO - Criando tabela users no HML - Database: supera_dev_seed, Schema: gmcore
+2025-11-25 13:38:53,663 - INFO - Tabela users criada com sucesso no HML (database: supera_dev_seed, schema: gmcore)
+2025-11-25 13:38:56,606 - INFO - Validação OK - PRD: gmcoredb.core (24 tabelas) = HML: supera_dev_seed.gmcore (24 tabelas)

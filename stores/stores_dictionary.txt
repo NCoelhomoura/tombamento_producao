@@ -1,0 +1,716 @@
+====================================================================================================
+DICIONARIO DE MIGRACAO DE DADOS - STORES
+====================================================================================================
+
+ORIGEM: SQL Server PRD (Database: FINANCEIRO)
+DESTINO: PostgreSQL HML (Database: supera_dev_seed, Schema: gmcore)
+
+====================================================================================================
+
+====================================================================================================
+TABELA DESTINO: STORES
+TABELA ORIGEM: Estabelecimento
+====================================================================================================
+
+ORIGEM - SQL Server PRD - Tabela: Estabelecimento
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+Cnpj                                     nvarchar(30)                   30              SIM        NAO  
+Latitude                                 nvarchar(50)                   50              SIM        NAO  
+Longitude                                nvarchar(50)                   50              SIM        NAO  
+Codigo                                   int                            10              NAO        NAO  
+InscricaoEstadual                        nvarchar(30)                   30              SIM        NAO  
+InscricaoMunicipal                       nvarchar(30)                   30              SIM        NAO  
+RazaoSocial                              nvarchar(500)                  500             NAO        NAO  
+NomeFantasia                             nvarchar(500)                  500             NAO        NAO  
+Endereco                                 nvarchar(500)                  500             SIM        NAO  
+Numero                                   nvarchar(50)                   50              SIM        NAO  
+Complemento                              nvarchar(150)                  150             SIM        NAO  
+Bairro                                   nvarchar(300)                  300             SIM        NAO  
+CEP                                      nvarchar(20)                   20              SIM        NAO  
+Cidade                                   nvarchar(300)                  300             SIM        NAO  
+UF                                       nvarchar(2)                    2               SIM        NAO  
+Email                                    nvarchar(200)                  200             SIM        NAO  
+Telefone                                 nvarchar(20)                   20              SIM        NAO  
+Gerente                                  nvarchar(150)                  150             SIM        NAO  
+CelularGerente                           nvarchar(20)                   20              SIM        NAO  
+DataInclusao                             datetime                       -               NAO        NAO  
+IdBandeira                               int                            10              NAO        NAO  
+DataAlteracao                            datetime                       -               SIM        NAO  
+IdUsuarioInclusao                        int                            10              NAO        NAO  
+IdUsuarioAlteracao                       int                            10              SIM        NAO  
+IntegradoComPdvActionGmPromo             bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionGmPromo      int                            10              SIM        NAO  
+DataIntegracaoPdvActionGmPromo           datetime                       -               SIM        NAO  
+IntegradoComPdvActionSiga                bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionSiga         int                            10              SIM        NAO  
+DataIntegracaoPdvActionSiga              datetime                       -               SIM        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+DataAtivacao                             datetime                       -               SIM        NAO  
+IdUsuarioAtivacao                        int                            10              SIM        NAO  
+DataInativacao                           datetime                       -               SIM        NAO  
+IdUsuarioInativacao                      int                            10              SIM        NAO  
+IdCanalEstabelecimento                   int                            10              SIM        NAO  
+IdSituacaoEstabelecimento                int                            10              SIM        NAO  
+IdStatusEstabelecimento                  int                            10              SIM        NAO  
+IdEstabelecimentoReferencia              int                            10              SIM        NAO  
+DataInauguracao                          datetime                       -               SIM        NAO  
+DataEncerramento                         datetime                       -               SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcore.stores
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+name                                     VARCHAR(255)                   255             NAO        NAO  
+deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
+store_brand_id                           UUID                           -               NAO        NAO  
+is_active                                BOOLEAN                        -               NAO        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+legacy_id                                INTEGER                        32              SIM        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (Estabelecimento): Id, Cnpj, Latitude, Longitude, Codigo, InscricaoEstadual, InscricaoMunicipal, RazaoSocial, NomeFantasia, Endereco, Numero, Complemento, Bairro, CEP, Cidade, UF, Email, Telefone, Gerente, CelularGerente, DataInclusao, IdBandeira, DataAlteracao, IdUsuarioInclusao, IdUsuarioAlteracao, IntegradoComPdvActionGmPromo, IdUsuarioIntegracaoPdvActionGmPromo, DataIntegracaoPdvActionGmPromo, IntegradoComPdvActionSiga, IdUsuarioIntegracaoPdvActionSiga, DataIntegracaoPdvActionSiga, Ativo, DataAtivacao, IdUsuarioAtivacao, DataInativacao, IdUsuarioInativacao, IdCanalEstabelecimento, IdSituacaoEstabelecimento, IdStatusEstabelecimento, IdEstabelecimentoReferencia, DataInauguracao, DataEncerramento
+  Destino (stores): id, name, deleted_at, store_brand_id, is_active, created_at, updated_at, legacy_id
+
+
+====================================================================================================
+TABELA DESTINO: STORE_BRANDS
+TABELA ORIGEM: Bandeira
+====================================================================================================
+
+ORIGEM - SQL Server PRD - Tabela: Bandeira
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+NomeFantasia                             nvarchar(200)                  200             NAO        NAO  
+Codigo                                   int                            10              NAO        NAO  
+RazaoSocial                              nvarchar(MAX)                  -1              SIM        NAO  
+IdRede                                   int                            10              NAO        NAO  
+DataInclusao                             datetime                       -               NAO        NAO  
+DataAlteracao                            datetime                       -               SIM        NAO  
+IdUsuarioInclusao                        int                            10              NAO        NAO  
+IdUsuarioAlteracao                       int                            10              SIM        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+DataAtivacao                             datetime                       -               SIM        NAO  
+IdUsuarioAtivacao                        int                            10              SIM        NAO  
+DataInativacao                           datetime                       -               SIM        NAO  
+IdUsuarioInativacao                      int                            10              SIM        NAO  
+IntegradoComPdvActionGmPromo             bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionGmPromo      int                            10              SIM        NAO  
+DataIntegracaoPdvActionGmPromo           datetime                       -               SIM        NAO  
+IntegradoComPdvActionSiga                bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionSiga         int                            10              SIM        NAO  
+DataIntegracaoPdvActionSiga              datetime                       -               SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcore.store_brands
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+description                              TEXT                           -               NAO        NAO  
+abras_code                               TEXT                           -               NAO        NAO  
+deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
+retail_chain_id                          UUID                           -               NAO        NAO  
+store_segment_id                         UUID                           -               NAO        NAO  
+is_active                                BOOLEAN                        -               NAO        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+legacy_id                                INTEGER                        32              SIM        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (Bandeira): Id, NomeFantasia, Codigo, RazaoSocial, IdRede, DataInclusao, DataAlteracao, IdUsuarioInclusao, IdUsuarioAlteracao, Ativo, DataAtivacao, IdUsuarioAtivacao, DataInativacao, IdUsuarioInativacao, IntegradoComPdvActionGmPromo, IdUsuarioIntegracaoPdvActionGmPromo, DataIntegracaoPdvActionGmPromo, IntegradoComPdvActionSiga, IdUsuarioIntegracaoPdvActionSiga, DataIntegracaoPdvActionSiga
+  Destino (store_brands): id, description, abras_code, deleted_at, retail_chain_id, store_segment_id, is_active, created_at, updated_at, legacy_id
+
+
+====================================================================================================
+TABELA DESTINO: RETAIL_CHAINS
+TABELA ORIGEM: Rede
+====================================================================================================
+
+ORIGEM - SQL Server PRD - Tabela: Rede
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+Nome                                     nvarchar(200)                  200             NAO        NAO  
+Codigo                                   int                            10              NAO        NAO  
+DataInclusao                             datetime                       -               NAO        NAO  
+DataAlteracao                            datetime                       -               SIM        NAO  
+IdUsuarioInclusao                        int                            10              NAO        NAO  
+IdUsuarioAlteracao                       int                            10              SIM        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+IntegradoComPdvActionGmPromo             bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionGmPromo      int                            10              SIM        NAO  
+DataIntegracaoPdvActionGmPromo           datetime                       -               SIM        NAO  
+IntegradoComPdvActionSiga                bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionSiga         int                            10              SIM        NAO  
+DataIntegracaoPdvActionSiga              datetime                       -               SIM        NAO  
+DataAtivacao                             datetime                       -               SIM        NAO  
+IdUsuarioAtivacao                        int                            10              SIM        NAO  
+DataInativacao                           datetime                       -               SIM        NAO  
+IdUsuarioInativacao                      int                            10              SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcore.retail_chains
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+name                                     TEXT                           -               NAO        NAO  
+description                              TEXT                           -               NAO        NAO  
+is_active                                BOOLEAN                        -               NAO        NAO  
+deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+legacy_id                                INTEGER                        32              SIM        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (Rede): Id, Nome, Codigo, DataInclusao, DataAlteracao, IdUsuarioInclusao, IdUsuarioAlteracao, Ativo, IntegradoComPdvActionGmPromo, IdUsuarioIntegracaoPdvActionGmPromo, DataIntegracaoPdvActionGmPromo, IntegradoComPdvActionSiga, IdUsuarioIntegracaoPdvActionSiga, DataIntegracaoPdvActionSiga, DataAtivacao, IdUsuarioAtivacao, DataInativacao, IdUsuarioInativacao
+  Destino (retail_chains): id, name, description, is_active, deleted_at, created_at, updated_at, legacy_id
+
+
+====================================================================================================
+TABELA DESTINO: STORE_CNPJS
+TABELA ORIGEM: Estabelecimento
+====================================================================================================
+
+ORIGEM - SQL Server PRD - Tabela: Estabelecimento
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+Cnpj                                     nvarchar(30)                   30              SIM        NAO  
+Latitude                                 nvarchar(50)                   50              SIM        NAO  
+Longitude                                nvarchar(50)                   50              SIM        NAO  
+Codigo                                   int                            10              NAO        NAO  
+InscricaoEstadual                        nvarchar(30)                   30              SIM        NAO  
+InscricaoMunicipal                       nvarchar(30)                   30              SIM        NAO  
+RazaoSocial                              nvarchar(500)                  500             NAO        NAO  
+NomeFantasia                             nvarchar(500)                  500             NAO        NAO  
+Endereco                                 nvarchar(500)                  500             SIM        NAO  
+Numero                                   nvarchar(50)                   50              SIM        NAO  
+Complemento                              nvarchar(150)                  150             SIM        NAO  
+Bairro                                   nvarchar(300)                  300             SIM        NAO  
+CEP                                      nvarchar(20)                   20              SIM        NAO  
+Cidade                                   nvarchar(300)                  300             SIM        NAO  
+UF                                       nvarchar(2)                    2               SIM        NAO  
+Email                                    nvarchar(200)                  200             SIM        NAO  
+Telefone                                 nvarchar(20)                   20              SIM        NAO  
+Gerente                                  nvarchar(150)                  150             SIM        NAO  
+CelularGerente                           nvarchar(20)                   20              SIM        NAO  
+DataInclusao                             datetime                       -               NAO        NAO  
+IdBandeira                               int                            10              NAO        NAO  
+DataAlteracao                            datetime                       -               SIM        NAO  
+IdUsuarioInclusao                        int                            10              NAO        NAO  
+IdUsuarioAlteracao                       int                            10              SIM        NAO  
+IntegradoComPdvActionGmPromo             bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionGmPromo      int                            10              SIM        NAO  
+DataIntegracaoPdvActionGmPromo           datetime                       -               SIM        NAO  
+IntegradoComPdvActionSiga                bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionSiga         int                            10              SIM        NAO  
+DataIntegracaoPdvActionSiga              datetime                       -               SIM        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+DataAtivacao                             datetime                       -               SIM        NAO  
+IdUsuarioAtivacao                        int                            10              SIM        NAO  
+DataInativacao                           datetime                       -               SIM        NAO  
+IdUsuarioInativacao                      int                            10              SIM        NAO  
+IdCanalEstabelecimento                   int                            10              SIM        NAO  
+IdSituacaoEstabelecimento                int                            10              SIM        NAO  
+IdStatusEstabelecimento                  int                            10              SIM        NAO  
+IdEstabelecimentoReferencia              int                            10              SIM        NAO  
+DataInauguracao                          datetime                       -               SIM        NAO  
+DataEncerramento                         datetime                       -               SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcore.store_cnpjs
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+cnpj                                     TEXT                           -               NAO        NAO  
+is_main                                  BOOLEAN                        -               NAO        NAO  
+store_id                                 UUID                           -               NAO        NAO  
+deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
+is_active                                BOOLEAN                        -               NAO        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (Estabelecimento): Id, Cnpj, Latitude, Longitude, Codigo, InscricaoEstadual, InscricaoMunicipal, RazaoSocial, NomeFantasia, Endereco, Numero, Complemento, Bairro, CEP, Cidade, UF, Email, Telefone, Gerente, CelularGerente, DataInclusao, IdBandeira, DataAlteracao, IdUsuarioInclusao, IdUsuarioAlteracao, IntegradoComPdvActionGmPromo, IdUsuarioIntegracaoPdvActionGmPromo, DataIntegracaoPdvActionGmPromo, IntegradoComPdvActionSiga, IdUsuarioIntegracaoPdvActionSiga, DataIntegracaoPdvActionSiga, Ativo, DataAtivacao, IdUsuarioAtivacao, DataInativacao, IdUsuarioInativacao, IdCanalEstabelecimento, IdSituacaoEstabelecimento, IdStatusEstabelecimento, IdEstabelecimentoReferencia, DataInauguracao, DataEncerramento
+  Destino (store_cnpjs): id, cnpj, is_main, store_id, deleted_at, is_active, created_at, updated_at
+
+
+====================================================================================================
+TABELA DESTINO: ADDRESSES
+TABELA ORIGEM: Estabelecimento
+====================================================================================================
+
+ORIGEM - SQL Server PRD - Tabela: Estabelecimento
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+Cnpj                                     nvarchar(30)                   30              SIM        NAO  
+Latitude                                 nvarchar(50)                   50              SIM        NAO  
+Longitude                                nvarchar(50)                   50              SIM        NAO  
+Codigo                                   int                            10              NAO        NAO  
+InscricaoEstadual                        nvarchar(30)                   30              SIM        NAO  
+InscricaoMunicipal                       nvarchar(30)                   30              SIM        NAO  
+RazaoSocial                              nvarchar(500)                  500             NAO        NAO  
+NomeFantasia                             nvarchar(500)                  500             NAO        NAO  
+Endereco                                 nvarchar(500)                  500             SIM        NAO  
+Numero                                   nvarchar(50)                   50              SIM        NAO  
+Complemento                              nvarchar(150)                  150             SIM        NAO  
+Bairro                                   nvarchar(300)                  300             SIM        NAO  
+CEP                                      nvarchar(20)                   20              SIM        NAO  
+Cidade                                   nvarchar(300)                  300             SIM        NAO  
+UF                                       nvarchar(2)                    2               SIM        NAO  
+Email                                    nvarchar(200)                  200             SIM        NAO  
+Telefone                                 nvarchar(20)                   20              SIM        NAO  
+Gerente                                  nvarchar(150)                  150             SIM        NAO  
+CelularGerente                           nvarchar(20)                   20              SIM        NAO  
+DataInclusao                             datetime                       -               NAO        NAO  
+IdBandeira                               int                            10              NAO        NAO  
+DataAlteracao                            datetime                       -               SIM        NAO  
+IdUsuarioInclusao                        int                            10              NAO        NAO  
+IdUsuarioAlteracao                       int                            10              SIM        NAO  
+IntegradoComPdvActionGmPromo             bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionGmPromo      int                            10              SIM        NAO  
+DataIntegracaoPdvActionGmPromo           datetime                       -               SIM        NAO  
+IntegradoComPdvActionSiga                bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionSiga         int                            10              SIM        NAO  
+DataIntegracaoPdvActionSiga              datetime                       -               SIM        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+DataAtivacao                             datetime                       -               SIM        NAO  
+IdUsuarioAtivacao                        int                            10              SIM        NAO  
+DataInativacao                           datetime                       -               SIM        NAO  
+IdUsuarioInativacao                      int                            10              SIM        NAO  
+IdCanalEstabelecimento                   int                            10              SIM        NAO  
+IdSituacaoEstabelecimento                int                            10              SIM        NAO  
+IdStatusEstabelecimento                  int                            10              SIM        NAO  
+IdEstabelecimentoReferencia              int                            10              SIM        NAO  
+DataInauguracao                          datetime                       -               SIM        NAO  
+DataEncerramento                         datetime                       -               SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcore.addresses
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+legacy_id                                INTEGER                        32              SIM        NAO  
+addressable_id                           UUID                           -               NAO        NAO  
+addressable_type                         VARCHAR(255)                   255             NAO        NAO  
+type                                     VARCHAR(50)                    50              NAO        NAO  
+postal_code                              VARCHAR(10)                    10              NAO        NAO  
+street                                   VARCHAR(500)                   500             NAO        NAO  
+number                                   VARCHAR(20)                    20              NAO        NAO  
+address_line_2                           VARCHAR(200)                   200             SIM        NAO  
+neighborhood                             VARCHAR(100)                   100             NAO        NAO  
+city                                     VARCHAR(100)                   100             NAO        NAO  
+state                                    VARCHAR(2)                     2               NAO        NAO  
+latitude                                 DOUBLE PRECISION               53              SIM        NAO  
+longitude                                DOUBLE PRECISION               53              SIM        NAO  
+zone                                     VARCHAR(100)                   100             NAO        NAO  
+region                                   VARCHAR(100)                   100             NAO        NAO  
+municipal_code                           INTEGER                        32              NAO        NAO  
+deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (Estabelecimento): Id, Cnpj, Latitude, Longitude, Codigo, InscricaoEstadual, InscricaoMunicipal, RazaoSocial, NomeFantasia, Endereco, Numero, Complemento, Bairro, CEP, Cidade, UF, Email, Telefone, Gerente, CelularGerente, DataInclusao, IdBandeira, DataAlteracao, IdUsuarioInclusao, IdUsuarioAlteracao, IntegradoComPdvActionGmPromo, IdUsuarioIntegracaoPdvActionGmPromo, DataIntegracaoPdvActionGmPromo, IntegradoComPdvActionSiga, IdUsuarioIntegracaoPdvActionSiga, DataIntegracaoPdvActionSiga, Ativo, DataAtivacao, IdUsuarioAtivacao, DataInativacao, IdUsuarioInativacao, IdCanalEstabelecimento, IdSituacaoEstabelecimento, IdStatusEstabelecimento, IdEstabelecimentoReferencia, DataInauguracao, DataEncerramento
+  Destino (addresses): id, legacy_id, addressable_id, addressable_type, type, postal_code, street, number, address_line_2, neighborhood, city, state, latitude, longitude, zone, region, municipal_code, deleted_at, created_at, updated_at
+
+
+====================================================================================================
+TABELA DESTINO: CONTACTS
+TABELA ORIGEM: Estabelecimento
+====================================================================================================
+
+ORIGEM - SQL Server PRD - Tabela: Estabelecimento
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+Cnpj                                     nvarchar(30)                   30              SIM        NAO  
+Latitude                                 nvarchar(50)                   50              SIM        NAO  
+Longitude                                nvarchar(50)                   50              SIM        NAO  
+Codigo                                   int                            10              NAO        NAO  
+InscricaoEstadual                        nvarchar(30)                   30              SIM        NAO  
+InscricaoMunicipal                       nvarchar(30)                   30              SIM        NAO  
+RazaoSocial                              nvarchar(500)                  500             NAO        NAO  
+NomeFantasia                             nvarchar(500)                  500             NAO        NAO  
+Endereco                                 nvarchar(500)                  500             SIM        NAO  
+Numero                                   nvarchar(50)                   50              SIM        NAO  
+Complemento                              nvarchar(150)                  150             SIM        NAO  
+Bairro                                   nvarchar(300)                  300             SIM        NAO  
+CEP                                      nvarchar(20)                   20              SIM        NAO  
+Cidade                                   nvarchar(300)                  300             SIM        NAO  
+UF                                       nvarchar(2)                    2               SIM        NAO  
+Email                                    nvarchar(200)                  200             SIM        NAO  
+Telefone                                 nvarchar(20)                   20              SIM        NAO  
+Gerente                                  nvarchar(150)                  150             SIM        NAO  
+CelularGerente                           nvarchar(20)                   20              SIM        NAO  
+DataInclusao                             datetime                       -               NAO        NAO  
+IdBandeira                               int                            10              NAO        NAO  
+DataAlteracao                            datetime                       -               SIM        NAO  
+IdUsuarioInclusao                        int                            10              NAO        NAO  
+IdUsuarioAlteracao                       int                            10              SIM        NAO  
+IntegradoComPdvActionGmPromo             bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionGmPromo      int                            10              SIM        NAO  
+DataIntegracaoPdvActionGmPromo           datetime                       -               SIM        NAO  
+IntegradoComPdvActionSiga                bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvActionSiga         int                            10              SIM        NAO  
+DataIntegracaoPdvActionSiga              datetime                       -               SIM        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+DataAtivacao                             datetime                       -               SIM        NAO  
+IdUsuarioAtivacao                        int                            10              SIM        NAO  
+DataInativacao                           datetime                       -               SIM        NAO  
+IdUsuarioInativacao                      int                            10              SIM        NAO  
+IdCanalEstabelecimento                   int                            10              SIM        NAO  
+IdSituacaoEstabelecimento                int                            10              SIM        NAO  
+IdStatusEstabelecimento                  int                            10              SIM        NAO  
+IdEstabelecimentoReferencia              int                            10              SIM        NAO  
+DataInauguracao                          datetime                       -               SIM        NAO  
+DataEncerramento                         datetime                       -               SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcore.contacts
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+contactable_id                           UUID                           -               NAO        NAO  
+contactable_type                         VARCHAR(255)                   255             NAO        NAO  
+type                                     VARCHAR(255)                   255             NAO        NAO  
+value                                    VARCHAR(255)                   255             NAO        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (Estabelecimento): Id, Cnpj, Latitude, Longitude, Codigo, InscricaoEstadual, InscricaoMunicipal, RazaoSocial, NomeFantasia, Endereco, Numero, Complemento, Bairro, CEP, Cidade, UF, Email, Telefone, Gerente, CelularGerente, DataInclusao, IdBandeira, DataAlteracao, IdUsuarioInclusao, IdUsuarioAlteracao, IntegradoComPdvActionGmPromo, IdUsuarioIntegracaoPdvActionGmPromo, DataIntegracaoPdvActionGmPromo, IntegradoComPdvActionSiga, IdUsuarioIntegracaoPdvActionSiga, DataIntegracaoPdvActionSiga, Ativo, DataAtivacao, IdUsuarioAtivacao, DataInativacao, IdUsuarioInativacao, IdCanalEstabelecimento, IdSituacaoEstabelecimento, IdStatusEstabelecimento, IdEstabelecimentoReferencia, DataInauguracao, DataEncerramento
+  Destino (contacts): id, contactable_id, contactable_type, type, value, created_at, updated_at
+
+
+====================================================================================================
+TABELA DESTINO: STORE_SEGMENTS
+TABELA ORIGEM: CanalEstabelecimento
+====================================================================================================
+
+ORIGEM - SQL Server PRD - Tabela: CanalEstabelecimento
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+Nome                                     nvarchar(MAX)                  -1              SIM        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+DataInclusao                             datetime                       -               NAO        NAO  
+IdUsuarioInclusao                        int                            10              NAO        NAO  
+DataAlteracao                            datetime                       -               SIM        NAO  
+IdUsuarioAlteracao                       int                            10              SIM        NAO  
+DataAtivacao                             datetime                       -               SIM        NAO  
+IdUsuarioAtivacao                        int                            10              SIM        NAO  
+DataInativacao                           datetime                       -               SIM        NAO  
+IdUsuarioInativacao                      int                            10              SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcore.store_segments
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+name                                     TEXT                           -               NAO        NAO  
+deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
+is_active                                BOOLEAN                        -               NAO        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+legacy_id                                INTEGER                        32              SIM        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (CanalEstabelecimento): Id, Nome, Ativo, DataInclusao, IdUsuarioInclusao, DataAlteracao, IdUsuarioAlteracao, DataAtivacao, IdUsuarioAtivacao, DataInativacao, IdUsuarioInativacao
+  Destino (store_segments): id, name, deleted_at, is_active, created_at, updated_at, legacy_id
+
+
+====================================================================================================
+MAPEAMENTO DETALHADO DE CAMPOS
+====================================================================================================
+
+Formato: origem.dbo.tabela.campo : destino.schema.tabela.campo
+
+MIGRACAO: ESTABELECIMENTO : STORES
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcore.stores.id
+  FINANCEIRO.dbo.Estabelecimento.NomeFantasia : supera_dev_seed.gmcore.stores.name
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - Estabelecimento.IdBandeira -> store_brands.legacy_id -> store_brands.id] : supera_dev_seed.gmcore.stores.store_brand_id
+  FINANCEIRO.dbo.Estabelecimento.Ativo : supera_dev_seed.gmcore.stores.is_active
+  FINANCEIRO.dbo.Estabelecimento.DataInclusao : supera_dev_seed.gmcore.stores.created_at
+  FINANCEIRO.dbo.Estabelecimento.DataAlteracao : supera_dev_seed.gmcore.stores.updated_at
+  FINANCEIRO.dbo.Estabelecimento.Id : supera_dev_seed.gmcore.stores.legacy_id
+
+  CAMPOS DESTINO NAO MAPEADOS:
+    - stores.deleted_at
+
+  CAMPOS ORIGEM NAO MAPEADOS:
+    - Estabelecimento.Cnpj
+    - Estabelecimento.Latitude
+    - Estabelecimento.Longitude
+    - Estabelecimento.Codigo
+    - Estabelecimento.InscricaoEstadual
+    - Estabelecimento.InscricaoMunicipal
+    - Estabelecimento.RazaoSocial
+    - Estabelecimento.Endereco
+    - Estabelecimento.Numero
+    - Estabelecimento.Complemento
+    - Estabelecimento.Bairro
+    - Estabelecimento.CEP
+    - Estabelecimento.Cidade
+    - Estabelecimento.UF
+    - Estabelecimento.Email
+    - Estabelecimento.Telefone
+    - Estabelecimento.Gerente
+    - Estabelecimento.CelularGerente
+    - Estabelecimento.IdBandeira
+    - Estabelecimento.IdUsuarioInclusao
+    - Estabelecimento.IdUsuarioAlteracao
+    - Estabelecimento.IntegradoComPdvActionGmPromo
+    - Estabelecimento.IdUsuarioIntegracaoPdvActionGmPromo
+    - Estabelecimento.DataIntegracaoPdvActionGmPromo
+    - Estabelecimento.IntegradoComPdvActionSiga
+    - Estabelecimento.IdUsuarioIntegracaoPdvActionSiga
+    - Estabelecimento.DataIntegracaoPdvActionSiga
+    - Estabelecimento.DataAtivacao
+    - Estabelecimento.IdUsuarioAtivacao
+    - Estabelecimento.DataInativacao
+    - Estabelecimento.IdUsuarioInativacao
+    - Estabelecimento.IdCanalEstabelecimento
+    - Estabelecimento.IdSituacaoEstabelecimento
+    - Estabelecimento.IdStatusEstabelecimento
+    - Estabelecimento.IdEstabelecimentoReferencia
+    - Estabelecimento.DataInauguracao
+    - Estabelecimento.DataEncerramento
+
+
+MIGRACAO: BANDEIRA : STORE_BRANDS
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcore.store_brands.id
+  FINANCEIRO.dbo.Bandeira.NomeFantasia : supera_dev_seed.gmcore.store_brands.description
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - valor padrão "empty", campo não pode ser nulo] : supera_dev_seed.gmcore.store_brands.abras_code
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - Bandeira.IdRede -> retail_chains.legacy_id -> retail_chains.id] : supera_dev_seed.gmcore.store_brands.retail_chain_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - Estabelecimento.IdCanalEstabelecimento -> store_segments.legacy_id -> store_segments.id] : supera_dev_seed.gmcore.store_brands.store_segment_id
+  FINANCEIRO.dbo.Bandeira.Ativo : supera_dev_seed.gmcore.store_brands.is_active
+  FINANCEIRO.dbo.Bandeira.DataInclusao : supera_dev_seed.gmcore.store_brands.created_at
+  FINANCEIRO.dbo.Bandeira.DataAlteracao : supera_dev_seed.gmcore.store_brands.updated_at
+  FINANCEIRO.dbo.Bandeira.Id : supera_dev_seed.gmcore.store_brands.legacy_id
+
+  CAMPOS DESTINO NAO MAPEADOS:
+    - store_brands.deleted_at
+
+  CAMPOS ORIGEM NAO MAPEADOS:
+    - Bandeira.Codigo
+    - Bandeira.RazaoSocial
+    - Bandeira.IdRede
+    - Bandeira.IdUsuarioInclusao
+    - Bandeira.IdUsuarioAlteracao
+    - Bandeira.DataAtivacao
+    - Bandeira.IdUsuarioAtivacao
+    - Bandeira.DataInativacao
+    - Bandeira.IdUsuarioInativacao
+    - Bandeira.IntegradoComPdvActionGmPromo
+    - Bandeira.IdUsuarioIntegracaoPdvActionGmPromo
+    - Bandeira.DataIntegracaoPdvActionGmPromo
+    - Bandeira.IntegradoComPdvActionSiga
+    - Bandeira.IdUsuarioIntegracaoPdvActionSiga
+    - Bandeira.DataIntegracaoPdvActionSiga
+
+
+MIGRACAO: REDE : RETAIL_CHAINS
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcore.retail_chains.id
+  FINANCEIRO.dbo.Rede.Nome : supera_dev_seed.gmcore.retail_chains.name
+  FINANCEIRO.dbo.Rede.Codigo : supera_dev_seed.gmcore.retail_chains.description
+  FINANCEIRO.dbo.Rede.Ativo : supera_dev_seed.gmcore.retail_chains.is_active
+  FINANCEIRO.dbo.Rede.DataInclusao : supera_dev_seed.gmcore.retail_chains.created_at
+  FINANCEIRO.dbo.Rede.DataAlteracao : supera_dev_seed.gmcore.retail_chains.updated_at
+  FINANCEIRO.dbo.Rede.Id : supera_dev_seed.gmcore.retail_chains.legacy_id
+
+  CAMPOS DESTINO NAO MAPEADOS:
+    - retail_chains.deleted_at
+
+  CAMPOS ORIGEM NAO MAPEADOS:
+    - Rede.IdUsuarioInclusao
+    - Rede.IdUsuarioAlteracao
+    - Rede.IntegradoComPdvActionGmPromo
+    - Rede.IdUsuarioIntegracaoPdvActionGmPromo
+    - Rede.DataIntegracaoPdvActionGmPromo
+    - Rede.IntegradoComPdvActionSiga
+    - Rede.IdUsuarioIntegracaoPdvActionSiga
+    - Rede.DataIntegracaoPdvActionSiga
+    - Rede.DataAtivacao
+    - Rede.IdUsuarioAtivacao
+    - Rede.DataInativacao
+    - Rede.IdUsuarioInativacao
+
+
+MIGRACAO: ESTABELECIMENTO : STORE_CNPJS
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcore.store_cnpjs.id
+  FINANCEIRO.dbo.Estabelecimento.Cnpj : supera_dev_seed.gmcore.store_cnpjs.cnpj
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre true para CNPJ principal] : supera_dev_seed.gmcore.store_cnpjs.is_main
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - Estabelecimento.Id -> stores.legacy_id -> stores.id] : supera_dev_seed.gmcore.store_cnpjs.store_id
+  FINANCEIRO.dbo.Estabelecimento.Ativo : supera_dev_seed.gmcore.store_cnpjs.is_active
+  FINANCEIRO.dbo.Estabelecimento.DataInclusao : supera_dev_seed.gmcore.store_cnpjs.created_at
+  FINANCEIRO.dbo.Estabelecimento.DataAlteracao : supera_dev_seed.gmcore.store_cnpjs.updated_at
+
+  CAMPOS DESTINO NAO MAPEADOS:
+    - store_cnpjs.deleted_at
+
+  CAMPOS ORIGEM NAO MAPEADOS:
+    - Estabelecimento.Latitude
+    - Estabelecimento.Longitude
+    - Estabelecimento.Codigo
+    - Estabelecimento.InscricaoEstadual
+    - Estabelecimento.InscricaoMunicipal
+    - Estabelecimento.RazaoSocial
+    - Estabelecimento.NomeFantasia
+    - Estabelecimento.Endereco
+    - Estabelecimento.Numero
+    - Estabelecimento.Complemento
+    - Estabelecimento.Bairro
+    - Estabelecimento.CEP
+    - Estabelecimento.Cidade
+    - Estabelecimento.UF
+    - Estabelecimento.Email
+    - Estabelecimento.Telefone
+    - Estabelecimento.Gerente
+    - Estabelecimento.CelularGerente
+    - Estabelecimento.IdBandeira
+    - Estabelecimento.IdUsuarioInclusao
+    - Estabelecimento.IdUsuarioAlteracao
+    - Estabelecimento.IntegradoComPdvActionGmPromo
+    - Estabelecimento.IdUsuarioIntegracaoPdvActionGmPromo
+    - Estabelecimento.DataIntegracaoPdvActionGmPromo
+    - Estabelecimento.IntegradoComPdvActionSiga
+    - Estabelecimento.IdUsuarioIntegracaoPdvActionSiga
+    - Estabelecimento.DataIntegracaoPdvActionSiga
+    - Estabelecimento.DataAtivacao
+    - Estabelecimento.IdUsuarioAtivacao
+    - Estabelecimento.DataInativacao
+    - Estabelecimento.IdUsuarioInativacao
+    - Estabelecimento.IdCanalEstabelecimento
+    - Estabelecimento.IdSituacaoEstabelecimento
+    - Estabelecimento.IdStatusEstabelecimento
+    - Estabelecimento.IdEstabelecimentoReferencia
+    - Estabelecimento.DataInauguracao
+    - Estabelecimento.DataEncerramento
+
+
+MIGRACAO: ESTABELECIMENTO : ADDRESSES
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcore.addresses.id
+  FINANCEIRO.dbo.Estabelecimento.Id : supera_dev_seed.gmcore.addresses.legacy_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - Estabelecimento.Id -> stores.legacy_id -> stores.id] : supera_dev_seed.gmcore.addresses.addressable_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre "stores"] : supera_dev_seed.gmcore.addresses.addressable_type
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre "main"] : supera_dev_seed.gmcore.addresses.type
+  FINANCEIRO.dbo.Estabelecimento.CEP : supera_dev_seed.gmcore.addresses.postal_code
+  FINANCEIRO.dbo.Estabelecimento.Endereco : supera_dev_seed.gmcore.addresses.street
+  FINANCEIRO.dbo.Estabelecimento.Numero : supera_dev_seed.gmcore.addresses.number
+  FINANCEIRO.dbo.Estabelecimento.Complemento : supera_dev_seed.gmcore.addresses.address_line_2
+  FINANCEIRO.dbo.Estabelecimento.Bairro : supera_dev_seed.gmcore.addresses.neighborhood
+  FINANCEIRO.dbo.Estabelecimento.Cidade : supera_dev_seed.gmcore.addresses.city
+  FINANCEIRO.dbo.Estabelecimento.UF : supera_dev_seed.gmcore.addresses.state
+  FINANCEIRO.dbo.Estabelecimento.Latitude : supera_dev_seed.gmcore.addresses.latitude
+  FINANCEIRO.dbo.Estabelecimento.Longitude : supera_dev_seed.gmcore.addresses.longitude
+  FINANCEIRO.dbo.Estabelecimento.Bairro : supera_dev_seed.gmcore.addresses.zone
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - string vazia] : supera_dev_seed.gmcore.addresses.region
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - valor padrão 0, não há campo correspondente na origem] : supera_dev_seed.gmcore.addresses.municipal_code
+  FINANCEIRO.dbo.Estabelecimento.DataInclusao : supera_dev_seed.gmcore.addresses.created_at
+  FINANCEIRO.dbo.Estabelecimento.DataAlteracao : supera_dev_seed.gmcore.addresses.updated_at
+
+  CAMPOS DESTINO NAO MAPEADOS:
+    - addresses.deleted_at
+
+  CAMPOS ORIGEM NAO MAPEADOS:
+    - Estabelecimento.Cnpj
+    - Estabelecimento.Codigo
+    - Estabelecimento.InscricaoEstadual
+    - Estabelecimento.InscricaoMunicipal
+    - Estabelecimento.RazaoSocial
+    - Estabelecimento.NomeFantasia
+    - Estabelecimento.Email
+    - Estabelecimento.Telefone
+    - Estabelecimento.Gerente
+    - Estabelecimento.CelularGerente
+    - Estabelecimento.IdBandeira
+    - Estabelecimento.IdUsuarioInclusao
+    - Estabelecimento.IdUsuarioAlteracao
+    - Estabelecimento.IntegradoComPdvActionGmPromo
+    - Estabelecimento.IdUsuarioIntegracaoPdvActionGmPromo
+    - Estabelecimento.DataIntegracaoPdvActionGmPromo
+    - Estabelecimento.IntegradoComPdvActionSiga
+    - Estabelecimento.IdUsuarioIntegracaoPdvActionSiga
+    - Estabelecimento.DataIntegracaoPdvActionSiga
+    - Estabelecimento.Ativo
+    - Estabelecimento.DataAtivacao
+    - Estabelecimento.IdUsuarioAtivacao
+    - Estabelecimento.DataInativacao
+    - Estabelecimento.IdUsuarioInativacao
+    - Estabelecimento.IdCanalEstabelecimento
+    - Estabelecimento.IdSituacaoEstabelecimento
+    - Estabelecimento.IdStatusEstabelecimento
+    - Estabelecimento.IdEstabelecimentoReferencia
+    - Estabelecimento.DataInauguracao
+    - Estabelecimento.DataEncerramento
+
+
+MIGRACAO: ESTABELECIMENTO : CONTACTS
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcore.contacts.id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre "stores"] : supera_dev_seed.gmcore.contacts.contactable_type
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - Estabelecimento.Id -> stores.legacy_id -> stores.id] : supera_dev_seed.gmcore.contacts.contactable_id
+
+  REGISTRO 1 - Email:
+    FINANCEIRO.dbo.Estabelecimento.Email : supera_dev_seed.gmcore.contacts.value (type="email", value em minusculo)
+
+  REGISTRO 2 - Telefone:
+    FINANCEIRO.dbo.Estabelecimento.Telefone : supera_dev_seed.gmcore.contacts.value (type="phone", apenas numeros ddd+number)
+
+  REGISTRO 3 - Celular Gerente:
+    FINANCEIRO.dbo.Estabelecimento.CelularGerente : supera_dev_seed.gmcore.contacts.value (type="cellphone", apenas numeros ddd+number)
+
+  FINANCEIRO.dbo.Estabelecimento.DataInclusao : supera_dev_seed.gmcore.contacts.created_at
+  FINANCEIRO.dbo.Estabelecimento.DataAlteracao : supera_dev_seed.gmcore.contacts.updated_at
+MIGRACAO: CANALESTABELECIMENTO : STORE_SEGMENTS
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcore.store_segments.id
+  FINANCEIRO.dbo.CanalEstabelecimento.Nome : supera_dev_seed.gmcore.store_segments.name
+  FINANCEIRO.dbo.CanalEstabelecimento.Ativo : supera_dev_seed.gmcore.store_segments.is_active
+  FINANCEIRO.dbo.CanalEstabelecimento.DataInclusao : supera_dev_seed.gmcore.store_segments.created_at
+  FINANCEIRO.dbo.CanalEstabelecimento.DataAlteracao : supera_dev_seed.gmcore.store_segments.updated_at
+  FINANCEIRO.dbo.CanalEstabelecimento.Id : supera_dev_seed.gmcore.store_segments.legacy_id
+
+  CAMPOS DESTINO NAO MAPEADOS:
+    - store_segments.deleted_at
+
+  CAMPOS ORIGEM NAO MAPEADOS:
+    - CanalEstabelecimento.IdUsuarioInclusao
+    - CanalEstabelecimento.IdUsuarioAlteracao
+    - CanalEstabelecimento.DataAtivacao
+    - CanalEstabelecimento.IdUsuarioAtivacao
+    - CanalEstabelecimento.DataInativacao
+    - CanalEstabelecimento.IdUsuarioInativacao
+

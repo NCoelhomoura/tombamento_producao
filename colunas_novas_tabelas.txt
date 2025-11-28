@@ -1,0 +1,62 @@
+====================================================================================================
+COLUNAS NOVAS ADICIONADAS NAS TABELAS - MIGRACAO STORES
+====================================================================================================
+
+Este documento lista todas as colunas que foram criadas/adicionadas nas tabelas do schema gmcore
+durante o processo de mapeamento e preparacao para migracao de dados.
+
+ORIGEM: SQL Server PRD (Database: FINANCEIRO)
+DESTINO: PostgreSQL HML (Database: supera_dev_seed, Schema: gmcore)
+
+====================================================================================================
+
+TABELA: gmcore.stores
+----------------------------------------------------------------------------------------------------
+Coluna: legacy_id
+Tipo: INTEGER
+Nullable: SIM
+Origem do dado: Estabelecimento.Id
+Descricao: Armazena o ID original da tabela Estabelecimento do SQL Server PRD para referencia
+
+====================================================================================================
+
+TABELA: gmcore.store_brands
+----------------------------------------------------------------------------------------------------
+Coluna: legacy_id
+Tipo: INTEGER
+Nullable: SIM
+Origem do dado: Bandeira.Id
+Descricao: Armazena o ID original da tabela Bandeira do SQL Server PRD para referencia
+
+====================================================================================================
+
+TABELA: gmcore.retail_chains
+----------------------------------------------------------------------------------------------------
+Coluna: legacy_id
+Tipo: INTEGER
+Nullable: SIM
+Origem do dado: Rede.Id
+Descricao: Armazena o ID original da tabela Rede do SQL Server PRD para referencia
+
+====================================================================================================
+
+TABELA: gmcore.store_segments
+----------------------------------------------------------------------------------------------------
+Coluna: legacy_id
+Tipo: INTEGER
+Nullable: SIM
+Origem do dado: CanalEstabelecimento.Id
+Descricao: Armazena o ID original da tabela CanalEstabelecimento do SQL Server PRD para referencia
+
+====================================================================================================
+
+RESUMO
+----------------------------------------------------------------------------------------------------
+Total de tabelas com colunas adicionadas: 4
+Total de colunas adicionadas: 4
+
+Todas as colunas adicionadas sao do tipo INTEGER e servem para manter a referencia com os IDs
+originais das tabelas do SQL Server PRD, facilitando o rastreamento e validacao dos dados migrados.
+
+====================================================================================================
+
