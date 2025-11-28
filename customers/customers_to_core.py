@@ -4,15 +4,9 @@ Migra dados das tabelas: customers, customer_segments, addresses, contacts
 """
 
 import sys
-import io
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-
+import os
 import uuid
 import logging
-import sys
-import os
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
@@ -25,24 +19,33 @@ from database_connection import DatabaseConnection
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Remover handlers existentes
-logger.handlers.clear()
+# Remover handlers existentes para evitar duplicacao
+if logger.handlers:
+    logger.handlers.clear()
 
-# Handler para arquivo
-file_handler = logging.FileHandler('customers_to_core_log.txt', encoding='utf-8')
-file_handler.setLevel(logging.INFO)
-file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-file_handler.setFormatter(file_formatter)
+# Handler para arquivo (modo 'w' para truncar arquivo a cada execucao)
+# Arquivo na raiz do projeto
+try:
+    log_file_path = os.path.join(os.path.dirname(__file__), '..', 'log_execution.txt')
+    log_file_path = os.path.abspath(log_file_path)  # Converter para caminho absoluto
+    file_handler = logging.FileHandler(log_file_path, mode='w', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+except Exception as e:
+    # Se houver erro, apenas criar handler de console
+    pass
 
 # Handler para console (terminal) - mostrar em tempo real
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setLevel(logging.INFO)
-console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-console_handler.setFormatter(console_formatter)
-
-# Adicionar handlers
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
+try:
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+except Exception:
+    pass
 
 # Tamanho do chunk para processamento
 CHUNK_SIZE = 1000
@@ -51,7 +54,7 @@ CHUNK_SIZE = 1000
 class CustomersMigration:
     """Classe para executar a migração de dados"""
     
-    def __init__(self):
+    def __init__(self, limit_rows=0):
         self.stats = {
             'customers': 0,
             'customer_segments': 0,
@@ -61,6 +64,7 @@ class CustomersMigration:
         }
         self.customer_id_map = {}  # Map: legado_id -> uuid
         self.segment_id_map = {}   # Map: legado_id -> uuid
+        self.limit_rows = limit_rows  # 0 = todos, > 0 = limitar quantidade
     
     def clean_string(self, value: Optional[str], max_length: Optional[int] = None) -> Optional[str]:
         """Limpa e trunca string"""
@@ -120,10 +124,13 @@ class CustomersMigration:
         print("-"*80)
         
         try:
-            # Contar origem
+            # Contar origem (aplicando limite se especificado)
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
-            cursor_sql.execute("SELECT COUNT(*) FROM SegmentoProduto")
+            if self.limit_rows > 0:
+                cursor_sql.execute(f"SELECT COUNT(*) FROM (SELECT TOP {self.limit_rows} Id FROM SegmentoProduto ORDER BY Id) AS limited")
+            else:
+                cursor_sql.execute("SELECT COUNT(*) FROM SegmentoProduto")
             origem_count = cursor_sql.fetchone()[0]
             cursor_sql.close()
             conn_sql.close()
@@ -184,6 +191,10 @@ class CustomersMigration:
         FROM SegmentoProduto
         ORDER BY Id
         """
+        
+        # Adicionar LIMIT se especificado
+        if self.limit_rows > 0:
+            sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
         
         conn_sql = DatabaseConnection.get_sql_server_prd_connection()
         cursor_sql = conn_sql.cursor()
@@ -277,10 +288,13 @@ class CustomersMigration:
         print("-"*80)
         
         try:
-            # Contar origem
+            # Contar origem (aplicando limite se especificado)
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
-            cursor_sql.execute("SELECT COUNT(*) FROM Cliente")
+            if self.limit_rows > 0:
+                cursor_sql.execute(f"SELECT COUNT(*) FROM (SELECT TOP {self.limit_rows} Id FROM Cliente ORDER BY Id) AS limited")
+            else:
+                cursor_sql.execute("SELECT COUNT(*) FROM Cliente")
             origem_count = cursor_sql.fetchone()[0]
             cursor_sql.close()
             conn_sql.close()
@@ -359,6 +373,10 @@ class CustomersMigration:
         FROM Cliente
         ORDER BY Id
         """
+        
+        # Adicionar LIMIT se especificado
+        if self.limit_rows > 0:
+            sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
         
         conn_sql = DatabaseConnection.get_sql_server_prd_connection()
         cursor_sql = conn_sql.cursor()
@@ -471,22 +489,43 @@ class CustomersMigration:
         print("-"*80)
         
         try:
-            # Contar origem - endereços principais
+            # Aplicar limite se especificado
+            limit_clause = ""
+            if self.limit_rows > 0:
+                limit_clause = f" OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY"
+            
+            # Contar origem - endereços principais (aplicando mesmo filtro e limite da migração)
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
-            cursor_sql.execute("""
+            query_main = f"""
                 SELECT COUNT(*) 
-                FROM Cliente 
+                FROM (
+                    SELECT Id, Endereco, EnderecoCobranca
+                    FROM Cliente
+                    WHERE (Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != '')
+                       OR (EnderecoCobranca IS NOT NULL AND LTRIM(RTRIM(EnderecoCobranca)) != '')
+                    ORDER BY Id
+                    {limit_clause}
+                ) AS limited
                 WHERE Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != ''
-            """)
+            """
+            cursor_sql.execute(query_main)
             origem_main = cursor_sql.fetchone()[0]
             
             # Contar origem - endereços de cobrança
-            cursor_sql.execute("""
+            query_billing = f"""
                 SELECT COUNT(*) 
-                FROM Cliente 
+                FROM (
+                    SELECT Id, Endereco, EnderecoCobranca
+                    FROM Cliente
+                    WHERE (Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != '')
+                       OR (EnderecoCobranca IS NOT NULL AND LTRIM(RTRIM(EnderecoCobranca)) != '')
+                    ORDER BY Id
+                    {limit_clause}
+                ) AS limited
                 WHERE EnderecoCobranca IS NOT NULL AND LTRIM(RTRIM(EnderecoCobranca)) != ''
-            """)
+            """
+            cursor_sql.execute(query_billing)
             origem_billing = cursor_sql.fetchone()[0]
             
             origem_total = origem_main + origem_billing
@@ -589,6 +628,10 @@ class CustomersMigration:
            OR (EnderecoCobranca IS NOT NULL AND LTRIM(RTRIM(EnderecoCobranca)) != '')
         ORDER BY Id
         """
+        
+        # Adicionar LIMIT se especificado
+        if self.limit_rows > 0:
+            sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
         
         conn_sql = DatabaseConnection.get_sql_server_prd_connection()
         cursor_sql = conn_sql.cursor()
@@ -835,30 +878,63 @@ class CustomersMigration:
         print("-"*80)
         
         try:
-            # Contar origem - emails
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
-            cursor_sql.execute("""
+            
+            # Aplicar limite se especificado
+            limit_clause = ""
+            if self.limit_rows > 0:
+                limit_clause = f" OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY"
+            
+            # Contar origem - emails (aplicando mesmo filtro e limite da migração)
+            query_email = f"""
                 SELECT COUNT(*) 
-                FROM Cliente 
+                FROM (
+                    SELECT Id, Email, Telefone, Celular
+                    FROM Cliente
+                    WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
+                       OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
+                       OR (Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != '')
+                    ORDER BY Id
+                    {limit_clause}
+                ) AS limited
                 WHERE Email IS NOT NULL AND LTRIM(RTRIM(Email)) != ''
-            """)
+            """
+            cursor_sql.execute(query_email)
             origem_email = cursor_sql.fetchone()[0]
             
             # Contar origem - telefones
-            cursor_sql.execute("""
+            query_phone = f"""
                 SELECT COUNT(*) 
-                FROM Cliente 
+                FROM (
+                    SELECT Id, Email, Telefone, Celular
+                    FROM Cliente
+                    WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
+                       OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
+                       OR (Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != '')
+                    ORDER BY Id
+                    {limit_clause}
+                ) AS limited
                 WHERE Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != ''
-            """)
+            """
+            cursor_sql.execute(query_phone)
             origem_phone = cursor_sql.fetchone()[0]
             
             # Contar origem - celulares
-            cursor_sql.execute("""
+            query_cellphone = f"""
                 SELECT COUNT(*) 
-                FROM Cliente 
+                FROM (
+                    SELECT Id, Email, Telefone, Celular
+                    FROM Cliente
+                    WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
+                       OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
+                       OR (Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != '')
+                    ORDER BY Id
+                    {limit_clause}
+                ) AS limited
                 WHERE Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != ''
-            """)
+            """
+            cursor_sql.execute(query_cellphone)
             origem_cellphone = cursor_sql.fetchone()[0]
             
             origem_total = origem_email + origem_phone + origem_cellphone
@@ -953,6 +1029,10 @@ class CustomersMigration:
         ORDER BY Id
         """
         
+        # Adicionar LIMIT se especificado
+        if self.limit_rows > 0:
+            sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
+        
         conn_sql = DatabaseConnection.get_sql_server_prd_connection()
         cursor_sql = conn_sql.cursor()
         cursor_sql.execute(sql_query)
@@ -965,10 +1045,21 @@ class CustomersMigration:
         total_processed = 0
         
         try:
+            rows_remaining = self.limit_rows if self.limit_rows > 0 else None
             while True:
-                rows = cursor_sql.fetchmany(CHUNK_SIZE)
+                fetch_size = CHUNK_SIZE
+                if rows_remaining is not None and rows_remaining > 0:
+                    fetch_size = min(CHUNK_SIZE, rows_remaining)
+                
+                rows = cursor_sql.fetchmany(fetch_size)
                 if not rows:
                     break
+                
+                if rows_remaining is not None:
+                    rows_remaining -= len(rows)
+                    if rows_remaining <= 0:
+                        # Processar ultimo chunk e parar
+                        pass
                 
                 chunk_num += 1
                 print(f"[ETAPA 4] Processando chunk {chunk_num} ({len(rows)} registros)...")
@@ -1197,7 +1288,17 @@ class CustomersMigration:
 if __name__ == "__main__":
     import sys
     
-    migration = CustomersMigration()
+    # Verificar se foi passado limite via argumento
+    limit_rows = 0
+    if '--limit' in sys.argv:
+        idx = sys.argv.index('--limit')
+        if idx + 1 < len(sys.argv):
+            try:
+                limit_rows = int(sys.argv[idx + 1])
+            except ValueError:
+                print("AVISO: Valor invalido para --limit, usando 0 (todos os dados)")
+    
+    migration = CustomersMigration(limit_rows=limit_rows)
     
     # Verificar se deve executar apenas uma etapa específica
     if len(sys.argv) > 1 and sys.argv[1] == "--step3":

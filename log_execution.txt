@@ -1,0 +1,7 @@
+2025-11-27 23:23:38,234 - INFO - ================================================================================
+2025-11-27 23:23:38,235 - INFO - ETAPA 4: Migrando contacts
+2025-11-27 23:23:38,235 - INFO - ================================================================================
+2025-11-27 23:23:41,113 - INFO - [ETAPA 4] Processando chunk 1 (10 registros)...
+2025-11-27 23:23:43,111 - INFO - [ETAPA 4] Chunk 1 processado: 15 contacts inseridos, 0 erros
+2025-11-27 23:23:43,112 - INFO - ETAPA 4 concluida: 15 registros
+2025-11-27 23:23:45,154 - WARNING - VALIDACAO ETAPA 4: Diferenca - Origem: 22, Destino: 15, Diferenca: 7
