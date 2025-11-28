@@ -1,5 +1,5 @@
 """
-Script de migração de dados: SQL Server PRD -> PostgreSQL HML (gmcore)
+Script de migração de dados: SQL Server PRD -> PostgreSQL Destino
 Migra dados das tabelas: customers, customer_segments, addresses, contacts
 """
 
@@ -13,6 +13,27 @@ from typing import List, Dict, Optional, Tuple
 # Adicionar diretório utils ao path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 from database_connection import DatabaseConnection
+
+# ============================================================================
+# CONFIGURACAO DE SCHEMAS POR AMBIENTE
+# ============================================================================
+# Definir schema de destino conforme ambiente:
+# HML: gmcore
+# PRD: core
+SCHEMA_HML = 'gmcore'
+SCHEMA_PRD = 'core'
+
+# Schema atual será determinado automaticamente baseado no destino configurado
+def get_schema_atual():
+    """Retorna o schema atual baseado no destino configurado"""
+    destino = DatabaseConnection.get_destino()
+    if destino == 'PRD':
+        return SCHEMA_PRD
+    else:
+        return SCHEMA_HML
+
+# Configurar destino padrão (pode ser alterado via orchestrator)
+# DatabaseConnection.set_destino('HML')  # ou 'PRD'
 
 # Configurar logging
 # Criar logger
@@ -93,11 +114,14 @@ class CustomersMigration:
             return 'active'
         return 'inactive'
     
-    def truncate_table(self, table_name: str, schema: str = 'gmcore'):
+    def truncate_table(self, table_name: str, schema: str = None):
         """Faz TRUNCATE em uma tabela"""
+        if schema is None:
+            schema = get_schema_atual()
+        
         conn = None
         try:
-            conn = DatabaseConnection.get_postgresql_hml_connection()
+            conn = DatabaseConnection.get_postgresql_destino_connection()
             cursor = conn.cursor()
             
             query = f"TRUNCATE TABLE {schema}.{table_name} CASCADE"
@@ -136,9 +160,11 @@ class CustomersMigration:
             conn_sql.close()
             
             # Contar destino
-            conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+            schema = get_schema_atual()
+            destino_nome = DatabaseConnection.get_destino()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.customer_segments")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.customer_segments")
             destino_count = cursor_pg.fetchone()[0]
             cursor_pg.close()
             conn_pg.close()
@@ -146,7 +172,7 @@ class CustomersMigration:
             print(f"\nORIGEM (SQL Server PRD - SegmentoProduto):")
             print(f"  Total de registros: {origem_count}")
             
-            print(f"\nDESTINO (PostgreSQL HML - gmcore.customer_segments):")
+            print(f"\nDESTINO (PostgreSQL {destino_nome} - {schema}.customer_segments):")
             print(f"  Total de registros: {destino_count}")
             
             diferenca = origem_count - destino_count
@@ -168,11 +194,14 @@ class CustomersMigration:
     
     def step1_migrate_customer_segments(self):
         """ETAPA 1: Migrar customer_segments"""
+        destino = DatabaseConnection.get_destino()
+        schema = get_schema_atual()
         print("\n" + "="*80)
         print("ETAPA 1: MIGRANDO CUSTOMER_SEGMENTS")
         print("="*80)
         logger.info("="*80)
         logger.info("ETAPA 1: Migrando customer_segments")
+        logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
         # Truncate
@@ -201,7 +230,7 @@ class CustomersMigration:
         cursor_sql.execute(sql_query)
         
         # Processar em chunks
-        conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
         cursor_pg = conn_pg.cursor()
         
         chunk = []
@@ -224,8 +253,9 @@ class CustomersMigration:
                         legado_id = row[0]
                         self.segment_id_map[legado_id] = segment_id
                         
-                        insert_query = """
-                        INSERT INTO gmcore.customer_segments (
+                        schema = get_schema_atual()
+                        insert_query = f"""
+                        INSERT INTO {schema}.customer_segments (
                             id, name, is_active, created_at, updated_at
                         ) VALUES (%s, %s, %s, %s, %s)
                         """
@@ -300,17 +330,19 @@ class CustomersMigration:
             conn_sql.close()
             
             # Contar destino
-            conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+            schema = get_schema_atual()
+            destino_nome = DatabaseConnection.get_destino()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.customers")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.customers")
             destino_count = cursor_pg.fetchone()[0]
             
             # Verificar legacy_id
-            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.customers WHERE legacy_id IS NOT NULL")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.customers WHERE legacy_id IS NOT NULL")
             com_legacy_id = cursor_pg.fetchone()[0]
             
             # Verificar cnpj preenchido
-            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.customers WHERE cnpj IS NOT NULL")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.customers WHERE cnpj IS NOT NULL")
             com_cnpj = cursor_pg.fetchone()[0]
             
             cursor_pg.close()
@@ -319,7 +351,7 @@ class CustomersMigration:
             print(f"\nORIGEM (SQL Server PRD - Cliente):")
             print(f"  Total de registros: {origem_count}")
             
-            print(f"\nDESTINO (PostgreSQL HML - gmcore.customers):")
+            print(f"\nDESTINO (PostgreSQL {destino_nome} - {schema}.customers):")
             print(f"  Total de registros: {destino_count}")
             print(f"  Com legacy_id: {com_legacy_id}")
             print(f"  Com cnpj: {com_cnpj}")
@@ -343,11 +375,14 @@ class CustomersMigration:
     
     def step2_migrate_customers(self):
         """ETAPA 2: Migrar customers"""
+        destino = DatabaseConnection.get_destino()
+        schema = get_schema_atual()
         print("\n" + "="*80)
         print("ETAPA 2: MIGRANDO CUSTOMERS")
         print("="*80)
         logger.info("="*80)
         logger.info("ETAPA 2: Migrando customers")
+        logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
         # Truncate
@@ -383,7 +418,7 @@ class CustomersMigration:
         cursor_sql.execute(sql_query)
         
         # Processar em chunks
-        conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
         cursor_pg = conn_pg.cursor()
         
         chunk_num = 0
@@ -417,8 +452,9 @@ class CustomersMigration:
                         # Se Ativo = True -> 'active', se False -> 'inactive'
                         status = 'active' if row[8] is True else 'inactive'
                         
-                        insert_query = """
-                        INSERT INTO gmcore.customers (
+                        schema = get_schema_atual()
+                        insert_query = f"""
+                        INSERT INTO {schema}.customers (
                             id, legacy_id, cnpj, cnpj_status, state_registration,
                             municipal_registration, legal_name, trade_name, status,
                             created_at, updated_at
@@ -533,24 +569,26 @@ class CustomersMigration:
             conn_sql.close()
             
             # Contar destino
-            conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+            schema = get_schema_atual()
+            destino_nome = DatabaseConnection.get_destino()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.addresses")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.addresses")
             destino_total = cursor_pg.fetchone()[0]
             
             # Contar por tipo
-            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.addresses WHERE type = 'main'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.addresses WHERE type = 'main'")
             destino_main = cursor_pg.fetchone()[0]
             
-            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.addresses WHERE type = 'billing'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.addresses WHERE type = 'billing'")
             destino_billing = cursor_pg.fetchone()[0]
             
             # Verificar addressable_id preenchido
-            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.addresses WHERE addressable_id IS NOT NULL")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.addresses WHERE addressable_id IS NOT NULL")
             com_addressable_id = cursor_pg.fetchone()[0]
             
             # Verificar addressable_type
-            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.addresses WHERE addressable_type = 'customers'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.addresses WHERE addressable_type = 'customers'")
             com_addressable_type = cursor_pg.fetchone()[0]
             
             cursor_pg.close()
@@ -561,7 +599,7 @@ class CustomersMigration:
             print(f"  Enderecos de cobranca: {origem_billing}")
             print(f"  Total esperado: {origem_total}")
             
-            print(f"\nDESTINO (PostgreSQL HML - gmcore.addresses):")
+            print(f"\nDESTINO (PostgreSQL {destino_nome} - {schema}.addresses):")
             print(f"  Enderecos principais (type='main'): {destino_main}")
             print(f"  Enderecos de cobranca (type='billing'): {destino_billing}")
             print(f"  Total inserido: {destino_total}")
@@ -587,11 +625,14 @@ class CustomersMigration:
     
     def step3_migrate_addresses(self):
         """ETAPA 3: Migrar addresses"""
+        destino = DatabaseConnection.get_destino()
+        schema = get_schema_atual()
         print("\n" + "="*80)
         print("ETAPA 3: MIGRANDO ADDRESSES")
         print("="*80)
         logger.info("="*80)
         logger.info("ETAPA 3: Migrando addresses")
+        logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
         # Truncate
@@ -638,7 +679,7 @@ class CustomersMigration:
         cursor_sql.execute(sql_query)
         
         # Processar em chunks
-        conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
         cursor_pg = conn_pg.cursor()
         
         chunk_num = 0
@@ -680,8 +721,9 @@ class CustomersMigration:
                                 except:
                                     pass
                             
-                            insert_query = """
-                            INSERT INTO gmcore.addresses (
+                            schema = get_schema_atual()
+                            insert_query = f"""
+                            INSERT INTO {schema}.addresses (
                                 id, legacy_id, addressable_id, addressable_type, type,
                                 postal_code, street, number, address_line_2, neighborhood,
                                 city, state, municipal_code, latitude, longitude, zone, region,
@@ -778,8 +820,9 @@ class CustomersMigration:
                                 except:
                                     pass
                             
-                            insert_query = """
-                            INSERT INTO gmcore.addresses (
+                            schema = get_schema_atual()
+                            insert_query = f"""
+                            INSERT INTO {schema}.addresses (
                                 id, legacy_id, addressable_id, addressable_type, type,
                                 postal_code, street, number, address_line_2, neighborhood,
                                 city, state, municipal_code, latitude, longitude, zone, region,
@@ -942,23 +985,25 @@ class CustomersMigration:
             conn_sql.close()
             
             # Contar destino
-            conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+            schema = get_schema_atual()
+            destino_nome = DatabaseConnection.get_destino()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.contacts WHERE contactable_type = 'customers'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'customers'")
             destino_total = cursor_pg.fetchone()[0]
             
             # Contar por tipo
-            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.contacts WHERE contactable_type = 'customers' AND type = 'email'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'customers' AND type = 'email'")
             destino_email = cursor_pg.fetchone()[0]
             
-            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.contacts WHERE contactable_type = 'customers' AND type = 'phone'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'customers' AND type = 'phone'")
             destino_phone = cursor_pg.fetchone()[0]
             
-            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.contacts WHERE contactable_type = 'customers' AND type = 'cellphone'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'customers' AND type = 'cellphone'")
             destino_cellphone = cursor_pg.fetchone()[0]
             
             # Verificar contactable_id preenchido
-            cursor_pg.execute("SELECT COUNT(*) FROM gmcore.contacts WHERE contactable_type = 'customers' AND contactable_id IS NOT NULL")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'customers' AND contactable_id IS NOT NULL")
             com_contactable_id = cursor_pg.fetchone()[0]
             
             cursor_pg.close()
@@ -970,7 +1015,7 @@ class CustomersMigration:
             print(f"  Celulares: {origem_cellphone}")
             print(f"  Total esperado: {origem_total}")
             
-            print(f"\nDESTINO (PostgreSQL HML - gmcore.contacts):")
+            print(f"\nDESTINO (PostgreSQL {destino_nome} - {schema}.contacts):")
             print(f"  Emails (type='email'): {destino_email}")
             print(f"  Telefones (type='phone'): {destino_phone}")
             print(f"  Celulares (type='cellphone'): {destino_cellphone}")
@@ -996,18 +1041,22 @@ class CustomersMigration:
     
     def step4_migrate_contacts(self):
         """ETAPA 4: Migrar contacts"""
+        destino = DatabaseConnection.get_destino()
+        schema = get_schema_atual()
         print("\n" + "="*80)
         print("ETAPA 4: MIGRANDO CONTACTS")
         print("="*80)
         logger.info("="*80)
         logger.info("ETAPA 4: Migrando contacts")
+        logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
         # Truncate apenas contacts de customers
         print("\n[ETAPA 4] Limpando contacts de customers...")
-        conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+        schema = get_schema_atual()
+        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
         cursor_pg = conn_pg.cursor()
-        cursor_pg.execute("DELETE FROM gmcore.contacts WHERE contactable_type = 'customers'")
+        cursor_pg.execute(f"DELETE FROM {schema}.contacts WHERE contactable_type = 'customers'")
         conn_pg.commit()
         cursor_pg.close()
         conn_pg.close()
@@ -1038,7 +1087,7 @@ class CustomersMigration:
         cursor_sql.execute(sql_query)
         
         # Processar em chunks
-        conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
         cursor_pg = conn_pg.cursor()
         
         chunk_num = 0
@@ -1082,8 +1131,8 @@ class CustomersMigration:
                         try:
                             email_value = str(row[1]).strip().lower()
                             
-                            insert_query = """
-                            INSERT INTO gmcore.contacts (
+                            insert_query = f"""
+                            INSERT INTO {schema}.contacts (
                                 id, contactable_id, contactable_type, type, value,
                                 created_at, updated_at
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -1218,14 +1267,25 @@ class CustomersMigration:
     
     def run(self):
         """Executa a migração completa"""
+        destino = DatabaseConnection.get_destino()
+        schema = get_schema_atual()
         print("\n" + "="*80)
-        print("INICIANDO MIGRACAO: SQL Server PRD -> PostgreSQL HML (gmcore)")
+        print(f"INICIANDO MIGRACAO: SQL Server PRD -> PostgreSQL {destino} ({schema})")
         print("="*80)
         print(f"Data/Hora: {datetime.now()}")
         print("="*80)
+        
+        # Log de configuracoes no inicio
         logger.info("="*80)
-        logger.info("INICIANDO MIGRACAO")
+        logger.info("INICIANDO MIGRACAO COMPLETA")
+        logger.info("="*80)
         logger.info(f"Data/Hora: {datetime.now()}")
+        logger.info(f"Ambiente Destino: {destino}")
+        logger.info(f"Schema Destino: {schema}")
+        logger.info(f"Limite de Linhas: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
+        logger.info(f"Tamanho do Chunk: {CHUNK_SIZE}")
+        logger.info(f"Origem: SQL Server PRD (Database: FINANCEIRO)")
+        logger.info(f"Destino: PostgreSQL {destino} (Schema: {schema})")
         logger.info("="*80)
         
         start_time = datetime.now()
@@ -1317,9 +1377,10 @@ if __name__ == "__main__":
         try:
             # Carregar mapeamento de customer IDs (necessário para addresses)
             print("\n[ETAPA 3] Carregando mapeamento de customers...")
-            conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute("SELECT id, legacy_id FROM gmcore.customers")
+            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.customers")
             for row in cursor_pg.fetchall():
                 migration.customer_id_map[row[1]] = row[0]
             cursor_pg.close()
@@ -1364,6 +1425,8 @@ if __name__ == "__main__":
             print(f"\nERRO CRITICO: {e}")
             raise
     elif len(sys.argv) > 1 and sys.argv[1] == "--step4":
+        destino = DatabaseConnection.get_destino()
+        schema = get_schema_atual()
         print("\n" + "="*80)
         print("EXECUTANDO APENAS ETAPA 4: MIGRACAO DE CONTACTS")
         print("="*80)
@@ -1372,6 +1435,10 @@ if __name__ == "__main__":
         logger.info("="*80)
         logger.info("EXECUTANDO APENAS ETAPA 4: MIGRACAO DE CONTACTS")
         logger.info(f"Data/Hora: {datetime.now()}")
+        logger.info(f"Ambiente Destino: {destino}")
+        logger.info(f"Schema Destino: {schema}")
+        logger.info(f"Limite de Linhas: {'TODOS' if limit_rows == 0 else limit_rows}")
+        logger.info(f"Tamanho do Chunk: {CHUNK_SIZE}")
         logger.info("="*80)
         
         start_time = datetime.now()
@@ -1379,9 +1446,10 @@ if __name__ == "__main__":
         try:
             # Carregar mapeamento de customer IDs (necessário para contacts)
             print("\n[ETAPA 4] Carregando mapeamento de customers...")
-            conn_pg = DatabaseConnection.get_postgresql_hml_connection()
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute("SELECT id, legacy_id FROM gmcore.customers")
+            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.customers")
             for row in cursor_pg.fetchall():
                 migration.customer_id_map[row[1]] = row[0]
             cursor_pg.close()

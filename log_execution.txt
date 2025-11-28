@@ -1,7 +1,55 @@
-2025-11-27 23:23:38,234 - INFO - ================================================================================
-2025-11-27 23:23:38,235 - INFO - ETAPA 4: Migrando contacts
-2025-11-27 23:23:38,235 - INFO - ================================================================================
-2025-11-27 23:23:41,113 - INFO - [ETAPA 4] Processando chunk 1 (10 registros)...
-2025-11-27 23:23:43,111 - INFO - [ETAPA 4] Chunk 1 processado: 15 contacts inseridos, 0 erros
-2025-11-27 23:23:43,112 - INFO - ETAPA 4 concluida: 15 registros
-2025-11-27 23:23:45,154 - WARNING - VALIDACAO ETAPA 4: Diferenca - Origem: 22, Destino: 15, Diferenca: 7
+2025-11-27 23:50:07,555 - INFO - ================================================================================
+2025-11-27 23:50:07,556 - INFO - INICIANDO MIGRACAO COMPLETA
+2025-11-27 23:50:07,556 - INFO - ================================================================================
+2025-11-27 23:50:07,556 - INFO - Data/Hora: 2025-11-27 23:50:07.556474
+2025-11-27 23:50:07,556 - INFO - Ambiente Destino: HML
+2025-11-27 23:50:07,556 - INFO - Schema Destino: gmcore
+2025-11-27 23:50:07,556 - INFO - Limite de Linhas: 10
+2025-11-27 23:50:07,556 - INFO - Tamanho do Chunk: 1000
+2025-11-27 23:50:07,556 - INFO - Origem: SQL Server PRD (Database: FINANCEIRO)
+2025-11-27 23:50:07,556 - INFO - Destino: PostgreSQL HML (Schema: gmcore)
+2025-11-27 23:50:07,556 - INFO - ================================================================================
+2025-11-27 23:50:07,556 - INFO - ================================================================================
+2025-11-27 23:50:07,556 - INFO - ETAPA 1: Migrando customer_segments
+2025-11-27 23:50:07,556 - INFO - Ambiente: HML | Schema: gmcore | Limite: 10
+2025-11-27 23:50:07,556 - INFO - ================================================================================
+2025-11-27 23:50:08,838 - INFO - Tabela gmcore.customer_segments truncada com sucesso
+2025-11-27 23:50:11,333 - INFO - [ETAPA 1] Chunk 1 processado: 10 registros inseridos, 0 erros
+2025-11-27 23:50:11,333 - INFO - ETAPA 1 concluida: 10 registros
+2025-11-27 23:50:12,459 - INFO - VALIDACAO ETAPA 1: OK - Origem: 10, Destino: 10
+2025-11-27 23:50:12,474 - INFO - ================================================================================
+2025-11-27 23:50:12,474 - INFO - ETAPA 2: Migrando customers
+2025-11-27 23:50:12,474 - INFO - Ambiente: HML | Schema: gmcore | Limite: 10
+2025-11-27 23:50:12,474 - INFO - ================================================================================
+2025-11-27 23:50:13,701 - INFO - Tabela gmcore.customers truncada com sucesso
+2025-11-27 23:50:14,612 - INFO - [ETAPA 2] Processando chunk 1 (10 registros)...
+2025-11-27 23:50:16,043 - INFO - [ETAPA 2] Chunk 1 processado: 10 registros inseridos, 0 erros
+2025-11-27 23:50:16,043 - INFO - ETAPA 2 concluida: 10 registros
+2025-11-27 23:50:17,458 - INFO - VALIDACAO ETAPA 2: OK - Origem: 10, Destino: 10
+2025-11-27 23:50:17,473 - INFO - ================================================================================
+2025-11-27 23:50:17,473 - INFO - ETAPA 3: Migrando addresses
+2025-11-27 23:50:17,473 - INFO - Ambiente: HML | Schema: gmcore | Limite: 10
+2025-11-27 23:50:17,473 - INFO - ================================================================================
+2025-11-27 23:50:18,762 - INFO - Tabela gmcore.addresses truncada com sucesso
+2025-11-27 23:50:20,700 - INFO - [ETAPA 3] Processando chunk 1 (10 registros)...
+2025-11-27 23:50:22,694 - INFO - [ETAPA 3] Chunk 1 processado: 15 enderecos inseridos, 0 erros
+2025-11-27 23:50:22,694 - INFO - ETAPA 3 concluida: 15 registros
+2025-11-27 23:50:24,287 - WARNING - VALIDACAO ETAPA 3: Diferenca - Origem: 19, Destino: 15, Diferenca: 4
+2025-11-27 23:50:24,302 - INFO - ================================================================================
+2025-11-27 23:50:24,302 - INFO - ETAPA 4: Migrando contacts
+2025-11-27 23:50:24,302 - INFO - Ambiente: HML | Schema: gmcore | Limite: 10
+2025-11-27 23:50:24,302 - INFO - ================================================================================
+2025-11-27 23:50:26,418 - INFO - [ETAPA 4] Processando chunk 1 (10 registros)...
+2025-11-27 23:50:28,409 - INFO - [ETAPA 4] Chunk 1 processado: 15 contacts inseridos, 0 erros
+2025-11-27 23:50:28,409 - INFO - ETAPA 4 concluida: 15 registros
+2025-11-27 23:50:30,005 - WARNING - VALIDACAO ETAPA 4: Diferenca - Origem: 22, Destino: 15, Diferenca: 7
+2025-11-27 23:50:30,023 - INFO - ================================================================================
+2025-11-27 23:50:30,023 - INFO - MIGRACAO CONCLUIDA COM SUCESSO!
+2025-11-27 23:50:30,023 - INFO - ================================================================================
+2025-11-27 23:50:30,023 - INFO - Duracao: 0:00:22.466983
+2025-11-27 23:50:30,023 - INFO - Customer Segments: 10
+2025-11-27 23:50:30,024 - INFO - Customers: 10
+2025-11-27 23:50:30,024 - INFO - Addresses: 15
+2025-11-27 23:50:30,024 - INFO - Contacts: 15
+2025-11-27 23:50:30,024 - INFO - Erros: 0
+2025-11-27 23:50:30,024 - INFO - Nenhum erro encontrado!

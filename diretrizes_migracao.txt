@@ -19,7 +19,7 @@ user: postgres
 senha: Taztaz@21
 
 
-ORIGEM SCHEMAS TABELAS PRD
+DESTINO SCHEMAS TABELAS PRD
 Server=gmcore-eks-dev-postgres.ckksg9kcwfzj.us-east-2.rds.amazonaws.com
 Port=5432
 Database=gmcoredb

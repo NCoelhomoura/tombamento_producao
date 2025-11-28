@@ -34,7 +34,7 @@ class DatabaseConnection:
     }
     
     # Configurações PostgreSQL HML (Destino - Leitura/Escrita, schema gmcore)
-    POSTGRESQL_HML_CONFIG = {
+    POSTGRESQL_HML_DESTINO_CONFIG = {
         'host': 'apgsql-gmpromo-prd.eastus.cloudapp.azure.com',
         'database': 'supera_dev_seed',
         'schema': 'gmcore',
@@ -42,6 +42,21 @@ class DatabaseConnection:
         'user': 'postgres',
         'password': 'Taztaz@21'
     }
+    
+    # Configurações PostgreSQL PRD AWS (Destino - Leitura/Escrita, schema gmcore)
+    # Credenciais do DESTINO SCHEMAS TABELAS PRD (diretrizes_migracao.txt)
+    POSTGRESQL_PRD_DESTINO_CONFIG = {
+        'host': 'gmcore-eks-dev-postgres.ckksg9kcwfzj.us-east-2.rds.amazonaws.com',
+        'database': 'gmcoredb',
+        'schema': 'gmcore',
+        'port': 5432,
+        'user': 'postgres',
+        'password': 'lmlVyIGz8eWT6iBtzLJU'
+    }
+    
+    # Chaveador de destino: 'HML' ou 'PRD'
+    # Pode ser alterado via variável de ambiente MIGRATION_DESTINO ou método set_destino()
+    _destino_atual = 'HML'  # Padrão: HML
     
     @staticmethod
     def get_sql_server_prd_connection():
@@ -88,9 +103,56 @@ class DatabaseConnection:
             raise
     
     @staticmethod
-    def get_postgresql_hml_connection():
+    def set_destino(destino: str):
         """
-        Cria e retorna uma conexão com PostgreSQL HML (Leitura/Escrita)
+        Define o destino da migracao: 'HML' ou 'PRD'
+        
+        Args:
+            destino (str): 'HML' ou 'PRD'
+        """
+        destino_upper = destino.upper()
+        if destino_upper not in ['HML', 'PRD']:
+            raise ValueError(f"Destino invalido: {destino}. Use 'HML' ou 'PRD'")
+        DatabaseConnection._destino_atual = destino_upper
+        print(f"Destino configurado para: {destino_upper}")
+    
+    @staticmethod
+    def get_destino():
+        """
+        Retorna o destino atual configurado
+        
+        Returns:
+            str: 'HML' ou 'PRD'
+        """
+        # Verificar variável de ambiente primeiro
+        env_destino = os.getenv('MIGRATION_DESTINO', '').upper()
+        if env_destino in ['HML', 'PRD']:
+            DatabaseConnection._destino_atual = env_destino
+        
+        return DatabaseConnection._destino_atual
+    
+    @staticmethod
+    def get_postgresql_destino_connection():
+        """
+        Cria e retorna uma conexão com o destino configurado (HML ou PRD)
+        Configura o schema padrão como 'gmcore'
+        
+        Returns:
+            psycopg2.extensions.connection: Conexão com PostgreSQL destino
+        """
+        destino = DatabaseConnection.get_destino()
+        
+        if destino == 'HML':
+            return DatabaseConnection.get_postgresql_hml_destino_connection()
+        elif destino == 'PRD':
+            return DatabaseConnection.get_postgresql_prd_destino_connection()
+        else:
+            raise ValueError(f"Destino invalido: {destino}")
+    
+    @staticmethod
+    def get_postgresql_hml_destino_connection():
+        """
+        Cria e retorna uma conexão com PostgreSQL HML (Destino - Leitura/Escrita)
         Configura o schema padrão como 'gmcore'
         
         Returns:
@@ -98,21 +160,53 @@ class DatabaseConnection:
         """
         try:
             conn = psycopg2.connect(
-                host=DatabaseConnection.POSTGRESQL_HML_CONFIG['host'],
-                database=DatabaseConnection.POSTGRESQL_HML_CONFIG['database'],
-                port=DatabaseConnection.POSTGRESQL_HML_CONFIG['port'],
-                user=DatabaseConnection.POSTGRESQL_HML_CONFIG['user'],
-                password=DatabaseConnection.POSTGRESQL_HML_CONFIG['password']
+                host=DatabaseConnection.POSTGRESQL_HML_DESTINO_CONFIG['host'],
+                database=DatabaseConnection.POSTGRESQL_HML_DESTINO_CONFIG['database'],
+                port=DatabaseConnection.POSTGRESQL_HML_DESTINO_CONFIG['port'],
+                user=DatabaseConnection.POSTGRESQL_HML_DESTINO_CONFIG['user'],
+                password=DatabaseConnection.POSTGRESQL_HML_DESTINO_CONFIG['password']
             )
-            # Configurar o schema padrão como gmcore
-            cursor = conn.cursor()
-            cursor.execute(f"SET search_path TO {DatabaseConnection.POSTGRESQL_HML_CONFIG['schema']}, public;")
-            conn.commit()
-            cursor.close()
+            # Configurar o schema padrão (será configurado dinamicamente pelo código que usa)
+            # O schema será passado nas queries, não precisa configurar search_path aqui
             return conn
         except Exception as e:
-            print(f"Erro ao conectar com PostgreSQL HML: {e}")
+            print(f"Erro ao conectar com PostgreSQL HML (Destino): {e}")
             raise
+    
+    @staticmethod
+    def get_postgresql_prd_destino_connection():
+        """
+        Cria e retorna uma conexão com PostgreSQL PRD AWS (Destino - Leitura/Escrita)
+        Configura o schema padrão como 'gmcore'
+        
+        Returns:
+            psycopg2.extensions.connection: Conexão com PostgreSQL PRD AWS
+        """
+        try:
+            config = DatabaseConnection.POSTGRESQL_PRD_DESTINO_CONFIG
+            
+            # Credenciais já configuradas
+            
+            conn = psycopg2.connect(
+                host=config['host'],
+                database=config['database'],
+                port=config['port'],
+                user=config['user'],
+                password=config['password']
+            )
+            # Configurar o schema padrão (será configurado dinamicamente pelo código que usa)
+            # O schema será passado nas queries, não precisa configurar search_path aqui
+            return conn
+        except Exception as e:
+            print(f"Erro ao conectar com PostgreSQL PRD AWS (Destino): {e}")
+            raise
+    
+    @staticmethod
+    def get_postgresql_hml_connection():
+        """
+        Alias para get_postgresql_hml_destino_connection() - mantido para compatibilidade
+        """
+        return DatabaseConnection.get_postgresql_hml_destino_connection()
     
     # Métodos de compatibilidade (mantidos para não quebrar código existente)
     @staticmethod
@@ -122,8 +216,8 @@ class DatabaseConnection:
     
     @staticmethod
     def get_postgresql_connection():
-        """Alias para get_postgresql_hml_connection() - mantido para compatibilidade"""
-        return DatabaseConnection.get_postgresql_hml_connection()
+        """Alias para get_postgresql_destino_connection() - mantido para compatibilidade"""
+        return DatabaseConnection.get_postgresql_destino_connection()
     
     @staticmethod
     def execute_sql_server_prd_query(query: str):
@@ -208,9 +302,9 @@ class DatabaseConnection:
                 conn.close()
     
     @staticmethod
-    def execute_postgresql_hml_query(query: str):
+    def execute_postgresql_destino_query(query: str):
         """
-        Executa uma query no PostgreSQL HML (Leitura/Escrita)
+        Executa uma query no destino configurado (HML ou PRD)
         
         Args:
             query (str): Query SQL a ser executada
@@ -221,7 +315,7 @@ class DatabaseConnection:
         conn = None
         cursor = None
         try:
-            conn = DatabaseConnection.get_postgresql_hml_connection()
+            conn = DatabaseConnection.get_postgresql_destino_connection()
             cursor = conn.cursor()
             cursor.execute(query)
             
@@ -236,13 +330,22 @@ class DatabaseConnection:
         except Exception as e:
             if conn:
                 conn.rollback()
-            print(f"Erro ao executar query no PostgreSQL HML: {e}")
+            destino = DatabaseConnection.get_destino()
+            print(f"Erro ao executar query no PostgreSQL {destino} (Destino): {e}")
             raise
         finally:
             if cursor:
                 cursor.close()
             if conn:
                 conn.close()
+    
+    @staticmethod
+    def execute_postgresql_hml_query(query: str):
+        """
+        Executa uma query no PostgreSQL HML (Leitura/Escrita)
+        Mantido para compatibilidade - usa destino configurado
+        """
+        return DatabaseConnection.execute_postgresql_destino_query(query)
     
     # Métodos de compatibilidade (mantidos para não quebrar código existente)
     @staticmethod
@@ -252,8 +355,8 @@ class DatabaseConnection:
     
     @staticmethod
     def execute_postgresql_query(query: str):
-        """Alias para execute_postgresql_hml_query() - mantido para compatibilidade"""
-        return DatabaseConnection.execute_postgresql_hml_query(query)
+        """Alias para execute_postgresql_destino_query() - mantido para compatibilidade"""
+        return DatabaseConnection.execute_postgresql_destino_query(query)
 
 
 # Exemplo de uso
