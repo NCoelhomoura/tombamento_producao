@@ -1,0 +1,1075 @@
+====================================================================================================
+DICIONARIO DE MIGRACAO DE DADOS - CONTRATOS
+====================================================================================================
+
+ORIGEM: SQL Server PRD (Database: FINANCEIRO)
+DESTINO: PostgreSQL HML (Database: supera_dev_seed, Schema: gmcommercial)
+
+====================================================================================================
+
+NOTA: A migração será baseada principalmente na ViewOrcamentosLojas, que contém dados agregados
+      e relacionados de Orcamento, OrcamentoLojas e outras tabelas relacionadas.
+      Para vendedores e comissão, será utilizada diretamente a tabela Orcamento e 
+      FaturamentoOrcamentoComissao.
+
+====================================================================================================
+TABELA DESTINO: CONTRACTS
+TABELA ORIGEM: ViewOrcamentosLojas (principal) + Orcamento (complementar)
+====================================================================================================
+
+ORIGEM - SQL Server PRD - View: ViewOrcamentosLojas
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   
+----------------------------------------------------------------------------------------------------
+Tipo                                     varchar(11)                    11              NAO        
+IdEmpresa                                int                            10              SIM        
+NomeEmpresa                              nvarchar(200)                  200             NAO        
+IdOrcamento                              int                            10              NAO        
+IdOrcamentoPai                           int                            10              SIM        
+CategoriaOrcamento                       nvarchar(2)                     2               SIM        
+StatusPedido                             int                            10              NAO        
+GiroProduto                              nvarchar(20)                   20              SIM        
+IdUsuarioInclusao                        int                            10              SIM        
+IdUsuarioInclusaoOrcamento              int                            10              SIM        
+NomeUsuarioInclusao                      nvarchar(200)                  200             SIM        
+IdUsuarioAlteracaoOrcamento             int                            10              SIM        
+NomeUsuarioAlteracao                     nvarchar(200)                  200             SIM        
+IdUsuarioVendedor                       int                            10              SIM        
+NomeUsuarioVendedor                     nvarchar(200)                  200             SIM        
+IdCliente                                int                            10              NAO        
+CodigoCliente                            int                            10              SIM        
+NomeCliente                              nvarchar(255)                  255             NAO        
+NomeSistemaCliente                       nvarchar(255)                  255             SIM        
+CpfCnpjCliente                           nvarchar(30)                   30              SIM        
+DiaFaturamento                           int                            10              NAO        
+DiaVencimento                            int                            10              NAO        
+IdOrcamentoLoja                          int                            10              NAO        
+IdOrcamentoLojaComplemento             bigint                          19              SIM        
+IdEstabelecimento                        int                            10              NAO        
+CodigoEstabelecimento                    int                            10              NAO        
+CnpjEstabelecimento                      nvarchar(30)                   30              SIM        
+NomeEstabelecimento                      nvarchar(500)                  500             NAO        
+EnderecoEstabelecimento                  nvarchar(500)                  500             SIM        
+BairroEstabelecimento                    nvarchar(300)                  300             SIM        
+CidadeEstabelecimento                    nvarchar(300)                  300             SIM        
+NumeroEstabelecimento                    nvarchar(50)                   50              SIM        
+UFEstabelecimento                        nvarchar(2)                    2               SIM        
+IdBandeira                               int                            10              NAO        
+CodigoBandeira                           int                            10              NAO        
+NomeBandeira                             nvarchar(200)                  200             NAO        
+IdRede                                   int                            10              NAO        
+CodigoRede                               int                            10              NAO        
+NomeRede                                 nvarchar(200)                  200             NAO        
+Frequencia                               nvarchar(MAX)                  -1              SIM        
+Horas                                    nvarchar(MAX)                  -1              SIM        
+QtdeSku                                  nvarchar(MAX)                  -1              SIM        
+ValorHora                                decimal(18,2)                 18              SIM        
+ValorLoja                                decimal(18,2)                 18              SIM        
+ValorNegociado                           decimal(18,2)                 18              SIM        
+DecimoTerceiroSalario                    decimal(18,2)                 18              SIM        
+Viabilidade                              bit                            -               SIM        
+TipoViabilidade                          int                            10              SIM        
+DataInicioOperacao                       datetime                       -               SIM        
+DataAvisoPrevio                          datetime                       -               SIM        
+DataInclusao                             datetime                       -               NAO        
+OrcamentoFaturadoEsseMes                 bit                            -               SIM        
+LojaFaturadaEsseMes                      bit                            -               SIM        
+DataFaturamento                           datetime                       -               SIM        
+CompetenciaFaturamento                   nvarchar(10)                   10              SIM        
+IdOperacaoEmpresa                        bigint                         19              SIM        
+NomeOperacaoEmpresa                      nvarchar(255)                  255             SIM        
+IdAmbientePdvNow                         bigint                         19              SIM        
+NomeAmbientePdvNow                       nvarchar(255)                  255             SIM        
+IdClienteLoja                            int                            10              SIM        
+NomeClienteLoja                          nvarchar(255)                  255             SIM        
+IdTarefa                                 int                            10              SIM        
+NomeTarefa                               nvarchar(MAX)                  -1              SIM        
+SegmentosProdutos                        nvarchar(MAX)                  -1              SIM        
+ValorTradeMarketingPorLojaCalculado      decimal(18,2)                 18              SIM        
+DataInclusaoOrcamento                    datetime                       -               NAO        
+DataAlteracaoOrcamento                   datetime                       -               SIM        
+DataInclusaoOrcamentoLojas               datetime                       -               NAO        
+DataAlteracaoOrcamentoLojas              datetime                       -               SIM        
+DataInclusaoOrcamentoLojaComplemento     datetime                       -               SIM        
+DataAlteracaoOrcamentoLojaComplemento    datetime                       -               SIM        
+IdSolicitacaoAlteracaoOrcamento          bigint                         19              SIM        
+IdSolicitacaoAlteracaoOrcamentoLoja      bigint                         19              SIM        
+IdSolicitacaoAlteracaoOrcamentoLojaComplemento bigint                         19              SIM        
+IdSolicitacaoAlteracaoOrcamentoLojaTarefa bigint                         19              SIM        
+CodigoClienteCustomizado                 int                            10              SIM        
+
+
+ORIGEM - SQL Server PRD - Tabela: Orcamento (campos complementares)
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+IdCliente                                int                            10              NAO        NAO  
+IdEmpresa                                int                            10              SIM        NAO  
+Segmento                                 nvarchar(150)                  150             SIM        NAO  
+Salario                                  decimal(18,2)                  18              NAO        NAO  
+HorasTrabalhadas                         nvarchar(20)                   20              SIM        NAO  
+Perdas                                   nvarchar(20)                   20              SIM        NAO  
+GiroProduto                              nvarchar(20)                   20              SIM        NAO  
+IdOrcamentoPai                           int                            10              SIM        NAO  
+QTDLoja                                  int                            10              NAO        NAO  
+ValorTotalProvisionado                   decimal(18,2)                  18              NAO        NAO  
+Obs                                      nvarchar(MAX)                  -1              SIM        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+IdUsuarioVendedor                       int                            10              SIM        NAO  
+DataInclusao                             datetime                       -               NAO        NAO  
+DataAlteracao                            datetime                       -               SIM        NAO  
+DataExclusao                             datetime                       -               SIM        NAO  
+DataFaturamento                           datetime                       -               SIM        NAO  
+DataVencimento                           datetime                       -               SIM        NAO  
+IdUsuarioInclusao                        int                            10              SIM        NAO  
+IdUsuarioAlteracao                       int                            10              SIM        NAO  
+IdUsuarioExclusao                        int                            10              SIM        NAO  
+StatusPedido                             int                            10              NAO        NAO  
+DataAprovacaoPedido                      datetime                       -               SIM        NAO  
+DataViabilidadePedido                    datetime                       -               SIM        NAO  
+DataInformacoesPedido                    datetime                       -               SIM        NAO  
+DataJuridicoPedido                       datetime                       -               SIM        NAO  
+DataInicioOperacaoPedido                 datetime                       -               SIM        NAO  
+DataFinalPedido                          datetime                       -               SIM        NAO  
+DataRetornoPedido                        datetime                       -               SIM        NAO  
+DataInicioOperacaoOrcamento              datetime                       -               SIM        NAO  
+DataAvisoPrevioOrcamento                 datetime                       -               SIM        NAO  
+Viabilidade                              bit                            -               SIM        NAO  
+IdUsuarioRetorno                         int                            10              SIM        NAO  
+TipoOrcamento                            nchar(2)                       2               SIM        NAO  
+CategoriaOrcamento                       nchar(2)                       2               SIM        NAO  
+CobrarEPI                                 bit                            -               NAO        NAO  
+InicioCobrancaEPI                        datetime                       -               SIM        NAO  
+ValorEPI                                  decimal(18,2)                  18              SIM        NAO  
+TradeMarketing                           nvarchar(50)                   50              SIM        NAO  
+ValorTradeMarketing                      decimal(18,2)                  18              SIM        NAO  
+ValorOutros                               decimal(18,2)                  18              SIM        NAO  
+MotivoCobrancaOutros                     ntext                          1073741823      SIM        NAO  
+DiaFaturamento                            int                            10              NAO        NAO  
+DiaVencimento                             int                            10              NAO        NAO  
+Faturado                                  bit                            -               NAO        NAO  
+IdUsuarioFaturamento                      int                            10              SIM        NAO  
+IdFaturamento                            bigint                         19              SIM        NAO  
+CompetenciaFaturamento                    nvarchar(10)                   10              SIM        NAO  
+Juros                                     decimal(18,2)                  18              SIM        NAO  
+Desconto                                  decimal(18,2)                  18              SIM        NAO  
+Multa                                     decimal(18,2)                  18              SIM        NAO  
+DataUltimaCobrancaTaxaEPI                datetime                       -               SIM        NAO  
+PeriodoCobrancaOrcamento                 nvarchar(1)                    1               SIM        NAO  
+DataUltimaCobrancaOrcamento              datetime                       -               SIM        NAO  
+ModoFaturamento                          nvarchar(1)                    1               SIM        NAO  
+IntegradoComPdvAction                     bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvAction             int                            10              SIM        NAO  
+DataIntegracaoPdvAction                  datetime                       -               SIM        NAO  
+TipoCalculoDecimoTerceiro                int                            10              SIM        NAO  
+DataFinanceiroPedido                     datetime                       -               SIM        NAO  
+DataClienteEncerradoPedido               datetime                       -               SIM        NAO  
+DiaAniversarioContrato                   int                            10              SIM        NAO  
+MesAniversarioContrato                   int                            10              SIM        NAO  
+IdUsuarioAniversarioContrato             int                            10              SIM        NAO  
+DataMudancaAniversarioContrato            datetime                       -               SIM        NAO  
+HashUltimoExcel                          nvarchar(50)                   50              SIM        NAO  
+HashUltimoPdf                            nvarchar(50)                   50              SIM        NAO  
+IdUsuarioAlteracaoVendedor               int                            10              SIM        NAO  
+DataAlteracaoVendedor                    datetime                       -               SIM        NAO  
+IdOrcamentoOriginal                      int                            10              SIM        NAO  
+DataReversaoEncerramento                 datetime                       -               SIM        NAO  
+MotivoEncerramento                       nvarchar(400)                  400             SIM        NAO  
+StatusAnteriorAoEncerramento             int                            10              SIM        NAO  
+IdUsuarioEncerramento                    int                            10              SIM        NAO  
+IdUsuarioReversaoEncerramento            int                            10              SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcommercial.contracts
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+customer_id                              UUID                           -               NAO        NAO  
+billing_day                              INTEGER                        32              NAO        NAO  
+due_day                                  INTEGER                        32              NAO        NAO  
+billing_type                             VARCHAR(50)                    50              NAO        NAO  
+operation_type                           VARCHAR(50)                    50              NAO        NAO  
+thirteenth_salary_type                   VARCHAR(50)                    50              NAO        NAO  
+trade_type                               VARCHAR(50)                    50              NAO        NAO  
+start_date                               DATE                           -               NAO        NAO  
+status                                   VARCHAR(50)                    50              NAO        NAO  
+deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (ViewOrcamentosLojas + Orcamento): IdOrcamento, IdCliente, CodigoCliente, NomeCliente, CpfCnpjCliente, DiaFaturamento, DiaVencimento, IdUsuarioVendedor, NomeUsuarioVendedor, StatusPedido, DataInclusaoOrcamento, DataAlteracaoOrcamento, DataInicioOperacao, DataAvisoPrevio, Viabilidade, TipoViabilidade, TipoOrcamento, CategoriaOrcamento, ValorTradeMarketing, ValorOutros, MotivoCobrancaOutros, TipoCalculoDecimoTerceiro, DecimoTerceiroSalario, Ativo, DataExclusao, MotivoEncerramento, StatusAnteriorAoEncerramento
+  Destino (contracts): id, customer_id, billing_day, due_day, billing_type, operation_type, thirteenth_salary_type, trade_type, start_date, status, deleted_at, created_at, updated_at
+
+
+====================================================================================================
+TABELA DESTINO: CONTRACT_SCENARIOS
+TABELA ORIGEM: ViewOrcamentosLojas + OrcamentoLojas
+====================================================================================================
+
+ORIGEM - SQL Server PRD - View: ViewOrcamentosLojas
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   
+----------------------------------------------------------------------------------------------------
+IdOrcamentoLoja                          int                            10              NAO        
+Frequencia                               nvarchar(MAX)                  -1              SIM        
+Horas                                     nvarchar(MAX)                  -1              SIM        
+ValorHora                                decimal(18,2)                  18              SIM        
+ValorLoja                                decimal(18,2)                  18              SIM        
+ValorNegociado                           decimal(18,2)                  18              SIM        
+DataInicioOperacao                       datetime                       -               SIM        
+IdTarefa                                 int                            10              SIM        
+NomeTarefa                               nvarchar(MAX)                  -1              SIM        
+
+
+ORIGEM - SQL Server PRD - Tabela: OrcamentoLojas
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+IdEstabelecimento                        int                            10              NAO        NAO  
+IdOrcamento                              int                            10              NAO        NAO  
+ValorLoja                                decimal(18,2)                  18              NAO        NAO  
+HorasReal                                nvarchar(MAX)                  -1              SIM        NAO  
+Comissao                                 decimal(18,2)                  18              NAO        NAO  
+HoraAbastecimento                        nvarchar(MAX)                  -1              SIM        NAO  
+ValorHora                                decimal(18,2)                  18              NAO        NAO  
+ValorHoraVisita                          decimal(18,2)                  18              NAO        NAO  
+SkuHoraReal                              nvarchar(MAX)                  -1              SIM        NAO  
+Fator                                    nvarchar(MAX)                  -1              SIM        NAO  
+HoraSistema                              nvarchar(MAX)                  -1              SIM        NAO  
+ValorNegociado                           decimal(18,2)                  18              NAO        NAO  
+ValorHoraSistema                         decimal(18,2)                  18              NAO        NAO  
+ValorVisitaProvisionado                  decimal(18,2)                  18              NAO        NAO  
+QtdSku                                   nvarchar(MAX)                  -1              SIM        NAO  
+Frequencia                               nvarchar(MAX)                  -1              SIM        NAO  
+HoraVendedor                             nvarchar(MAX)                  -1              SIM        NAO  
+DataInclusao                             datetime                       -               NAO        NAO  
+IdUsuarioInclusao                        int                            10              NAO        NAO  
+DataAlteracao                            datetime                       -               SIM        NAO  
+IdUsuarioAlteracao                       int                            10              SIM        NAO  
+DataExclusao                             datetime                       -               SIM        NAO  
+IdUsuarioExclusao                        int                            10              SIM        NAO  
+Viabilidade                              bit                            -               SIM        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+TipoViabilidade                          int                            10              SIM        NAO  
+AvisoPrevio                             bit                            -               SIM        NAO  
+DataSugeridaInicioOperacao               datetime                       -               SIM        NAO  
+DataSugeridaAvisoPrevio                  datetime                       -               SIM        NAO  
+DataAvisoPrevio                          datetime                       -               SIM        NAO  
+DataInicioOperacao                       datetime                       -               SIM        NAO  
+MotivoViabilidade                        nvarchar(MAX)                  -1              SIM        NAO  
+DecimoTerceiroSalario                    decimal(18,2)                  18              NAO        NAO  
+IdSolicitacaoAlteracaoOrcamento          bigint                         19              SIM        NAO  
+IdSolicitacaoAlteracaoOrcamentoLoja      bigint                         19              SIM        NAO  
+Orcamento_Id                             int                            10              SIM        NAO  
+CodigoCliente                            int                            10              SIM        NAO  
+IntegradoComPdvAction                    bit                            -               SIM        NAO  
+IdUsuarioIntegracaoPdvAction             int                            10              SIM        NAO  
+DataIntegracaoPdvAction                  datetime                       -               SIM        NAO  
+Faturado                                 bit                            -               NAO        NAO  
+IdUsuarioFaturamento                     int                            10              SIM        NAO  
+IdFaturamento                            bigint                         19              SIM        NAO  
+DataFaturamento                           datetime                       -               SIM        NAO  
+CompetenciaFaturamento                   nvarchar(10)                   10              SIM        NAO  
+IdCliente                                int                            10              SIM        NAO  
+IdOperacaoEmpresa                        bigint                         19              SIM        NAO  
+UltimoReajusteAplicadoId                 bigint                         19              SIM        NAO  
+UltimoReajusteDetalheAplicadoId          bigint                         19              SIM        NAO  
+DataUltimoReajuste                       datetime                       -               SIM        NAO  
+IdOrcamentoLojaOriginal                  int                            10              SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcommercial.contract_scenarios
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+contract_id                              UUID                           -               NAO        NAO  
+task                                     VARCHAR(50)                    50              NAO        NAO  
+frequency                                VARCHAR(50)                    50              NAO        NAO  
+hours                                    DOUBLE PRECISION              53              NAO        NAO  
+hour_value                               NUMERIC                        -               NAO        NAO  
+start_date                               DATE                           -               NAO        NAO  
+status                                   INTEGER                        32              NAO        NAO  
+deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
+store_id                                 UUID                           -               SIM        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (ViewOrcamentosLojas + OrcamentoLojas): IdOrcamentoLoja, IdOrcamento, IdTarefa, NomeTarefa, Frequencia, Horas, HorasReal, ValorHora, ValorHoraVisita, ValorLoja, ValorNegociado, DataInicioOperacao, Ativo, DataInclusao, DataAlteracao, DataExclusao, StatusPedido (da view)
+  Destino (contract_scenarios): id, contract_id, task, frequency, hours, hour_value, start_date, status, deleted_at, store_id, created_at, updated_at
+
+
+====================================================================================================
+TABELA DESTINO: CONTRACT_SCENARIO_STORES
+TABELA ORIGEM: ViewOrcamentosLojas + OrcamentoLojas
+====================================================================================================
+
+ORIGEM - SQL Server PRD - View: ViewOrcamentosLojas
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   
+----------------------------------------------------------------------------------------------------
+IdOrcamentoLoja                          int                            10              NAO        
+IdEstabelecimento                        int                            10              NAO        
+DataInicioOperacao                       datetime                       -               SIM        
+
+
+ORIGEM - SQL Server PRD - Tabela: OrcamentoLojas
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+IdEstabelecimento                        int                            10              NAO        NAO  
+IdOrcamento                              int                            10              NAO        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+DataInicioOperacao                       datetime                       -               SIM        NAO  
+DataExclusao                             datetime                       -               SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcommercial.contract_scenario_stores
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+store_id                                 UUID                           -               NAO        NAO  
+scenario_id                              UUID                           -               NAO        NAO  
+start_date                               DATE                           -               NAO        NAO  
+status                                   INTEGER                        32              NAO        NAO  
+removed_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (ViewOrcamentosLojas + OrcamentoLojas): IdOrcamentoLoja, IdEstabelecimento, DataInicioOperacao, Ativo, DataExclusao
+  Destino (contract_scenario_stores): id, store_id, scenario_id, start_date, status, removed_at, created_at, updated_at
+
+
+====================================================================================================
+TABELA DESTINO: CONTRACT_SELLERS
+TABELA ORIGEM: Orcamento + FaturamentoOrcamentoComissao
+====================================================================================================
+
+ORIGEM - SQL Server PRD - Tabela: Orcamento
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+IdUsuarioVendedor                       int                            10              SIM        NAO  
+
+
+ORIGEM - SQL Server PRD - Tabela: FaturamentoOrcamentoComissao
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       bigint                         19              NAO        SIM  
+IdFaturamentoOrcamento                   bigint                         19              NAO        NAO  
+IdOrcamento                              int                            10              NAO        NAO  
+IdOrcamentoLoja                         int                            10              SIM        NAO  
+IdOrcamentoLojaComplemento               bigint                         19              SIM        NAO  
+IdEstabelecimento                        int                            10              SIM        NAO  
+ValorBaseCalculo                        decimal(18,2)                  18              NAO        NAO  
+ValorHoraVisita                         decimal(18,2)                  18              NAO        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+IdUsuarioInclusao                        int                            10              NAO        NAO  
+DataInclusao                            datetime                       -               NAO        NAO  
+IdUsuarioAlteracao                      int                            10              SIM        NAO  
+DataAlteracao                           datetime                       -               SIM        NAO  
+IdUsuarioAtivo                          int                            10              NAO        NAO  
+DataAtivo                               datetime                       -               SIM        NAO  
+IdUsuarioInativo                        int                            10              NAO        NAO  
+DataInativo                             datetime                       -               SIM        NAO  
+IdUsuarioVendedor                       int                            10              SIM        NAO  
+ComissaoTotal                           decimal(18,2)                  18              NAO        NAO  
+ComissaoPorUsuario                      decimal(18,2)                  18              NAO        NAO  
+AdicionadoAposFaturamento               bit                            -               NAO        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcommercial.contract_sellers
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+user_id                                 UUID                           -               NAO        NAO  
+contract_id                             UUID                           -               NAO        NAO  
+seller_type                             VARCHAR(50)                    50              NAO        NAO  
+created_at                              TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                              TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (Orcamento + FaturamentoOrcamentoComissao): Orcamento.IdUsuarioVendedor, FaturamentoOrcamentoComissao.IdUsuarioVendedor, FaturamentoOrcamentoComissao.IdOrcamento, FaturamentoOrcamentoComissao.ComissaoTotal, FaturamentoOrcamentoComissao.ComissaoPorUsuario, FaturamentoOrcamentoComissao.Ativo, FaturamentoOrcamentoComissao.DataInclusao, FaturamentoOrcamentoComissao.DataAlteracao
+  Destino (contract_sellers): id, user_id, contract_id, seller_type, created_at, updated_at
+
+
+====================================================================================================
+TABELA DESTINO: CONTRACT_TEAM_MEMBERS
+TABELA ORIGEM: ViewOrcamentosLojas + Orcamento
+====================================================================================================
+
+ORIGEM - SQL Server PRD - View: ViewOrcamentosLojas
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   
+----------------------------------------------------------------------------------------------------
+IdUsuarioInclusaoOrcamento               int                            10              SIM        
+NomeUsuarioInclusao                      nvarchar(200)                  200             SIM        
+IdUsuarioAlteracaoOrcamento              int                            10              SIM        
+NomeUsuarioAlteracao                     nvarchar(200)                  200             SIM        
+
+
+ORIGEM - SQL Server PRD - Tabela: Orcamento
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+IdUsuarioInclusao                        int                            10              SIM        NAO  
+IdUsuarioAlteracao                       int                            10              SIM        NAO  
+IdUsuarioVendedor                        int                            10              SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcommercial.contract_team_members
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+user_id                                 UUID                           -               NAO        NAO  
+contract_id                             UUID                           -               NAO        NAO  
+position                                VARCHAR(50)                    50              NAO        NAO  
+created_at                              TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                              TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (ViewOrcamentosLojas + Orcamento): IdUsuarioInclusaoOrcamento, IdUsuarioAlteracaoOrcamento, IdUsuarioVendedor, IdUsuarioInclusao, IdUsuarioAlteracao, IdOrcamento
+  Destino (contract_team_members): id, user_id, contract_id, position, created_at, updated_at
+
+
+====================================================================================================
+TABELA DESTINO: CONTRACT_CONTACTS
+TABELA ORIGEM: ViewOrcamentosLojas (informações de contato do cliente)
+====================================================================================================
+
+ORIGEM - SQL Server PRD - View: ViewOrcamentosLojas
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   
+----------------------------------------------------------------------------------------------------
+IdOrcamento                              int                            10              NAO        
+NomeCliente                              nvarchar(255)                  255             NAO        
+NomeSistemaCliente                       nvarchar(255)                  255             SIM        
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcommercial.contract_contacts
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+contract_id                             UUID                           -               NAO        NAO  
+name                                    VARCHAR(255)                   255             NAO        NAO  
+created_at                              TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                              TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (ViewOrcamentosLojas): IdOrcamento, NomeCliente, NomeSistemaCliente
+  Destino (contract_contacts): id, contract_id, name, created_at, updated_at
+
+
+====================================================================================================
+TABELA DESTINO: CONTRACT_PARTNERS
+TABELA ORIGEM: ViewOrcamentosLojas (informações de parceiros/contatos relacionados)
+====================================================================================================
+
+ORIGEM - SQL Server PRD - View: ViewOrcamentosLojas
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   
+----------------------------------------------------------------------------------------------------
+IdOrcamento                              int                            10              NAO        
+NomeClienteLoja                          nvarchar(255)                  255             SIM        
+IdClienteLoja                           int                            10              SIM        
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcommercial.contract_partners
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+person_id                               UUID                           -               NAO        NAO  
+contract_id                             UUID                           -               NAO        NAO  
+position                                VARCHAR(255)                   255             SIM        NAO  
+phone                                   VARCHAR(15)                    15              SIM        NAO  
+email                                   VARCHAR(255)                   255             SIM        NAO  
+created_at                              TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                              TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (ViewOrcamentosLojas): IdOrcamento, IdClienteLoja, NomeClienteLoja
+  Destino (contract_partners): id, person_id, contract_id, position, phone, email, created_at, updated_at
+
+
+====================================================================================================
+TABELA DESTINO: CONTRACT_ADDITIONAL_CHARGES
+TABELA ORIGEM: Orcamento (campos de valores adicionais)
+====================================================================================================
+
+ORIGEM - SQL Server PRD - Tabela: Orcamento
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+ValorEPI                                 decimal(18,2)                  18              SIM        NAO  
+ValorTradeMarketing                      decimal(18,2)                  18              SIM        NAO  
+ValorOutros                              decimal(18,2)                  18              SIM        NAO  
+MotivoCobrancaOutros                     ntext                          1073741823      SIM        NAO  
+CobrarEPI                                bit                            -               NAO        NAO  
+InicioCobrancaEPI                        datetime                       -               SIM        NAO  
+Juros                                    decimal(18,2)                  18              SIM        NAO  
+Desconto                                 decimal(18,2)                  18              SIM        NAO  
+Multa                                    decimal(18,2)                  18              SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcommercial.contract_additional_charges
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+contract_id                             UUID                           -               NAO        NAO  
+amount                                  NUMERIC                        -               NAO        NAO  
+charge_type                             VARCHAR(50)                    50              NAO        NAO  
+billing_model                           VARCHAR(50)                    50              NAO        NAO  
+created_at                              TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                              TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+CAMPOS DISPONIVEIS:
+  Origem (Orcamento): Id, ValorEPI, ValorTradeMarketing, ValorOutros, MotivoCobrancaOutros, CobrarEPI, InicioCobrancaEPI, Juros, Desconto, Multa
+  Destino (contract_additional_charges): id, contract_id, amount, charge_type, billing_model, created_at, updated_at
+
+
+====================================================================================================
+MAPEAMENTO DETALHADO DE CAMPOS
+====================================================================================================
+
+Formato: origem.dbo.tabela.campo : destino.schema.tabela.campo
+
+MIGRACAO: ORCAMENTO (ViewOrcamentosLojas + Orcamento) : CONTRACTS
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcommercial.contracts.id
+  [IMPORTANTE: ViewOrcamentosLojas.IdOrcamento será usado como legacy_id na tabela contracts (se a coluna legacy_id existir). 
+   O IdOrcamento NUNCA será usado diretamente como contract_id nas tabelas relacionadas. 
+   Sempre buscar em contracts WHERE legacy_id = IdOrcamento e usar o contracts.id (UUID) gerado como contract_id]
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdCliente -> customers.legacy_id -> customers.id] : supera_dev_seed.gmcommercial.contracts.customer_id
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DiaFaturamento : supera_dev_seed.gmcommercial.contracts.billing_day
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DiaVencimento : supera_dev_seed.gmcommercial.contracts.due_day
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear ModoFaturamento da tabela Orcamento para billing_type] : supera_dev_seed.gmcommercial.contracts.billing_type
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear TipoOrcamento da tabela Orcamento para operation_type] : supera_dev_seed.gmcommercial.contracts.operation_type
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear TipoCalculoDecimoTerceiro da tabela Orcamento para thirteenth_salary_type] : supera_dev_seed.gmcommercial.contracts.thirteenth_salary_type
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear TradeMarketing da tabela Orcamento para trade_type] : supera_dev_seed.gmcommercial.contracts.trade_type
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataInicioOperacao : supera_dev_seed.gmcommercial.contracts.start_date
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear StatusPedido da view para status (converter int para string)] : supera_dev_seed.gmcommercial.contracts.status
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataInclusaoOrcamento : supera_dev_seed.gmcommercial.contracts.created_at
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataAlteracaoOrcamento : supera_dev_seed.gmcommercial.contracts.updated_at
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre NULL] : supera_dev_seed.gmcommercial.contracts.deleted_at
+
+  CAMPOS DESTINO NAO MAPEADOS:
+
+  CAMPOS ORIGEM NAO MAPEADOS (ViewOrcamentosLojas):
+    - ViewOrcamentosLojas.Tipo
+    - ViewOrcamentosLojas.IdEmpresa
+    - ViewOrcamentosLojas.NomeEmpresa
+    - ViewOrcamentosLojas.IdOrcamentoPai
+    - ViewOrcamentosLojas.CategoriaOrcamento
+    - ViewOrcamentosLojas.GiroProduto
+    - ViewOrcamentosLojas.IdUsuarioInclusao
+    - ViewOrcamentosLojas.IdUsuarioInclusaoOrcamento
+    - ViewOrcamentosLojas.NomeUsuarioInclusao
+    - ViewOrcamentosLojas.IdUsuarioAlteracaoOrcamento
+    - ViewOrcamentosLojas.NomeUsuarioAlteracao
+    - ViewOrcamentosLojas.IdUsuarioVendedor
+    - ViewOrcamentosLojas.NomeUsuarioVendedor
+    - ViewOrcamentosLojas.CodigoCliente
+    - ViewOrcamentosLojas.NomeCliente
+    - ViewOrcamentosLojas.NomeSistemaCliente
+    - ViewOrcamentosLojas.CpfCnpjCliente
+    - ViewOrcamentosLojas.IdOrcamentoLoja
+    - ViewOrcamentosLojas.IdOrcamentoLojaComplemento
+    - ViewOrcamentosLojas.IdEstabelecimento
+    - ViewOrcamentosLojas.CodigoEstabelecimento
+    - ViewOrcamentosLojas.CnpjEstabelecimento
+    - ViewOrcamentosLojas.NomeEstabelecimento
+    - ViewOrcamentosLojas.EnderecoEstabelecimento
+    - ViewOrcamentosLojas.BairroEstabelecimento
+    - ViewOrcamentosLojas.CidadeEstabelecimento
+    - ViewOrcamentosLojas.NumeroEstabelecimento
+    - ViewOrcamentosLojas.UFEstabelecimento
+    - ViewOrcamentosLojas.IdBandeira
+    - ViewOrcamentosLojas.CodigoBandeira
+    - ViewOrcamentosLojas.NomeBandeira
+    - ViewOrcamentosLojas.IdRede
+    - ViewOrcamentosLojas.CodigoRede
+    - ViewOrcamentosLojas.NomeRede
+    - ViewOrcamentosLojas.Frequencia
+    - ViewOrcamentosLojas.Horas
+    - ViewOrcamentosLojas.QtdeSku
+    - ViewOrcamentosLojas.ValorHora
+    - ViewOrcamentosLojas.ValorLoja
+    - ViewOrcamentosLojas.ValorNegociado
+    - ViewOrcamentosLojas.DecimoTerceiroSalario
+    - ViewOrcamentosLojas.Viabilidade
+    - ViewOrcamentosLojas.TipoViabilidade
+    - ViewOrcamentosLojas.DataAvisoPrevio
+    - ViewOrcamentosLojas.DataInclusao
+    - ViewOrcamentosLojas.OrcamentoFaturadoEsseMes
+    - ViewOrcamentosLojas.LojaFaturadaEsseMes
+    - ViewOrcamentosLojas.DataFaturamento
+    - ViewOrcamentosLojas.CompetenciaFaturamento
+    - ViewOrcamentosLojas.IdOperacaoEmpresa
+    - ViewOrcamentosLojas.NomeOperacaoEmpresa
+    - ViewOrcamentosLojas.IdAmbientePdvNow
+    - ViewOrcamentosLojas.NomeAmbientePdvNow
+    - ViewOrcamentosLojas.IdClienteLoja
+    - ViewOrcamentosLojas.NomeClienteLoja
+    - ViewOrcamentosLojas.IdTarefa
+    - ViewOrcamentosLojas.NomeTarefa
+    - ViewOrcamentosLojas.SegmentosProdutos
+    - ViewOrcamentosLojas.ValorTradeMarketingPorLojaCalculado
+    - ViewOrcamentosLojas.DataInclusaoOrcamentoLojas
+    - ViewOrcamentosLojas.DataAlteracaoOrcamentoLojas
+    - ViewOrcamentosLojas.DataInclusaoOrcamentoLojaComplemento
+    - ViewOrcamentosLojas.DataAlteracaoOrcamentoLojaComplemento
+    - ViewOrcamentosLojas.IdSolicitacaoAlteracaoOrcamento
+    - ViewOrcamentosLojas.IdSolicitacaoAlteracaoOrcamentoLoja
+    - ViewOrcamentosLojas.IdSolicitacaoAlteracaoOrcamentoLojaComplemento
+    - ViewOrcamentosLojas.IdSolicitacaoAlteracaoOrcamentoLojaTarefa
+    - ViewOrcamentosLojas.CodigoClienteCustomizado
+
+  CAMPOS ORIGEM NAO MAPEADOS (Orcamento):
+    - Orcamento.IdEmpresa
+    - Orcamento.Segmento
+    - Orcamento.Salario
+    - Orcamento.HorasTrabalhadas
+    - Orcamento.Perdas
+    - Orcamento.GiroProduto
+    - Orcamento.IdOrcamentoPai
+    - Orcamento.QTDLoja
+    - Orcamento.ValorTotalProvisionado
+    - Orcamento.Obs
+    - Orcamento.Ativo
+    - Orcamento.IdUsuarioVendedor
+    - Orcamento.DataExclusao
+    - Orcamento.DataFaturamento
+    - Orcamento.DataVencimento
+    - Orcamento.IdUsuarioInclusao
+    - Orcamento.IdUsuarioAlteracao
+    - Orcamento.IdUsuarioExclusao
+    - Orcamento.DataAprovacaoPedido
+    - Orcamento.DataViabilidadePedido
+    - Orcamento.DataInformacoesPedido
+    - Orcamento.DataJuridicoPedido
+    - Orcamento.DataInicioOperacaoPedido
+    - Orcamento.DataFinalPedido
+    - Orcamento.DataRetornoPedido
+    - Orcamento.DataInicioOperacaoOrcamento
+    - Orcamento.DataAvisoPrevioOrcamento
+    - Orcamento.Viabilidade
+    - Orcamento.IdUsuarioRetorno
+    - Orcamento.CategoriaOrcamento
+    - Orcamento.CobrarEPI
+    - Orcamento.InicioCobrancaEPI
+    - Orcamento.ValorEPI
+    - Orcamento.ValorTradeMarketing
+    - Orcamento.ValorOutros
+    - Orcamento.MotivoCobrancaOutros
+    - Orcamento.Faturado
+    - Orcamento.IdUsuarioFaturamento
+    - Orcamento.IdFaturamento
+    - Orcamento.CompetenciaFaturamento
+    - Orcamento.Juros
+    - Orcamento.Desconto
+    - Orcamento.Multa
+    - Orcamento.DataUltimaCobrancaTaxaEPI
+    - Orcamento.PeriodoCobrancaOrcamento
+    - Orcamento.DataUltimaCobrancaOrcamento
+    - Orcamento.IntegradoComPdvAction
+    - Orcamento.IdUsuarioIntegracaoPdvAction
+    - Orcamento.DataIntegracaoPdvAction
+    - Orcamento.DataFinanceiroPedido
+    - Orcamento.DataClienteEncerradoPedido
+    - Orcamento.DiaAniversarioContrato
+    - Orcamento.MesAniversarioContrato
+    - Orcamento.IdUsuarioAniversarioContrato
+    - Orcamento.DataMudancaAniversarioContrato
+    - Orcamento.HashUltimoExcel
+    - Orcamento.HashUltimoPdf
+    - Orcamento.IdUsuarioAlteracaoVendedor
+    - Orcamento.DataAlteracaoVendedor
+    - Orcamento.IdOrcamentoOriginal
+    - Orcamento.DataReversaoEncerramento
+    - Orcamento.MotivoEncerramento
+    - Orcamento.StatusAnteriorAoEncerramento
+    - Orcamento.IdUsuarioEncerramento
+    - Orcamento.IdUsuarioReversaoEncerramento
+
+
+MIGRACAO: ORCAMENTOLOJAS (ViewOrcamentosLojas + OrcamentoLojas) : CONTRACT_SCENARIOS
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcommercial.contract_scenarios.id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdOrcamento -> contracts.legacy_id -> contracts.id] : supera_dev_seed.gmcommercial.contract_scenarios.contract_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.NomeTarefa ou OrcamentoLojas.IdTarefa -> mapear para task] : supera_dev_seed.gmcommercial.contract_scenarios.task
+  FINANCEIRO.dbo.ViewOrcamentosLojas.Frequencia : supera_dev_seed.gmcommercial.contract_scenarios.frequency
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - converter ViewOrcamentosLojas.Horas (nvarchar) para double precision] : supera_dev_seed.gmcommercial.contract_scenarios.hours
+  FINANCEIRO.dbo.ViewOrcamentosLojas.ValorHora : supera_dev_seed.gmcommercial.contract_scenarios.hour_value
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataInicioOperacao : supera_dev_seed.gmcommercial.contract_scenarios.start_date
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear StatusPedido ou Ativo para status (converter para integer)] : supera_dev_seed.gmcommercial.contract_scenarios.status
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataInclusaoOrcamentoLojas : supera_dev_seed.gmcommercial.contract_scenarios.created_at
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataAlteracaoOrcamentoLojas : supera_dev_seed.gmcommercial.contract_scenarios.updated_at
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdEstabelecimento -> stores.legacy_id -> stores.id] : supera_dev_seed.gmcommercial.contract_scenarios.store_id
+
+  CAMPOS DESTINO NAO MAPEADOS:
+    - contract_scenarios.deleted_at
+
+  CAMPOS ORIGEM NAO MAPEADOS:
+    - ViewOrcamentosLojas.IdOrcamentoLoja
+    - ViewOrcamentosLojas.IdOrcamentoLojaComplemento
+    - ViewOrcamentosLojas.QtdeSku
+    - ViewOrcamentosLojas.ValorLoja
+    - ViewOrcamentosLojas.ValorNegociado
+    - ViewOrcamentosLojas.DecimoTerceiroSalario
+    - ViewOrcamentosLojas.Viabilidade
+    - ViewOrcamentosLojas.TipoViabilidade
+    - ViewOrcamentosLojas.DataAvisoPrevio
+    - OrcamentoLojas.HorasReal
+    - OrcamentoLojas.Comissao
+    - OrcamentoLojas.HoraAbastecimento
+    - OrcamentoLojas.ValorHoraVisita
+    - OrcamentoLojas.SkuHoraReal
+    - OrcamentoLojas.Fator
+    - OrcamentoLojas.HoraSistema
+    - OrcamentoLojas.ValorHoraSistema
+    - OrcamentoLojas.ValorVisitaProvisionado
+    - OrcamentoLojas.QtdSku
+    - OrcamentoLojas.HoraVendedor
+    - OrcamentoLojas.IdUsuarioInclusao
+    - OrcamentoLojas.IdUsuarioAlteracao
+    - OrcamentoLojas.DataExclusao
+    - OrcamentoLojas.IdUsuarioExclusao
+    - OrcamentoLojas.AvisoPrevio
+    - OrcamentoLojas.DataSugeridaInicioOperacao
+    - OrcamentoLojas.DataSugeridaAvisoPrevio
+    - OrcamentoLojas.DataAvisoPrevio
+    - OrcamentoLojas.MotivoViabilidade
+    - OrcamentoLojas.DecimoTerceiroSalario
+    - OrcamentoLojas.IdSolicitacaoAlteracaoOrcamento
+    - OrcamentoLojas.IdSolicitacaoAlteracaoOrcamentoLoja
+    - OrcamentoLojas.Orcamento_Id
+    - OrcamentoLojas.CodigoCliente
+    - OrcamentoLojas.IntegradoComPdvAction
+    - OrcamentoLojas.IdUsuarioIntegracaoPdvAction
+    - OrcamentoLojas.DataIntegracaoPdvAction
+    - OrcamentoLojas.Faturado
+    - OrcamentoLojas.IdUsuarioFaturamento
+    - OrcamentoLojas.IdFaturamento
+    - OrcamentoLojas.DataFaturamento
+    - OrcamentoLojas.CompetenciaFaturamento
+    - OrcamentoLojas.IdCliente
+    - OrcamentoLojas.IdOperacaoEmpresa
+    - OrcamentoLojas.UltimoReajusteAplicadoId
+    - OrcamentoLojas.UltimoReajusteDetalheAplicadoId
+    - OrcamentoLojas.DataUltimoReajuste
+    - OrcamentoLojas.IdOrcamentoLojaOriginal
+
+
+MIGRACAO: ORCAMENTOLOJAS (ViewOrcamentosLojas + OrcamentoLojas) : CONTRACT_SCENARIO_STORES
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcommercial.contract_scenario_stores.id
+  FINANCEIRO.dbo.ViewOrcamentosLojas.IdOrcamentoLoja : supera_dev_seed.gmcommercial.contract_scenario_stores.legacy_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdEstabelecimento -> stores.legacy_id -> stores.id] : supera_dev_seed.gmcommercial.contract_scenario_stores.store_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - contract_scenarios.id criado na etapa anterior] : supera_dev_seed.gmcommercial.contract_scenario_stores.scenario_id
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataInicioOperacao : supera_dev_seed.gmcommercial.contract_scenario_stores.start_date
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear Ativo de OrcamentoLojas para status (1=ativo, 0=inativo)] : supera_dev_seed.gmcommercial.contract_scenario_stores.status
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - DataExclusao de OrcamentoLojas, se existir] : supera_dev_seed.gmcommercial.contract_scenario_stores.removed_at
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataInclusaoOrcamentoLojas : supera_dev_seed.gmcommercial.contract_scenario_stores.created_at
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataAlteracaoOrcamentoLojas : supera_dev_seed.gmcommercial.contract_scenario_stores.updated_at
+
+  CAMPOS ORIGEM NAO MAPEADOS:
+    - ViewOrcamentosLojas.IdOrcamento
+    - ViewOrcamentosLojas.IdOrcamentoLojaComplemento
+    - ViewOrcamentosLojas.Frequencia
+    - ViewOrcamentosLojas.Horas
+    - ViewOrcamentosLojas.ValorHora
+    - ViewOrcamentosLojas.ValorLoja
+    - ViewOrcamentosLojas.ValorNegociado
+    - ViewOrcamentosLojas.IdTarefa
+    - ViewOrcamentosLojas.NomeTarefa
+    - OrcamentoLojas.ValorLoja
+    - OrcamentoLojas.HorasReal
+    - OrcamentoLojas.Comissao
+    - OrcamentoLojas.HoraAbastecimento
+    - OrcamentoLojas.ValorHora
+    - OrcamentoLojas.ValorHoraVisita
+    - OrcamentoLojas.SkuHoraReal
+    - OrcamentoLojas.Fator
+    - OrcamentoLojas.HoraSistema
+    - OrcamentoLojas.ValorNegociado
+    - OrcamentoLojas.ValorHoraSistema
+    - OrcamentoLojas.ValorVisitaProvisionado
+    - OrcamentoLojas.QtdSku
+    - OrcamentoLojas.Frequencia
+    - OrcamentoLojas.HoraVendedor
+    - OrcamentoLojas.IdUsuarioInclusao
+    - OrcamentoLojas.IdUsuarioAlteracao
+    - OrcamentoLojas.IdUsuarioExclusao
+    - OrcamentoLojas.Viabilidade
+    - OrcamentoLojas.TipoViabilidade
+    - OrcamentoLojas.AvisoPrevio
+    - OrcamentoLojas.DataSugeridaInicioOperacao
+    - OrcamentoLojas.DataSugeridaAvisoPrevio
+    - OrcamentoLojas.DataAvisoPrevio
+    - OrcamentoLojas.MotivoViabilidade
+    - OrcamentoLojas.DecimoTerceiroSalario
+    - OrcamentoLojas.IdSolicitacaoAlteracaoOrcamento
+    - OrcamentoLojas.IdSolicitacaoAlteracaoOrcamentoLoja
+    - OrcamentoLojas.Orcamento_Id
+    - OrcamentoLojas.CodigoCliente
+    - OrcamentoLojas.IntegradoComPdvAction
+    - OrcamentoLojas.IdUsuarioIntegracaoPdvAction
+    - OrcamentoLojas.DataIntegracaoPdvAction
+    - OrcamentoLojas.Faturado
+    - OrcamentoLojas.IdUsuarioFaturamento
+    - OrcamentoLojas.IdFaturamento
+    - OrcamentoLojas.DataFaturamento
+    - OrcamentoLojas.CompetenciaFaturamento
+    - OrcamentoLojas.IdCliente
+    - OrcamentoLojas.IdOperacaoEmpresa
+    - OrcamentoLojas.UltimoReajusteAplicadoId
+    - OrcamentoLojas.UltimoReajusteDetalheAplicadoId
+    - OrcamentoLojas.DataUltimoReajuste
+    - OrcamentoLojas.IdOrcamentoLojaOriginal
+
+
+MIGRACAO: ORCAMENTO + FATURAMENTOORCAMENTOCOMISSAO : CONTRACT_SELLERS
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcommercial.contract_sellers.id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - Orcamento.IdUsuarioVendedor -> users.legacy_id -> users.id] : supera_dev_seed.gmcommercial.contract_sellers.user_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - Orcamento.Id será usado como legacy_id. Buscar em contracts WHERE legacy_id = Orcamento.Id e usar o contracts.id (UUID) gerado] : supera_dev_seed.gmcommercial.contract_sellers.contract_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - determinar seller_type baseado no contexto (ex: "main", "commission", etc)] : supera_dev_seed.gmcommercial.contract_sellers.seller_type
+  FINANCEIRO.dbo.FaturamentoOrcamentoComissao.DataInclusao : supera_dev_seed.gmcommercial.contract_sellers.created_at
+  FINANCEIRO.dbo.FaturamentoOrcamentoComissao.DataAlteracao : supera_dev_seed.gmcommercial.contract_sellers.updated_at
+
+  NOTA: Para cada Orcamento, criar registro em contract_sellers com IdUsuarioVendedor da tabela Orcamento.
+        Para cada FaturamentoOrcamentoComissao, criar registro adicional em contract_sellers com IdUsuarioVendedor da comissão.
+
+  CAMPOS ORIGEM NAO MAPEADOS:
+    - Orcamento.IdEmpresa
+    - Orcamento.Segmento
+    - Orcamento.Salario
+    - Orcamento.HorasTrabalhadas
+    - Orcamento.Perdas
+    - Orcamento.GiroProduto
+    - Orcamento.IdOrcamentoPai
+    - Orcamento.QTDLoja
+    - Orcamento.ValorTotalProvisionado
+    - Orcamento.Obs
+    - Orcamento.Ativo
+    - Orcamento.DataExclusao
+    - Orcamento.DataFaturamento
+    - Orcamento.DataVencimento
+    - Orcamento.IdUsuarioInclusao
+    - Orcamento.IdUsuarioAlteracao
+    - Orcamento.IdUsuarioExclusao
+    - Orcamento.DataAprovacaoPedido
+    - Orcamento.DataViabilidadePedido
+    - Orcamento.DataInformacoesPedido
+    - Orcamento.DataJuridicoPedido
+    - Orcamento.DataInicioOperacaoPedido
+    - Orcamento.DataFinalPedido
+    - Orcamento.DataRetornoPedido
+    - Orcamento.DataInicioOperacaoOrcamento
+    - Orcamento.DataAvisoPrevioOrcamento
+    - Orcamento.Viabilidade
+    - Orcamento.IdUsuarioRetorno
+    - Orcamento.TipoOrcamento
+    - Orcamento.CategoriaOrcamento
+    - Orcamento.CobrarEPI
+    - Orcamento.InicioCobrancaEPI
+    - Orcamento.ValorEPI
+    - Orcamento.TradeMarketing
+    - Orcamento.ValorTradeMarketing
+    - Orcamento.ValorOutros
+    - Orcamento.MotivoCobrancaOutros
+    - Orcamento.Faturado
+    - Orcamento.IdUsuarioFaturamento
+    - Orcamento.IdFaturamento
+    - Orcamento.CompetenciaFaturamento
+    - Orcamento.Juros
+    - Orcamento.Desconto
+    - Orcamento.Multa
+    - Orcamento.DataUltimaCobrancaTaxaEPI
+    - Orcamento.PeriodoCobrancaOrcamento
+    - Orcamento.DataUltimaCobrancaOrcamento
+    - Orcamento.IntegradoComPdvAction
+    - Orcamento.IdUsuarioIntegracaoPdvAction
+    - Orcamento.DataIntegracaoPdvAction
+    - Orcamento.TipoCalculoDecimoTerceiro
+    - Orcamento.DataFinanceiroPedido
+    - Orcamento.DataClienteEncerradoPedido
+    - Orcamento.DiaAniversarioContrato
+    - Orcamento.MesAniversarioContrato
+    - Orcamento.IdUsuarioAniversarioContrato
+    - Orcamento.DataMudancaAniversarioContrato
+    - Orcamento.HashUltimoExcel
+    - Orcamento.HashUltimoPdf
+    - Orcamento.IdUsuarioAlteracaoVendedor
+    - Orcamento.DataAlteracaoVendedor
+    - Orcamento.IdOrcamentoOriginal
+    - Orcamento.DataReversaoEncerramento
+    - Orcamento.MotivoEncerramento
+    - Orcamento.StatusAnteriorAoEncerramento
+    - Orcamento.IdUsuarioEncerramento
+    - Orcamento.IdUsuarioReversaoEncerramento
+    - FaturamentoOrcamentoComissao.Id
+    - FaturamentoOrcamentoComissao.IdFaturamentoOrcamento
+    - FaturamentoOrcamentoComissao.IdOrcamentoLoja
+    - FaturamentoOrcamentoComissao.IdOrcamentoLojaComplemento
+    - FaturamentoOrcamentoComissao.IdEstabelecimento
+    - FaturamentoOrcamentoComissao.ValorBaseCalculo
+    - FaturamentoOrcamentoComissao.ValorHoraVisita
+    - FaturamentoOrcamentoComissao.Ativo
+    - FaturamentoOrcamentoComissao.IdUsuarioInclusao
+    - FaturamentoOrcamentoComissao.IdUsuarioAtivo
+    - FaturamentoOrcamentoComissao.DataAtivo
+    - FaturamentoOrcamentoComissao.IdUsuarioInativo
+    - FaturamentoOrcamentoComissao.DataInativo
+    - FaturamentoOrcamentoComissao.ComissaoTotal
+    - FaturamentoOrcamentoComissao.ComissaoPorUsuario
+    - FaturamentoOrcamentoComissao.AdicionadoAposFaturamento
+
+
+MIGRACAO: ORCAMENTO (ViewOrcamentosLojas + Orcamento) : CONTRACT_TEAM_MEMBERS
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcommercial.contract_team_members.id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - Orcamento.IdUsuarioVendedor -> users.legacy_id -> users.id] : supera_dev_seed.gmcommercial.contract_team_members.user_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdOrcamento -> contracts.legacy_id -> contracts.id] : supera_dev_seed.gmcommercial.contract_team_members.contract_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre "seller"] : supera_dev_seed.gmcommercial.contract_team_members.position
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataInclusaoOrcamento : supera_dev_seed.gmcommercial.contract_team_members.created_at
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataAlteracaoOrcamento : supera_dev_seed.gmcommercial.contract_team_members.updated_at
+
+  NOTA: Na primeira carga, será populado apenas com o vendedor (IdUsuarioVendedor) com position="seller".
+
+  CAMPOS ORIGEM NAO MAPEADOS:
+    - ViewOrcamentosLojas.NomeUsuarioInclusao
+    - ViewOrcamentosLojas.NomeUsuarioAlteracao
+    - ViewOrcamentosLojas.NomeUsuarioVendedor
+    - Orcamento.IdUsuarioAlteracao
+    - Orcamento.IdUsuarioExclusao
+    - Orcamento.IdUsuarioRetorno
+    - Orcamento.IdUsuarioFaturamento
+    - Orcamento.IdUsuarioIntegracaoPdvAction
+    - Orcamento.IdUsuarioAniversarioContrato
+    - Orcamento.IdUsuarioAlteracaoVendedor
+    - Orcamento.IdUsuarioEncerramento
+    - Orcamento.IdUsuarioReversaoEncerramento
+
+
+MIGRACAO: ORCAMENTO (ViewOrcamentosLojas) : CONTRACT_CONTACTS
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcommercial.contract_contacts.id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdOrcamento -> contracts.legacy_id -> contracts.id] : supera_dev_seed.gmcommercial.contract_contacts.contract_id
+  FINANCEIRO.dbo.ViewOrcamentosLojas.NomeCliente : supera_dev_seed.gmcommercial.contract_contacts.name
+
+  NOTA: Criar registro com NomeCliente como contato principal do contrato.
+        Se NomeSistemaCliente existir e for diferente de NomeCliente, criar registro adicional.
+
+  REGISTRO 1 - Nome Cliente Principal:
+    FINANCEIRO.dbo.ViewOrcamentosLojas.NomeCliente : supera_dev_seed.gmcommercial.contract_contacts.name
+    FINANCEIRO.dbo.ViewOrcamentosLojas.DataInclusaoOrcamento : supera_dev_seed.gmcommercial.contract_contacts.created_at
+    FINANCEIRO.dbo.ViewOrcamentosLojas.DataAlteracaoOrcamento : supera_dev_seed.gmcommercial.contract_contacts.updated_at
+
+  REGISTRO 2 - Nome Sistema Cliente (se diferente):
+    FINANCEIRO.dbo.ViewOrcamentosLojas.NomeSistemaCliente : supera_dev_seed.gmcommercial.contract_contacts.name (se diferente de NomeCliente)
+    FINANCEIRO.dbo.ViewOrcamentosLojas.DataInclusaoOrcamento : supera_dev_seed.gmcommercial.contract_contacts.created_at
+    FINANCEIRO.dbo.ViewOrcamentosLojas.DataAlteracaoOrcamento : supera_dev_seed.gmcommercial.contract_contacts.updated_at
+
+  CAMPOS ORIGEM NAO MAPEADOS:
+    - ViewOrcamentosLojas.CpfCnpjCliente
+    - ViewOrcamentosLojas.CodigoCliente
+    - ViewOrcamentosLojas.IdCliente
+
+
+MIGRACAO: ORCAMENTO (ViewOrcamentosLojas) : CONTRACT_PARTNERS
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcommercial.contract_partners.id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdClienteLoja -> persons.legacy_id -> persons.id (se existir tabela persons)] : supera_dev_seed.gmcommercial.contract_partners.person_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdOrcamento -> contracts.legacy_id -> contracts.id] : supera_dev_seed.gmcommercial.contract_partners.contract_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - valor padrão ou vazio] : supera_dev_seed.gmcommercial.contract_partners.position
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - valor padrão ou vazio] : supera_dev_seed.gmcommercial.contract_partners.phone
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - valor padrão ou vazio] : supera_dev_seed.gmcommercial.contract_partners.email
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataInclusaoOrcamento : supera_dev_seed.gmcommercial.contract_partners.created_at
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataAlteracaoOrcamento : supera_dev_seed.gmcommercial.contract_partners.updated_at
+
+  NOTA: Criar registro apenas se IdClienteLoja e NomeClienteLoja existirem na view.
+
+  CAMPOS ORIGEM NAO MAPEADOS:
+    - ViewOrcamentosLojas.NomeClienteLoja (usado apenas para validação, não mapeado diretamente)
+
+
+MIGRACAO: ORCAMENTO : CONTRACT_ADDITIONAL_CHARGES
+----------------------------------------------------------------------------------------------------
+  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcommercial.contract_additional_charges.id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - Orcamento.Id será usado como legacy_id. Buscar em contracts WHERE legacy_id = Orcamento.Id e usar o contracts.id (UUID) gerado] : supera_dev_seed.gmcommercial.contract_additional_charges.contract_id
+
+  REGISTRO 1 - EPI (se ValorEPI > 0 ou CobrarEPI = True):
+    FINANCEIRO.dbo.Orcamento.ValorEPI : supera_dev_seed.gmcommercial.contract_additional_charges.amount
+    [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre "epi"] : supera_dev_seed.gmcommercial.contract_additional_charges.charge_type
+    [PREENCHIDO PELA LOGICA DE MIGRACAO - determinar billing_model baseado em InicioCobrancaEPI] : supera_dev_seed.gmcommercial.contract_additional_charges.billing_model
+    FINANCEIRO.dbo.Orcamento.InicioCobrancaEPI : supera_dev_seed.gmcommercial.contract_additional_charges.created_at
+    FINANCEIRO.dbo.Orcamento.DataAlteracao : supera_dev_seed.gmcommercial.contract_additional_charges.updated_at
+
+  REGISTRO 2 - Trade Marketing (se ValorTradeMarketing > 0):
+    FINANCEIRO.dbo.Orcamento.ValorTradeMarketing : supera_dev_seed.gmcommercial.contract_additional_charges.amount
+    [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre "trade_marketing"] : supera_dev_seed.gmcommercial.contract_additional_charges.charge_type
+    [PREENCHIDO PELA LOGICA DE MIGRACAO - determinar billing_model baseado em TradeMarketing] : supera_dev_seed.gmcommercial.contract_additional_charges.billing_model
+    FINANCEIRO.dbo.Orcamento.DataInclusao : supera_dev_seed.gmcommercial.contract_additional_charges.created_at
+    FINANCEIRO.dbo.Orcamento.DataAlteracao : supera_dev_seed.gmcommercial.contract_additional_charges.updated_at
+
+  REGISTRO 3 - Outros (se ValorOutros > 0):
+    FINANCEIRO.dbo.Orcamento.ValorOutros : supera_dev_seed.gmcommercial.contract_additional_charges.amount
+    [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre "others"] : supera_dev_seed.gmcommercial.contract_additional_charges.charge_type
+    [PREENCHIDO PELA LOGICA DE MIGRACAO - valor padrão ou baseado em MotivoCobrancaOutros] : supera_dev_seed.gmcommercial.contract_additional_charges.billing_model
+    FINANCEIRO.dbo.Orcamento.DataInclusao : supera_dev_seed.gmcommercial.contract_additional_charges.created_at
+    FINANCEIRO.dbo.Orcamento.DataAlteracao : supera_dev_seed.gmcommercial.contract_additional_charges.updated_at
+
+  REGISTRO 4 - Juros (se Juros > 0):
+    FINANCEIRO.dbo.Orcamento.Juros : supera_dev_seed.gmcommercial.contract_additional_charges.amount
+    [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre "interest"] : supera_dev_seed.gmcommercial.contract_additional_charges.charge_type
+    [PREENCHIDO PELA LOGICA DE MIGRACAO - valor padrão] : supera_dev_seed.gmcommercial.contract_additional_charges.billing_model
+    FINANCEIRO.dbo.Orcamento.DataInclusao : supera_dev_seed.gmcommercial.contract_additional_charges.created_at
+    FINANCEIRO.dbo.Orcamento.DataAlteracao : supera_dev_seed.gmcommercial.contract_additional_charges.updated_at
+
+  REGISTRO 5 - Desconto (se Desconto > 0):
+    FINANCEIRO.dbo.Orcamento.Desconto : supera_dev_seed.gmcommercial.contract_additional_charges.amount
+    [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre "discount"] : supera_dev_seed.gmcommercial.contract_additional_charges.charge_type
+    [PREENCHIDO PELA LOGICA DE MIGRACAO - valor padrão] : supera_dev_seed.gmcommercial.contract_additional_charges.billing_model
+    FINANCEIRO.dbo.Orcamento.DataInclusao : supera_dev_seed.gmcommercial.contract_additional_charges.created_at
+    FINANCEIRO.dbo.Orcamento.DataAlteracao : supera_dev_seed.gmcommercial.contract_additional_charges.updated_at
+
+  REGISTRO 6 - Multa (se Multa > 0):
+    FINANCEIRO.dbo.Orcamento.Multa : supera_dev_seed.gmcommercial.contract_additional_charges.amount
+    [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre "fine"] : supera_dev_seed.gmcommercial.contract_additional_charges.charge_type
+    [PREENCHIDO PELA LOGICA DE MIGRACAO - valor padrão] : supera_dev_seed.gmcommercial.contract_additional_charges.billing_model
+    FINANCEIRO.dbo.Orcamento.DataInclusao : supera_dev_seed.gmcommercial.contract_additional_charges.created_at
+    FINANCEIRO.dbo.Orcamento.DataAlteracao : supera_dev_seed.gmcommercial.contract_additional_charges.updated_at
+
+  NOTA: Criar múltiplos registros em contract_additional_charges, um para cada tipo de cobrança adicional
+        que tenha valor > 0 ou flag ativa (no caso de EPI).
+
+  CAMPOS ORIGEM NAO MAPEADOS:
+    - Orcamento.CobrarEPI (usado apenas para determinar se deve criar registro de EPI)
+    - Orcamento.MotivoCobrancaOutros (usado apenas como referência, não mapeado diretamente)
+

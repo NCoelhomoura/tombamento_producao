@@ -1,0 +1,42 @@
+2025-12-09 22:14:23,338 - INFO - Database PRD: gmcoredb, Schema: commercial, Tabelas encontradas: 8
+2025-12-09 22:14:23,340 - INFO - Processando tabela 1/8: contract_additional_charges
+2025-12-09 22:14:23,378 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-12-09 22:14:26,801 - WARNING - Schema atual é 'public', configurando para 'gmcommercial'...
+2025-12-09 22:14:27,533 - INFO - Criando tabela contract_additional_charges no HML - Database: supera_dev_seed, Schema: gmcommercial
+2025-12-09 22:14:28,366 - INFO - Tabela contract_additional_charges criada com sucesso no HML (database: supera_dev_seed, schema: gmcommercial)
+2025-12-09 22:14:28,377 - INFO - Processando tabela 2/8: contract_contacts
+2025-12-09 22:14:28,407 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-12-09 22:14:31,451 - WARNING - Schema atual é 'public', configurando para 'gmcommercial'...
+2025-12-09 22:14:32,025 - INFO - Criando tabela contract_contacts no HML - Database: supera_dev_seed, Schema: gmcommercial
+2025-12-09 22:14:33,047 - INFO - Tabela contract_contacts criada com sucesso no HML (database: supera_dev_seed, schema: gmcommercial)
+2025-12-09 22:14:33,048 - INFO - Processando tabela 3/8: contract_partners
+2025-12-09 22:14:33,071 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-12-09 22:14:37,655 - WARNING - Schema atual é 'public', configurando para 'gmcommercial'...
+2025-12-09 22:14:38,274 - INFO - Criando tabela contract_partners no HML - Database: supera_dev_seed, Schema: gmcommercial
+2025-12-09 22:14:38,906 - INFO - Tabela contract_partners criada com sucesso no HML (database: supera_dev_seed, schema: gmcommercial)
+2025-12-09 22:14:38,906 - INFO - Processando tabela 4/8: contract_scenario_stores
+2025-12-09 22:14:38,935 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-12-09 22:14:41,777 - WARNING - Schema atual é 'public', configurando para 'gmcommercial'...
+2025-12-09 22:14:42,272 - INFO - Criando tabela contract_scenario_stores no HML - Database: supera_dev_seed, Schema: gmcommercial
+2025-12-09 22:14:43,022 - INFO - Tabela contract_scenario_stores criada com sucesso no HML (database: supera_dev_seed, schema: gmcommercial)
+2025-12-09 22:14:43,023 - INFO - Processando tabela 5/8: contract_scenarios
+2025-12-09 22:14:43,047 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-12-09 22:14:46,094 - WARNING - Schema atual é 'public', configurando para 'gmcommercial'...
+2025-12-09 22:14:46,711 - INFO - Criando tabela contract_scenarios no HML - Database: supera_dev_seed, Schema: gmcommercial
+2025-12-09 22:14:47,559 - INFO - Tabela contract_scenarios criada com sucesso no HML (database: supera_dev_seed, schema: gmcommercial)
+2025-12-09 22:14:47,559 - INFO - Processando tabela 6/8: contract_sellers
+2025-12-09 22:14:47,589 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-12-09 22:14:50,571 - WARNING - Schema atual é 'public', configurando para 'gmcommercial'...
+2025-12-09 22:14:51,035 - INFO - Criando tabela contract_sellers no HML - Database: supera_dev_seed, Schema: gmcommercial
+2025-12-09 22:14:51,787 - INFO - Tabela contract_sellers criada com sucesso no HML (database: supera_dev_seed, schema: gmcommercial)
+2025-12-09 22:14:51,788 - INFO - Processando tabela 7/8: contract_team_members
+2025-12-09 22:14:51,817 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-12-09 22:14:54,991 - WARNING - Schema atual é 'public', configurando para 'gmcommercial'...
+2025-12-09 22:14:55,694 - INFO - Criando tabela contract_team_members no HML - Database: supera_dev_seed, Schema: gmcommercial
+2025-12-09 22:14:56,497 - INFO - Tabela contract_team_members criada com sucesso no HML (database: supera_dev_seed, schema: gmcommercial)
+2025-12-09 22:14:56,498 - INFO - Processando tabela 8/8: contracts
+2025-12-09 22:14:56,524 - WARNING - pg_dump não encontrado, usando método alternativo
+2025-12-09 22:14:59,423 - WARNING - Schema atual é 'public', configurando para 'gmcommercial'...
+2025-12-09 22:14:59,888 - INFO - Criando tabela contracts no HML - Database: supera_dev_seed, Schema: gmcommercial
+2025-12-09 22:15:00,597 - INFO - Tabela contracts criada com sucesso no HML (database: supera_dev_seed, schema: gmcommercial)
+2025-12-09 22:15:03,666 - INFO - Validação OK - PRD: gmcoredb.commercial (8 tabelas) = HML: supera_dev_seed.gmcommercial (8 tabelas)

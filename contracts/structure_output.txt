@@ -1,0 +1,277 @@
+
+====================================================================================================
+INVESTIGAÇÃO COMPLETA - ESTRUTURAS DE ORCAMENTOS
+====================================================================================================
+
+
+====================================================================================================
+VIEW PRINCIPAL: ViewOrcamentosLojas
+====================================================================================================
+
+====================================================================================================
+VIEW: dbo.ViewOrcamentosLojas
+====================================================================================================
+
+Nome                                          Tipo                           Tamanho      Nullable  
+----------------------------------------------------------------------------------------------------
+Tipo                                          varchar(11)                    11           NO        
+IdEmpresa                                     int                                         YES       
+NomeEmpresa                                   nvarchar(200)                  200          NO        
+IdOrcamento                                   int                                         NO        
+IdOrcamentoPai                                int                                         YES       
+CategoriaOrcamento                            nvarchar(2)                    2            YES       
+StatusPedido                                  int                                         NO        
+GiroProduto                                   nvarchar(20)                   20           YES       
+IdUsuarioInclusao                             int                                         YES       
+IdUsuarioInclusaoOrcamento                    int                                         YES       
+NomeUsuarioInclusao                           nvarchar(200)                  200          YES       
+IdUsuarioAlteracaoOrcamento                   int                                         YES       
+NomeUsuarioAlteracao                          nvarchar(200)                  200          YES       
+IdUsuarioVendedor                             int                                         YES       
+NomeUsuarioVendedor                           nvarchar(200)                  200          YES       
+IdCliente                                     int                                         NO        
+CodigoCliente                                 int                                         YES       
+NomeCliente                                   nvarchar(255)                  255          NO        
+NomeSistemaCliente                            nvarchar(255)                  255          YES       
+CpfCnpjCliente                                nvarchar(30)                   30           YES       
+DiaFaturamento                                int                                         NO        
+DiaVencimento                                 int                                         NO        
+IdOrcamentoLoja                               int                                         NO        
+IdOrcamentoLojaComplemento                    bigint                                      YES       
+IdEstabelecimento                             int                                         NO        
+CodigoEstabelecimento                         int                                         NO        
+CnpjEstabelecimento                           nvarchar(30)                   30           YES       
+NomeEstabelecimento                           nvarchar(500)                  500          NO        
+EnderecoEstabelecimento                       nvarchar(500)                  500          YES       
+BairroEstabelecimento                         nvarchar(300)                  300          YES       
+CidadeEstabelecimento                         nvarchar(300)                  300          YES       
+NumeroEstabelecimento                         nvarchar(50)                   50           YES       
+UFEstabelecimento                             nvarchar(2)                    2            YES       
+IdBandeira                                    int                                         NO        
+CodigoBandeira                                int                                         NO        
+NomeBandeira                                  nvarchar(200)                  200          NO        
+IdRede                                        int                                         NO        
+CodigoRede                                    int                                         NO        
+NomeRede                                      nvarchar(200)                  200          NO        
+Frequencia                                    nvarchar(MAX)                  -1           YES       
+Horas                                         nvarchar(MAX)                  -1           YES       
+QtdeSku                                       nvarchar(MAX)                  -1           YES       
+ValorHora                                     decimal(18,2)                               YES       
+ValorLoja                                     decimal(18,2)                               YES       
+ValorNegociado                                decimal(18,2)                               YES       
+DecimoTerceiroSalario                         decimal(18,2)                               YES       
+Viabilidade                                   bit                                         YES       
+TipoViabilidade                               int                                         YES       
+DataInicioOperacao                            datetime                                    YES       
+DataAvisoPrevio                               datetime                                    YES       
+DataInclusao                                  datetime                                    NO        
+OrcamentoFaturadoEsseMes                      bit                                         YES       
+LojaFaturadaEsseMes                           bit                                         YES       
+DataFaturamento                               datetime                                    YES       
+CompetenciaFaturamento                        nvarchar(10)                   10           YES       
+IdOperacaoEmpresa                             bigint                                      YES       
+NomeOperacaoEmpresa                           nvarchar(255)                  255          YES       
+IdAmbientePdvNow                              bigint                                      YES       
+NomeAmbientePdvNow                            nvarchar(255)                  255          YES       
+IdClienteLoja                                 int                                         YES       
+NomeClienteLoja                               nvarchar(255)                  255          YES       
+IdTarefa                                      int                                         YES       
+NomeTarefa                                    nvarchar(MAX)                  -1           YES       
+SegmentosProdutos                             nvarchar(MAX)                  -1           YES       
+ValorTradeMarketingPorLojaCalculado           decimal(18,2)                               YES       
+DataInclusaoOrcamento                         datetime                                    NO        
+DataAlteracaoOrcamento                        datetime                                    YES       
+DataInclusaoOrcamentoLojas                    datetime                                    NO        
+DataAlteracaoOrcamentoLojas                   datetime                                    YES       
+DataInclusaoOrcamentoLojaComplemento          datetime                                    YES       
+DataAlteracaoOrcamentoLojaComplemento         datetime                                    YES       
+IdSolicitacaoAlteracaoOrcamento               bigint                                      YES       
+IdSolicitacaoAlteracaoOrcamentoLoja           bigint                                      YES       
+IdSolicitacaoAlteracaoOrcamentoLojaComplemento bigint                                      YES       
+IdSolicitacaoAlteracaoOrcamentoLojaTarefa     bigint                                      YES       
+CodigoClienteCustomizado                      int                                         YES       
+
+
+====================================================================================================
+TABELA PRINCIPAL: Orcamento
+====================================================================================================
+
+====================================================================================================
+TABELA: dbo.Orcamento
+====================================================================================================
+
+Nome                                          Tipo                           Tamanho      Nullable  PK   
+----------------------------------------------------------------------------------------------------
+Id                                            int                                         NO        SIM  
+IdCliente                                     int                                         NO        NAO  
+IdEmpresa                                     int                                         YES       NAO  
+Segmento                                      nvarchar(150)                  150          YES       NAO  
+Salario                                       decimal(18,2)                               NO        NAO  
+HorasTrabalhadas                              nvarchar(20)                   20           YES       NAO  
+Perdas                                        nvarchar(20)                   20           YES       NAO  
+GiroProduto                                   nvarchar(20)                   20           YES       NAO  
+IdOrcamentoPai                                int                                         YES       NAO  
+QTDLoja                                       int                                         NO        NAO  
+ValorTotalProvisionado                        decimal(18,2)                               NO        NAO  
+Obs                                           nvarchar(MAX)                  -1           YES       NAO  
+Ativo                                         bit                                         NO        NAO  
+IdUsuarioVendedor                             int                                         YES       NAO  
+DataInclusao                                  datetime                                    NO        NAO  
+DataAlteracao                                 datetime                                    YES       NAO  
+DataExclusao                                  datetime                                    YES       NAO  
+DataFaturamento                               datetime                                    YES       NAO  
+DataVencimento                                datetime                                    YES       NAO  
+IdUsuarioInclusao                             int                                         YES       NAO  
+IdUsuarioAlteracao                            int                                         YES       NAO  
+IdUsuarioExclusao                             int                                         YES       NAO  
+StatusPedido                                  int                                         NO        NAO  
+DataAprovacaoPedido                           datetime                                    YES       NAO  
+DataViabilidadePedido                         datetime                                    YES       NAO  
+DataInformacoesPedido                         datetime                                    YES       NAO  
+DataJuridicoPedido                            datetime                                    YES       NAO  
+DataInicioOperacaoPedido                      datetime                                    YES       NAO  
+DataFinalPedido                               datetime                                    YES       NAO  
+DataRetornoPedido                             datetime                                    YES       NAO  
+DataInicioOperacaoOrcamento                   datetime                                    YES       NAO  
+DataAvisoPrevioOrcamento                      datetime                                    YES       NAO  
+Viabilidade                                   bit                                         YES       NAO  
+IdUsuarioRetorno                              int                                         YES       NAO  
+TipoOrcamento                                 nchar(2)                       2            YES       NAO  
+CategoriaOrcamento                            nchar(2)                       2            YES       NAO  
+CobrarEPI                                     bit                                         NO        NAO  
+InicioCobrancaEPI                             datetime                                    YES       NAO  
+ValorEPI                                      decimal(18,2)                               YES       NAO  
+TradeMarketing                                nvarchar(50)                   50           YES       NAO  
+ValorTradeMarketing                           decimal(18,2)                               YES       NAO  
+ValorOutros                                   decimal(18,2)                               YES       NAO  
+MotivoCobrancaOutros                          ntext                          1073741823   YES       NAO  
+DiaFaturamento                                int                                         NO        NAO  
+DiaVencimento                                 int                                         NO        NAO  
+Faturado                                      bit                                         NO        NAO  
+IdUsuarioFaturamento                          int                                         YES       NAO  
+IdFaturamento                                 bigint                                      YES       NAO  
+CompetenciaFaturamento                        nvarchar(10)                   10           YES       NAO  
+Juros                                         decimal(18,2)                               YES       NAO  
+Desconto                                      decimal(18,2)                               YES       NAO  
+Multa                                         decimal(18,2)                               YES       NAO  
+DataUltimaCobrancaTaxaEPI                     datetime                                    YES       NAO  
+PeriodoCobrancaOrcamento                      nvarchar(1)                    1            YES       NAO  
+DataUltimaCobrancaOrcamento                   datetime                                    YES       NAO  
+ModoFaturamento                               nvarchar(1)                    1            YES       NAO  
+IntegradoComPdvAction                         bit                                         YES       NAO  
+IdUsuarioIntegracaoPdvAction                  int                                         YES       NAO  
+DataIntegracaoPdvAction                       datetime                                    YES       NAO  
+TipoCalculoDecimoTerceiro                     int                                         YES       NAO  
+DataFinanceiroPedido                          datetime                                    YES       NAO  
+DataClienteEncerradoPedido                    datetime                                    YES       NAO  
+DiaAniversarioContrato                        int                                         YES       NAO  
+MesAniversarioContrato                        int                                         YES       NAO  
+IdUsuarioAniversarioContrato                  int                                         YES       NAO  
+DataMudancaAniversarioContrato                datetime                                    YES       NAO  
+HashUltimoExcel                               nvarchar(50)                   50           YES       NAO  
+HashUltimoPdf                                 nvarchar(50)                   50           YES       NAO  
+IdUsuarioAlteracaoVendedor                    int                                         YES       NAO  
+DataAlteracaoVendedor                         datetime                                    YES       NAO  
+IdOrcamentoOriginal                           int                                         YES       NAO  
+DataReversaoEncerramento                      datetime                                    YES       NAO  
+MotivoEncerramento                            nvarchar(400)                  400          YES       NAO  
+StatusAnteriorAoEncerramento                  int                                         YES       NAO  
+IdUsuarioEncerramento                         int                                         YES       NAO  
+IdUsuarioReversaoEncerramento                 int                                         YES       NAO  
+
+
+====================================================================================================
+TABELA: OrcamentoLojas
+====================================================================================================
+
+====================================================================================================
+TABELA: dbo.OrcamentoLojas
+====================================================================================================
+
+Nome                                          Tipo                           Tamanho      Nullable  PK   
+----------------------------------------------------------------------------------------------------
+Id                                            int                                         NO        SIM  
+IdEstabelecimento                             int                                         NO        NAO  
+IdOrcamento                                   int                                         NO        NAO  
+ValorLoja                                     decimal(18,2)                               NO        NAO  
+HorasReal                                     nvarchar(MAX)                  -1           YES       NAO  
+Comissao                                      decimal(18,2)                               NO        NAO  
+HoraAbastecimento                             nvarchar(MAX)                  -1           YES       NAO  
+ValorHora                                     decimal(18,2)                               NO        NAO  
+ValorHoraVisita                               decimal(18,2)                               NO        NAO  
+SkuHoraReal                                   nvarchar(MAX)                  -1           YES       NAO  
+Fator                                         nvarchar(MAX)                  -1           YES       NAO  
+HoraSistema                                   nvarchar(MAX)                  -1           YES       NAO  
+ValorNegociado                                decimal(18,2)                               NO        NAO  
+ValorHoraSistema                              decimal(18,2)                               NO        NAO  
+ValorVisitaProvisionado                       decimal(18,2)                               NO        NAO  
+QtdSku                                        nvarchar(MAX)                  -1           YES       NAO  
+Frequencia                                    nvarchar(MAX)                  -1           YES       NAO  
+HoraVendedor                                  nvarchar(MAX)                  -1           YES       NAO  
+DataInclusao                                  datetime                                    NO        NAO  
+IdUsuarioInclusao                             int                                         NO        NAO  
+DataAlteracao                                 datetime                                    YES       NAO  
+IdUsuarioAlteracao                            int                                         YES       NAO  
+DataExclusao                                  datetime                                    YES       NAO  
+IdUsuarioExclusao                             int                                         YES       NAO  
+Viabilidade                                   bit                                         YES       NAO  
+Ativo                                         bit                                         NO        NAO  
+TipoViabilidade                               int                                         YES       NAO  
+AvisoPrevio                                   bit                                         YES       NAO  
+DataSugeridaInicioOperacao                    datetime                                    YES       NAO  
+DataSugeridaAvisoPrevio                       datetime                                    YES       NAO  
+DataAvisoPrevio                               datetime                                    YES       NAO  
+DataInicioOperacao                            datetime                                    YES       NAO  
+MotivoViabilidade                             nvarchar(MAX)                  -1           YES       NAO  
+DecimoTerceiroSalario                         decimal(18,2)                               NO        NAO  
+IdSolicitacaoAlteracaoOrcamento               bigint                                      YES       NAO  
+IdSolicitacaoAlteracaoOrcamentoLoja           bigint                                      YES       NAO  
+Orcamento_Id                                  int                                         YES       NAO  
+CodigoCliente                                 int                                         YES       NAO  
+IntegradoComPdvAction                         bit                                         YES       NAO  
+IdUsuarioIntegracaoPdvAction                  int                                         YES       NAO  
+DataIntegracaoPdvAction                       datetime                                    YES       NAO  
+Faturado                                      bit                                         NO        NAO  
+IdUsuarioFaturamento                          int                                         YES       NAO  
+IdFaturamento                                 bigint                                      YES       NAO  
+DataFaturamento                               datetime                                    YES       NAO  
+CompetenciaFaturamento                        nvarchar(10)                   10           YES       NAO  
+IdCliente                                     int                                         YES       NAO  
+IdOperacaoEmpresa                             bigint                                      YES       NAO  
+UltimoReajusteAplicadoId                      bigint                                      YES       NAO  
+UltimoReajusteDetalheAplicadoId               bigint                                      YES       NAO  
+DataUltimoReajuste                            datetime                                    YES       NAO  
+IdOrcamentoLojaOriginal                       int                                         YES       NAO  
+
+
+====================================================================================================
+TABELA: FaturamentoOrcamentoComissao (Vendedores e Comissão)
+====================================================================================================
+
+====================================================================================================
+TABELA: dbo.FaturamentoOrcamentoComissao
+====================================================================================================
+
+Nome                                          Tipo                           Tamanho      Nullable  PK   
+----------------------------------------------------------------------------------------------------
+Id                                            bigint                                      NO        SIM  
+IdFaturamentoOrcamento                        bigint                                      NO        NAO  
+IdOrcamento                                   int                                         NO        NAO  
+IdOrcamentoLoja                               int                                         YES       NAO  
+IdOrcamentoLojaComplemento                    bigint                                      YES       NAO  
+IdEstabelecimento                             int                                         YES       NAO  
+ValorBaseCalculo                              decimal(18,2)                               NO        NAO  
+ValorHoraVisita                               decimal(18,2)                               NO        NAO  
+Ativo                                         bit                                         NO        NAO  
+IdUsuarioInclusao                             int                                         NO        NAO  
+DataInclusao                                  datetime                                    NO        NAO  
+IdUsuarioAlteracao                            int                                         YES       NAO  
+DataAlteracao                                 datetime                                    YES       NAO  
+IdUsuarioAtivo                                int                                         NO        NAO  
+DataAtivo                                     datetime                                    YES       NAO  
+IdUsuarioInativo                              int                                         NO        NAO  
+DataInativo                                   datetime                                    YES       NAO  
+IdUsuarioVendedor                             int                                         YES       NAO  
+ComissaoTotal                                 decimal(18,2)                               NO        NAO  
+ComissaoPorUsuario                            decimal(18,2)                               NO        NAO  
+AdicionadoAposFaturamento                     bit                                         NO        NAO  

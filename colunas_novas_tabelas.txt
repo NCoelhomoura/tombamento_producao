@@ -1,12 +1,12 @@
 ====================================================================================================
-COLUNAS NOVAS ADICIONADAS NAS TABELAS - MIGRACAO STORES
+COLUNAS NOVAS ADICIONADAS NAS TABELAS - MIGRACAO STORES E CONTRACTS
 ====================================================================================================
 
-Este documento lista todas as colunas que foram criadas/adicionadas nas tabelas do schema gmcore
+Este documento lista todas as colunas que foram criadas/adicionadas nas tabelas dos schemas gmcore e gmcommercial
 durante o processo de mapeamento e preparacao para migracao de dados.
 
 ORIGEM: SQL Server PRD (Database: FINANCEIRO)
-DESTINO: PostgreSQL HML (Database: supera_dev_seed, Schema: gmcore)
+DESTINO: PostgreSQL HML (Database: supera_dev_seed, Schemas: gmcore e gmcommercial)
 
 ====================================================================================================
 
@@ -50,10 +50,30 @@ Descricao: Armazena o ID original da tabela CanalEstabelecimento do SQL Server P
 
 ====================================================================================================
 
+TABELA: gmcommercial.contracts
+----------------------------------------------------------------------------------------------------
+Coluna: legacy_id
+Tipo: INTEGER
+Nullable: SIM
+Origem do dado: Orcamento.Id (ViewOrcamentosLojas.IdOrcamento)
+Descricao: Armazena o ID original da tabela Orcamento do SQL Server PRD para referencia. Esta coluna sera criada automaticamente quando o ambiente for HML e quando ela nao existir na tabela.
+
+====================================================================================================
+
+TABELA: gmcommercial.contract_scenario_stores
+----------------------------------------------------------------------------------------------------
+Coluna: legacy_id
+Tipo: INTEGER
+Nullable: SIM
+Origem do dado: OrcamentoLojas.Id (ViewOrcamentosLojas.IdOrcamentoLoja)
+Descricao: Armazena o ID original da tabela OrcamentoLojas do SQL Server PRD para referencia. Esta coluna sera criada automaticamente quando o ambiente for HML e quando ela nao existir na tabela.
+
+====================================================================================================
+
 RESUMO
 ----------------------------------------------------------------------------------------------------
-Total de tabelas com colunas adicionadas: 4
-Total de colunas adicionadas: 4
+Total de tabelas com colunas adicionadas: 6
+Total de colunas adicionadas: 6
 
 Todas as colunas adicionadas sao do tipo INTEGER e servem para manter a referencia com os IDs
 originais das tabelas do SQL Server PRD, facilitando o rastreamento e validacao dos dados migrados.

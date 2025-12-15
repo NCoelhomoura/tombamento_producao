@@ -39,4 +39,84 @@ etapas
 
 
 
+====================================================================================================
+LOGICA DE ORQUESTRACAO - CONTRACTS
+====================================================================================================
 
+1. ESTRUTURA DA CLASSE DE MIGRACAO
+----------------------------------------------------------------------------------------------------
+- Classe principal: ContractsMigration (similar a CustomersMigration e StoresMigration)
+- __init__(self, limit_rows=0): inicializa stats, dicionarios de mapeamento e limite de linhas
+- Dicionarios de mapeamento: contract_id_map, customer_id_map, store_id_map, scenario_id_map, etc.
+- stats: contadores por etapa e lista de erros
+
+2. CONFIGURACAO DE SCHEMAS
+----------------------------------------------------------------------------------------------------
+- SCHEMA_HML = 'gmcommercial' (para contracts)
+- SCHEMA_PRD = 'commercial' (para contracts)
+- Funcao get_schema_atual(): retorna o schema baseado em DatabaseConnection.get_destino()
+
+3. LOGGING
+----------------------------------------------------------------------------------------------------
+- Logger configurado para arquivo (log_execution.txt na raiz) e console
+- Formato: %(asctime)s - %(levelname)s - %(message)s
+- Handler de arquivo em modo 'a' (append)
+
+4. METODOS DE MIGRACAO POR ETAPA
+----------------------------------------------------------------------------------------------------
+- step1_migrate_contracts(): migra contracts (tabela principal)
+- step2_migrate_contract_scenarios(): migra contract_scenarios (depende de contracts)
+- step3_migrate_contract_scenario_stores(): migra contract_scenario_stores (depende de scenarios e stores)
+- step4_migrate_contract_sellers(): migra contract_sellers (depende de contracts)
+- step5_migrate_contract_team_members(): migra contract_team_members (depende de contracts)
+- step6_migrate_contract_contacts(): migra contract_contacts (depende de contracts)
+- step7_migrate_contract_partners(): migra contract_partners (depende de contracts)
+- step8_migrate_contract_additional_charges(): migra contract_additional_charges (depende de contracts)
+
+5. METODO run()
+----------------------------------------------------------------------------------------------------
+- Executa todas as etapas em sequencia
+- Registra inicio/fim, duracao e estatisticas
+- Tratamento de erros
+
+6. VALIDACAO E RELATORIOS
+----------------------------------------------------------------------------------------------------
+- Cada etapa tem validate_stepN_*() que compara origem vs destino
+- Relatorio de qualidade ao final de cada etapa
+- Estatisticas finais ao concluir
+
+7. PROCESSAMENTO EM CHUNKS
+----------------------------------------------------------------------------------------------------
+- CHUNK_SIZE = 1000
+- Processa dados em lotes para evitar sobrecarga de memoria
+- Logs de progresso por chunk
+
+8. TRATAMENTO DE legacy_id
+----------------------------------------------------------------------------------------------------
+- should_include_legacy_id(): retorna True apenas em HML
+- Em HML: inclui legacy_id nas insercoes
+- Em PRD: nao inclui legacy_id (coluna nao existe)
+
+9. ORQUESTRACAO NO orchestrator_tasks.py
+----------------------------------------------------------------------------------------------------
+- Funcao run_contracts_task(step=None, limit_rows=0)
+- Se step for None: executa todas via migration.run()
+- Se step for especifico: executa apenas aquela etapa
+- Para etapas dependentes: carrega mapeamentos necessarios antes de executar
+
+10. PADROES DE CADA ETAPA
+----------------------------------------------------------------------------------------------------
+- Limpeza/truncate da tabela destino (ou DELETE para tabelas polimorficas)
+- Busca de dados do SQL Server (com LIMIT se limit_rows > 0)
+- Processamento em chunks
+- Mapeamento de IDs (legacy_id -> UUID)
+- Insercao no PostgreSQL
+- Validacao e relatorio de qualidade
+
+11. DEPENDENCIAS ENTRE ETAPAS
+----------------------------------------------------------------------------------------------------
+- Etapa 1 (contracts) deve ser executada primeiro
+- Etapas 2-8 dependem de contracts (precisam carregar contract_id_map)
+- Etapa 3 depende de scenarios e stores (precisa carregar scenario_id_map e store_id_map)
+
+====================================================================================================

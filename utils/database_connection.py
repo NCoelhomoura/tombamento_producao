@@ -56,7 +56,7 @@ class DatabaseConnection:
     
     # Chaveador de destino: 'HML' ou 'PRD'
     # Pode ser alterado via variável de ambiente MIGRATION_DESTINO ou método set_destino()
-    _destino_atual = 'PRD'  # Padrão: PRD (alterado de HML)
+    _destino_atual = 'HML'  # Padrão: HML
     
     @staticmethod
     def get_sql_server_prd_connection():

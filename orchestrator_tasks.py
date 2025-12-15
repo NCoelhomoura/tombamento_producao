@@ -20,7 +20,7 @@ LIMIT_ROWS = 0
 # Configuracao de destino
 # 'HML' = PostgreSQL HML (padrao)
 # 'PRD' = PostgreSQL PRD AWS
-DESTINO_PADRAO = 'PRD'  # Mudado para PRD como padrão
+DESTINO_PADRAO = 'HML'  # Ambiente padrão: HML
 
 # Limpar arquivo de log no inicio do orchestrator
 def clear_log_file():
