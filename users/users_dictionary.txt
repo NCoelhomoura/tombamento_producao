@@ -1,0 +1,154 @@
+====================================================================================================
+DICIONARIO DE MIGRACAO DE DADOS - USERS
+====================================================================================================
+
+ORIGEM: SQL Server PRD (Database: FINANCEIRO)
+DESTINO: PostgreSQL HML (Database: supera_dev_seed, Schema: gmcore)
+
+====================================================================================================
+
+====================================================================================================
+TABELA DESTINO: USERS
+TABELA ORIGEM: Usuario
+====================================================================================================
+
+ORIGEM - SQL Server PRD - Tabela: Usuario
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+Id                                       int                            10              NAO        SIM  
+Nome                                     nvarchar(200)                  200             NAO        NAO  
+Senha                                    nvarchar(50)                   50              NAO        NAO  
+Funcao                                   nvarchar(50)                   50              NAO        NAO  
+Login                                    nvarchar(50)                   50              NAO        NAO  
+Foto                                     nvarchar(100)                  100             SIM        NAO  
+ExtensaoFoto                             nvarchar(5)                    5               SIM        NAO  
+RG                                       nvarchar(10)                   10              SIM        NAO  
+CPF                                      nvarchar(11)                   11              SIM        NAO  
+Telefone                                 nvarchar(15)                   15              SIM        NAO  
+Email                                    nvarchar(50)                   50              SIM        NAO  
+CEP                                      nvarchar(10)                   10              SIM        NAO  
+Endereco                                 nvarchar(200)                  200             SIM        NAO  
+Numero                                   nvarchar(10)                   10              SIM        NAO  
+Bairro                                   nvarchar(50)                   50              SIM        NAO  
+Cidade                                   nvarchar(50)                   50              SIM        NAO  
+Complemento                              nvarchar(50)                   50              SIM        NAO  
+UF                                       nvarchar(2)                    2               SIM        NAO  
+DataNascimento                           date                           -               SIM        NAO  
+Ativo                                    bit                            -               NAO        NAO  
+DataInclusao                             datetime                       -               NAO        NAO  
+DataAlteracao                            datetime                       -               SIM        NAO  
+IdUsuarioInclusao                        int                            10              NAO        NAO  
+IdUsuarioAlteracao                       int                            10              SIM        NAO  
+CodigoGInfor                             bigint                         -               SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcore.users
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       uuid                           -               NAO        SIM  
+name                                     text                           -               NAO        NAO  
+temporary_password                       boolean                        -               NAO        NAO  
+email_confirmed_at                       timestamp with time zone       -               NAO        NAO  
+created_at                               timestamp with time zone       -               NAO        NAO  
+updated_at                               timestamp with time zone       -               NAO        NAO  
+deleted_at                               timestamp with time zone       -               SIM        NAO  
+status                                   character varying(50)         50              NAO        NAO  
+user_name                                character varying(256)         256             SIM        NAO  
+normalized_user_name                     character varying(256)        256             SIM        NAO  
+email                                    character varying(256)        256             SIM        NAO  
+normalized_email                         character varying(256)        256             SIM        NAO  
+email_confirmed                          boolean                        -               NAO        NAO  
+password_hash                            text                           -               SIM        NAO  
+security_stamp                           text                           -               SIM        NAO  
+concurrency_stamp                        text                           -               SIM        NAO  
+phone_number                             text                           -               SIM        NAO  
+phone_number_confirmed                   boolean                        -               NAO        NAO  
+two_factor_enabled                      boolean                        -               NAO        NAO  
+lockout_end                              timestamp with time zone       -               SIM        NAO  
+lockout_enabled                          boolean                        -               NAO        NAO  
+access_failed_count                      integer                        -               NAO        NAO  
+legacy_id                                integer                        -               SIM        NAO  
+
+
+MAPEAMENTO DE CAMPOS:
+----------------------------------------------------------------------------------------------------
+
+CAMPO DESTINO                            ORIGEM                         TRANSFORMACAO
+----------------------------------------------------------------------------------------------------
+id                                       -                               UUID gerado automaticamente (gen_random_uuid())
+legacy_id                                Usuario.Id                     Mapeamento direto (INTEGER)
+name                                     Usuario.Nome                   Mapeamento direto (limpar string)
+user_name                                Usuario.Login                  Mapeamento direto (limpar string, normalizar)
+normalized_user_name                     Usuario.Login                  Normalizar para uppercase (UPPER(Login))
+email                                    Usuario.Email                  Mapeamento direto (limpar string, normalizar)
+normalized_email                         Usuario.Email                  Normalizar para lowercase (LOWER(Email))
+phone_number                             Usuario.Telefone               Mapeamento direto (limpar string)
+status                                   Usuario.Ativo                  Converter bit para string: TRUE -> 'active', FALSE -> 'inactive'
+password_hash                            Usuario.Senha                  Mapeamento direto (hash MD5 do SQL Server)
+created_at                               Usuario.DataInclusao           Mapeamento direto (datetime -> timestamp)
+updated_at                               Usuario.DataAlteracao          Usar DataAlteracao se existir, senao usar DataInclusao
+deleted_at                               -                              NULL sempre (nao ha soft delete no SQL Server)
+email_confirmed                          -                              TRUE sempre (assumir que emails estao confirmados)
+email_confirmed_at                       Usuario.DataInclusao           Usar DataInclusao como data de confirmacao
+phone_number_confirmed                   -                              FALSE sempre (assumir que telefones nao estao confirmados)
+temporary_password                       -                              FALSE sempre (assumir que senhas nao sao temporarias)
+two_factor_enabled                       -                              FALSE sempre
+lockout_enabled                          -                              TRUE sempre
+lockout_end                              -                              NULL sempre
+access_failed_count                      -                              0 sempre
+security_stamp                           -                              NULL ou gerar UUID aleatorio
+concurrency_stamp                        -                              NULL ou gerar UUID aleatorio
+
+
+CAMPOS ORIGEM NAO MAPEADOS:
+----------------------------------------------------------------------------------------------------
+- Foto (nvarchar(100))
+- ExtensaoFoto (nvarchar(5))
+- RG (nvarchar(10))
+- CPF (nvarchar(11)) - Pode ser usado para validacao, mas nao ha campo direto em users
+- CEP (nvarchar(10))
+- Endereco (nvarchar(200))
+- Numero (nvarchar(10))
+- Bairro (nvarchar(50))
+- Cidade (nvarchar(50))
+- Complemento (nvarchar(50))
+- UF (nvarchar(2))
+- DataNascimento (date)
+- Funcao (nvarchar(50)) - Pode ser usado para definir status ou outras informacoes
+- IdUsuarioInclusao (int)
+- IdUsuarioAlteracao (int)
+- CodigoGInfor (bigint)
+
+
+CAMPOS DESTINO NAO MAPEADOS:
+----------------------------------------------------------------------------------------------------
+Todos os campos obrigatorios foram mapeados ou preenchidos com valores padrao.
+
+
+NOTAS IMPORTANTES:
+----------------------------------------------------------------------------------------------------
+1. A tabela users no PostgreSQL segue um padrao de autenticacao (Identity/AspNet), entao alguns campos
+   precisam ser preenchidos com valores padrao mesmo que nao existam no SQL Server.
+
+2. O campo status deve ser mapeado de acordo com o valor de Ativo:
+   - Ativo = TRUE -> status = 'active'
+   - Ativo = FALSE -> status = 'inactive'
+
+3. Os campos normalized_user_name e normalized_email devem ser preenchidos com versoes normalizadas
+   (uppercase para user_name, lowercase para email).
+
+4. O campo password_hash armazena o hash MD5 da senha do SQL Server. Se necessario, pode ser
+   migrado para um formato mais seguro posteriormente.
+
+5. O campo legacy_id foi criado manualmente para permitir o mapeamento de IdUsuarioVendedor em contracts.
+
+6. Campos de auditoria (created_at, updated_at) devem ser preenchidos com as datas do SQL Server.
+
+7. Campos de seguranca (email_confirmed, phone_number_confirmed, temporary_password, etc.) devem
+   ser preenchidos com valores padrao apropriados.
+
+====================================================================================================
+
+

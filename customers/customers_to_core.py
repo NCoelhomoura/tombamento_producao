@@ -6,9 +6,12 @@ Migra dados das tabelas: customers, customer_segments, addresses, contacts
 import sys
 import os
 import uuid
+import json
 import logging
+import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
+from psycopg2.extras import execute_values
 
 # Adicionar diretório utils ao path
 utils_path = os.path.join(os.path.dirname(__file__), '..', 'utils')
@@ -88,6 +91,15 @@ class CustomersMigration:
         self.customer_id_map = {}  # Map: legado_id -> uuid
         self.segment_id_map = {}   # Map: legado_id -> uuid
         self.limit_rows = limit_rows  # 0 = todos, > 0 = limitar quantidade
+        
+        # Caminho do arquivo JSON de filtros do contracts
+        contracts_dir = os.path.join(os.path.dirname(__file__), '..', 'contracts')
+        self.filter_json_path = os.path.join(contracts_dir, 'contracts_filter_main.json')
+    
+    def should_include_legacy_id(self):
+        """Retorna True se deve incluir legacy_id (apenas em HML)"""
+        destino = DatabaseConnection.get_destino()
+        return destino == 'HML'
     
     def clean_string(self, value: Optional[str], max_length: Optional[int] = None) -> Optional[str]:
         """Limpa e trunca string"""
@@ -108,6 +120,30 @@ class CustomersMigration:
         cleaned = re.sub(r'[^\d]', '', str(value))
         if not cleaned or cleaned == '0' * len(cleaned):
             return None
+        return cleaned
+    
+    # ========================================================================
+    # MÉTODOS VETORIZADOS COM PANDAS
+    # ========================================================================
+    
+    def clean_string_vectorized(self, series: pd.Series, max_length: Optional[int] = None) -> pd.Series:
+        """Limpa e trunca strings de forma vetorizada"""
+        cleaned = series.astype(str)
+        cleaned = cleaned.replace(['nan', 'None', 'NULL', 'NONE'], '')
+        cleaned = cleaned.str.strip()
+        cleaned = cleaned.replace(['', 'null', 'none'], None)
+        if max_length:
+            cleaned = cleaned.str[:max_length]
+        return cleaned
+    
+    def clean_cpf_cnpj_vectorized(self, series: pd.Series) -> pd.Series:
+        """Remove formatação de CPF/CNPJ de forma vetorizada"""
+        import re
+        cleaned = series.astype(str)
+        cleaned = cleaned.replace(['nan', 'None', 'NULL', 'NONE'], '')
+        cleaned = cleaned.str.replace(r'[^\d]', '', regex=True)
+        cleaned = cleaned.apply(lambda x: None if x and x == '0' * len(x) else x)
+        cleaned = cleaned.replace('', None)
         return cleaned
     
     def convert_status(self, ativo: Optional[bool]) -> str:
@@ -143,6 +179,42 @@ class CustomersMigration:
                 conn.close()
             raise
     
+    def delete_table_with_filter(self, table_name: str, legacy_ids: List[int], schema: str = None):
+        """
+        Faz DELETE em uma tabela usando filtro de legacy_id.
+        Não falha se não encontrar registros - apenas loga o total deletado.
+        """
+        if schema is None:
+            schema = get_schema_atual()
+        
+        if not legacy_ids:
+            logger.info(f"Nenhum legacy_id fornecido para DELETE em {table_name}")
+            return
+        
+        conn = None
+        try:
+            conn = DatabaseConnection.get_postgresql_destino_connection()
+            cursor = conn.cursor()
+            
+            query = f"DELETE FROM {schema}.{table_name} WHERE legacy_id = ANY(%s)"
+            cursor.execute(query, (legacy_ids,))
+            deleted_count = cursor.rowcount
+            conn.commit()
+            
+            # Log apenas o total deletado (não precisa detalhar quais não existiam)
+            logger.info(f"Tabela {schema}.{table_name}: {deleted_count} registros deletados (de {len(legacy_ids)} legacy_ids fornecidos)")
+            print(f"OK - Tabela {schema}.{table_name}: {deleted_count} registros deletados")
+            
+            cursor.close()
+            conn.close()
+            
+        except Exception as e:
+            logger.error(f"Erro ao deletar registros de {schema}.{table_name}: {e}")
+            if conn:
+                conn.rollback()
+                conn.close()
+            raise
+    
     def delete_polymorphic_table(self, table_name: str, entity_type: str, type_column: str, schema: str = None):
         """
         Faz DELETE em tabela polimórfica filtrando por tipo de entidade
@@ -173,6 +245,26 @@ class CustomersMigration:
                 conn.rollback()
                 conn.close()
             raise
+    
+    def load_filter_json(self) -> Optional[Dict]:
+        """
+        Carrega arquivo JSON com filtros e IDs agregados do contracts
+        
+        Returns:
+            Dicionário com dados do JSON ou None se arquivo não existir
+        """
+        try:
+            if os.path.exists(self.filter_json_path):
+                with open(self.filter_json_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                logger.info(f"Arquivo de filtros carregado: {self.filter_json_path}")
+                return data
+            else:
+                logger.info(f"Arquivo de filtros não encontrado: {self.filter_json_path} (buscando diretamente da ViewOrcamentosLojas)")
+                return None
+        except Exception as e:
+            logger.error(f"Erro ao carregar arquivo de filtros: {e}")
+            return None
     
     def validate_step1_customer_segments(self):
         """Validação e relatório de qualidade - ETAPA 1"""
@@ -241,6 +333,36 @@ class CustomersMigration:
         print("\n[ETAPA 1] Limpando tabela customer_segments...")
         self.truncate_table('customer_segments')
         
+        # Verificar se precisa criar coluna legacy_id em HML
+        include_legacy = False
+        if self.should_include_legacy_id():
+            try:
+                # Verificar se a coluna legacy_id existe na tabela
+                conn_check = DatabaseConnection.get_postgresql_destino_connection()
+                cursor_check = conn_check.cursor()
+                cursor_check.execute(f"""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_schema = '{schema}' 
+                    AND table_name = 'customer_segments' 
+                    AND column_name = 'legacy_id'
+                """)
+                if cursor_check.fetchone():
+                    include_legacy = True
+                    print("[ETAPA 1] Coluna legacy_id já existe na tabela")
+                else:
+                    # Criar coluna legacy_id se não existir
+                    print("[ETAPA 1] Criando coluna legacy_id...")
+                    cursor_check.execute(f"ALTER TABLE {schema}.customer_segments ADD COLUMN legacy_id INTEGER")
+                    conn_check.commit()
+                    include_legacy = True
+                    print("OK - Coluna legacy_id criada")
+                cursor_check.close()
+                conn_check.close()
+            except Exception as e:
+                logger.warning(f"Nao foi possivel criar/verificar coluna legacy_id: {e}")
+                include_legacy = False
+        
         # Buscar dados do SQL Server
         print("[ETAPA 1] Buscando dados do SQL Server...")
         sql_query = """
@@ -262,55 +384,103 @@ class CustomersMigration:
         cursor_sql = conn_sql.cursor()
         cursor_sql.execute(sql_query)
         
-        # Processar em chunks
+        # Carregar TODOS os dados na memória de uma vez (otimizado)
+        print("[ETAPA 1] Carregando dados na memória...")
+        all_rows = cursor_sql.fetchall()
+        cursor_sql.close()
+        conn_sql.close()
+        
+        print(f"[ETAPA 1] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
+        
+        # Processar conversões em massa usando DataFrame (vetorizado)
+        schema = get_schema_atual()
+        df = pd.DataFrame.from_records(all_rows, columns=['Id', 'Nome', 'Ativo', 'DataInclusao', 'DataAlteracao'])
+        
+        # Aplicar transformações vetorizadas
+        df['legacy_id'] = df['Id']
+        df['nome'] = df['Nome'].astype(str).str.strip()
+        df['nome'] = df['nome'].replace(['', 'null', 'none', 'None', 'NULL', 'NONE'], None)
+        df['nome'] = df['nome'].str[:255] if len(df) > 0 else df['nome']
+        df['ativo'] = df['Ativo'].fillna(False).astype(bool)
+        df['data_inclusao'] = df['DataInclusao']
+        df['data_alteracao'] = df['DataAlteracao'].fillna(df['DataInclusao'])
+        
+        # Remover linhas com erros (nome None após limpeza)
+        df = df[df['nome'].notna()]
+        
+        print(f"[ETAPA 1] {len(df)} registros processados. Inserindo no banco (otimizado com execute_values)...")
+        
+        # Conectar ao PostgreSQL
         conn_pg = DatabaseConnection.get_postgresql_destino_connection()
         cursor_pg = conn_pg.cursor()
         
-        chunk = []
+        # Preparar query e dados baseado em include_legacy
+        if include_legacy:
+            # Query com legacy_id
+            insert_query = f"""
+            INSERT INTO {schema}.customer_segments (
+                id, name, is_active, created_at, updated_at, legacy_id
+            ) VALUES %s
+            """
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s)"
+            # Converter DataFrame para lista de tuplas com legacy_id
+            processed_tuples = list(zip(
+                df['nome'].tolist(),
+                df['ativo'].tolist(),
+                df['data_inclusao'].tolist(),
+                df['data_alteracao'].tolist(),
+                df['legacy_id'].tolist()
+            ))
+        else:
+            # Query sem legacy_id
+            insert_query = f"""
+            INSERT INTO {schema}.customer_segments (
+                id, name, is_active, created_at, updated_at
+            ) VALUES %s
+            """
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s)"
+            # Converter DataFrame para lista de tuplas sem legacy_id
+            processed_tuples = list(zip(
+                df['nome'].tolist(),
+                df['ativo'].tolist(),
+                df['data_inclusao'].tolist(),
+                df['data_alteracao'].tolist()
+            ))
+        
         chunk_num = 0
         total_processed = 0
+        all_legacy_ids_inserted = []
         
         try:
-            while True:
-                rows = cursor_sql.fetchmany(CHUNK_SIZE)
-                if not rows:
-                    break
-                
+            for i in range(0, len(processed_tuples), CHUNK_SIZE):
+                chunk = processed_tuples[i:i + CHUNK_SIZE]
                 chunk_num += 1
-                print(f"[ETAPA 1] Processando chunk {chunk_num} ({len(rows)} registros)...")
                 
-                chunk_errors = 0
-                for row in rows:
+                if chunk:
                     try:
-                        segment_id = uuid.uuid4()
-                        legado_id = row[0]
-                        self.segment_id_map[legado_id] = segment_id
+                        # Usar execute_values() para inserção otimizada em bulk
+                        execute_values(
+                            cursor_pg,
+                            insert_query,
+                            chunk,
+                            template=insert_template,
+                            page_size=CHUNK_SIZE,
+                            fetch=False
+                        )
                         
-                        schema = get_schema_atual()
-                        insert_query = f"""
-                        INSERT INTO {schema}.customer_segments (
-                            id, name, is_active, created_at, updated_at
-                        ) VALUES (%s, %s, %s, %s, %s)
-                        """
+                        # Coletar legacy_ids para lookup depois (se include_legacy)
+                        if include_legacy:
+                            chunk_legacy_ids = [row[-1] for row in chunk]  # último elemento é legacy_id
+                            all_legacy_ids_inserted.extend(chunk_legacy_ids)
                         
-                        cursor_pg.execute(insert_query, (
-                            str(segment_id),
-                            self.clean_string(row[1], 255),  # Nome
-                            row[2] if row[2] is not None else False,  # Ativo
-                            row[3],  # DataInclusao -> created_at
-                            row[4] if row[4] else row[3]  # DataAlteracao -> updated_at
-                        ))
+                        total_processed += len(chunk)
+                        self.stats['customer_segments'] += len(chunk)
                         
-                        self.stats['customer_segments'] += 1
-                        total_processed += 1
-                        
-                    except Exception as e:
-                        error_msg = f"Erro ao inserir segmento Id={row[0]}: {e}"
+                    except Exception as batch_error:
+                        error_msg = f"Erro ao inserir batch de customer_segments: {batch_error}"
                         logger.error(error_msg)
                         print(f"ERRO - {error_msg}")
                         self.stats['errors'].append(error_msg)
-                        chunk_errors += 1
-                        # Fazer rollback imediato para não abortar toda a transação
                         try:
                             conn_pg.rollback()
                             cursor_pg = conn_pg.cursor()
@@ -318,15 +488,41 @@ class CustomersMigration:
                             logger.error(f"Erro ao fazer rollback: {rollback_error}")
                         continue
                 
-                # Commit do chunk apenas se não houve erro crítico
+                # Commit do chunk
                 try:
                     conn_pg.commit()
-                    print(f"[ETAPA 1] Chunk {chunk_num} processado: {total_processed} registros inseridos, {chunk_errors} erros")
-                    logger.info(f"[ETAPA 1] Chunk {chunk_num} processado: {total_processed} registros inseridos, {chunk_errors} erros")
+                    print(f"[ETAPA 1] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
+                    logger.info(f"[ETAPA 1] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
                 except Exception as commit_error:
                     logger.error(f"Erro no commit do chunk {chunk_num}: {commit_error}")
                     conn_pg.rollback()
                     cursor_pg = conn_pg.cursor()
+            
+            # Buscar UUIDs gerados para mapeamento (uma única query após todas as inserções)
+            if include_legacy and all_legacy_ids_inserted:
+                print(f"[ETAPA 1] Buscando UUIDs gerados para {len(all_legacy_ids_inserted)} registros...")
+                cursor_pg.execute(f"""
+                    SELECT id, legacy_id 
+                    FROM {schema}.customer_segments 
+                    WHERE legacy_id = ANY(%s)
+                """, (all_legacy_ids_inserted,))
+                for uuid_row, leg_id in cursor_pg.fetchall():
+                    self.segment_id_map[leg_id] = uuid_row
+                print(f"[ETAPA 1] {len(self.segment_id_map)} UUIDs mapeados")
+            elif not include_legacy:
+                # Se não há legacy_id, mapear por ordem de inserção (menos confiável, mas necessário)
+                print(f"[ETAPA 1] Buscando UUIDs gerados para mapeamento...")
+                cursor_pg.execute(f"""
+                    SELECT id, created_at 
+                    FROM {schema}.customer_segments 
+                    ORDER BY created_at
+                    LIMIT %s
+                """, (len(processed_tuples),))
+                legacy_ids_list = df['legacy_id'].tolist()
+                for idx, (uuid_row, _) in enumerate(cursor_pg.fetchall()):
+                    if idx < len(legacy_ids_list):
+                        self.segment_id_map[legacy_ids_list[idx]] = uuid_row
+                print(f"[ETAPA 1] {len(self.segment_id_map)} UUIDs mapeados")
             
             print(f"\n[ETAPA 1] CONCLUIDA! Total de customer_segments migrados: {self.stats['customer_segments']}")
             logger.info(f"ETAPA 1 concluida: {self.stats['customer_segments']} registros")
@@ -334,15 +530,21 @@ class CustomersMigration:
             # Validação e relatório de qualidade
             self.validate_step1_customer_segments()
             
-        except Exception as e:
-            conn_pg.rollback()
-            logger.error(f"Erro na ETAPA 1: {e}")
-            raise
-        finally:
-            cursor_sql.close()
-            conn_sql.close()
+            # Fechar conexões
             cursor_pg.close()
             conn_pg.close()
+            
+        except Exception as e:
+            logger.error(f"Erro na ETAPA 1: {e}")
+            if 'conn_pg' in locals():
+                try:
+                    conn_pg.rollback()
+                    if 'cursor_pg' in locals():
+                        cursor_pg.close()
+                    conn_pg.close()
+                except:
+                    pass
+            raise
     
     def validate_step2_customers(self):
         """Validação e relatório de qualidade - ETAPA 2"""
@@ -351,23 +553,40 @@ class CustomersMigration:
         print("-"*80)
         
         try:
-            # Contar origem (aplicando limite se especificado)
+            # Carregar filtros do contracts ou buscar da ViewOrcamentosLojas
+            filter_data = self.load_filter_json()
+            id_cliente_list = []
+            
+            if filter_data and 'aggregated_ids' in filter_data:
+                id_cliente_list = filter_data['aggregated_ids'].get('IdCliente', [])
+            
+            # Contar origem aplicando os mesmos filtros
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
-            if self.limit_rows > 0:
-                cursor_sql.execute(f"SELECT COUNT(*) FROM (SELECT TOP {self.limit_rows} Id FROM Cliente ORDER BY Id) AS limited")
+            
+            if id_cliente_list:
+                # Aplicar filtro de IdCliente do JSON
+                placeholders = ','.join(['?' for _ in id_cliente_list])
+                cursor_sql.execute(f"SELECT COUNT(*) FROM Cliente WHERE Id IN ({placeholders})", id_cliente_list)
             else:
-                cursor_sql.execute("SELECT COUNT(*) FROM Cliente")
+                # Buscar diretamente da ViewOrcamentosLojas (mesmo em full load)
+                cursor_sql.execute("SELECT COUNT(DISTINCT IdCliente) FROM ViewOrcamentosLojas WHERE IdCliente IS NOT NULL")
             origem_count = cursor_sql.fetchone()[0]
             cursor_sql.close()
             conn_sql.close()
             
-            # Contar destino
+            # Contar destino aplicando os mesmos filtros
             schema = get_schema_atual()
             destino_nome = DatabaseConnection.get_destino()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.customers")
+            
+            if id_cliente_list:
+                # Contar apenas os customers migrados nesta execução
+                cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.customers WHERE legacy_id = ANY(%s)", (id_cliente_list,))
+            else:
+                # Contar todos (fallback)
+                cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.customers")
             destino_count = cursor_pg.fetchone()[0]
             
             # Verificar legacy_id
@@ -418,11 +637,42 @@ class CustomersMigration:
         logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
-        # Truncate
-        print("\n[ETAPA 2] Limpando tabela customers...")
-        self.truncate_table('customers')
+        # Carregar filtros do contracts step1 (se existir)
+        filter_data = self.load_filter_json()
+        id_cliente_filter_list = []
         
-        # Buscar dados do SQL Server
+        if filter_data and 'aggregated_ids' in filter_data:
+            id_cliente_filter_list = filter_data['aggregated_ids'].get('IdCliente', [])
+            logger.info(f"[ETAPA 2] Carregados {len(id_cliente_filter_list)} IdCliente do arquivo de filtros do contracts")
+            print(f"[ETAPA 2] Carregados {len(id_cliente_filter_list)} IdCliente do arquivo de filtros do contracts")
+        else:
+            # Se não há JSON, buscar diretamente da ViewOrcamentosLojas
+            logger.info("[ETAPA 2] Arquivo de filtros não encontrado. Buscando IdCliente diretamente da ViewOrcamentosLojas...")
+            print("[ETAPA 2] Buscando IdCliente diretamente da ViewOrcamentosLojas...")
+            try:
+                conn_sql_temp = DatabaseConnection.get_sql_server_prd_connection()
+                cursor_sql_temp = conn_sql_temp.cursor()
+                cursor_sql_temp.execute("SELECT DISTINCT IdCliente FROM ViewOrcamentosLojas WHERE IdCliente IS NOT NULL")
+                id_cliente_filter_list = [row[0] for row in cursor_sql_temp.fetchall()]
+                cursor_sql_temp.close()
+                conn_sql_temp.close()
+                logger.info(f"[ETAPA 2] Encontrados {len(id_cliente_filter_list)} IdCliente na ViewOrcamentosLojas")
+                print(f"[ETAPA 2] Encontrados {len(id_cliente_filter_list)} IdCliente na ViewOrcamentosLojas")
+            except Exception as e:
+                logger.error(f"Erro ao buscar IdCliente da ViewOrcamentosLojas: {e}")
+                print(f"ERRO - Não foi possível buscar IdCliente da ViewOrcamentosLojas: {e}")
+                return
+        
+        # Limpar tabela (DELETE baseado nos IdCliente filtrados)
+        if id_cliente_filter_list:
+            print("\n[ETAPA 2] Limpando registros filtrados da tabela customers...")
+            self.delete_table_with_filter('customers', id_cliente_filter_list)
+        else:
+            # Se não há filtros, fazer TRUNCATE (caso raro)
+            print("\n[ETAPA 2] Limpando tabela customers...")
+            self.truncate_table('customers')
+        
+        # Buscar dados do SQL Server com filtro de IdCliente
         print("[ETAPA 2] Buscando dados do SQL Server...")
         sql_query = """
         SELECT 
@@ -439,8 +689,16 @@ class CustomersMigration:
             DataAlteracao,
             DataAtivacao
         FROM Cliente
-        ORDER BY Id
         """
+        
+        # Aplicar filtro de IdCliente se houver
+        query_params = []
+        if id_cliente_filter_list:
+            placeholders = ','.join(['?' for _ in id_cliente_filter_list])
+            sql_query += f" WHERE Id IN ({placeholders})"
+            query_params.extend(id_cliente_filter_list)
+        
+        sql_query += " ORDER BY Id"
         
         # Adicionar LIMIT se especificado
         if self.limit_rows > 0:
@@ -448,76 +706,116 @@ class CustomersMigration:
         
         conn_sql = DatabaseConnection.get_sql_server_prd_connection()
         cursor_sql = conn_sql.cursor()
-        cursor_sql.execute(sql_query)
         
-        # Processar em chunks
+        # Executar query com parâmetros se houver
+        if query_params:
+            cursor_sql.execute(sql_query, query_params)
+        else:
+            cursor_sql.execute(sql_query)
+        
+        # Carregar TODOS os dados na memória de uma vez (otimizado)
+        print("[ETAPA 2] Carregando dados na memória...")
+        all_rows = cursor_sql.fetchall()
+        cursor_sql.close()
+        conn_sql.close()
+        
+        print(f"[ETAPA 2] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
+        
+        # Processar conversões em massa usando DataFrame (vetorizado)
+        schema = get_schema_atual()
+        df = pd.DataFrame.from_records(all_rows, columns=['Id', 'Codigo', 'TipoPessoa', 'CpfCnpj', 'InscricaoEstadual', 'InscricaoMunicipal', 'RazaoSocial', 'NomeFantasia', 'Ativo', 'DataInclusao', 'DataAlteracao', 'DataAtivacao'])
+        
+        # Aplicar transformações vetorizadas
+        df['legacy_id'] = df['Id']
+        
+        # Limpar CPF/CNPJ (vetorizado)
+        df['cpf_cnpj'] = self.clean_cpf_cnpj_vectorized(df['CpfCnpj'])
+        df['cpf_cnpj'] = df['cpf_cnpj'].fillna('00000000000000')  # Valor padrão
+        
+        # CNPJ status
+        df['cnpj_status'] = df['cpf_cnpj'].apply(lambda x: 'valid' if x and x != '00000000000000' else 'invalid')
+        
+        # Limpar strings (vetorizado)
+        df['state_registration'] = self.clean_string_vectorized(df['InscricaoEstadual'], max_length=20)
+        df['municipal_registration'] = self.clean_string_vectorized(df['InscricaoMunicipal'], max_length=20)
+        df['legal_name'] = self.clean_string_vectorized(df['RazaoSocial'], max_length=255)
+        df['trade_name'] = self.clean_string_vectorized(df['NomeFantasia'], max_length=255)
+        
+        # Status (vetorizado)
+        df['status'] = df['Ativo'].apply(lambda x: 'active' if x is True else 'inactive')
+        
+        # Datas
+        df['data_inclusao'] = df['DataInclusao']
+        df['data_alteracao'] = df['DataAlteracao'].fillna(df['DataInclusao'])
+        
+        # Remover linhas com erros (legal_name None após limpeza)
+        df = df[df['legal_name'].notna()]
+        
+        # Converter DataFrame diretamente para lista de tuplas (otimizado)
+        processed_tuples = list(zip(
+            df['legacy_id'].tolist(),
+            df['cpf_cnpj'].tolist(),
+            df['cnpj_status'].tolist(),
+            df['state_registration'].tolist(),
+            df['municipal_registration'].tolist(),
+            df['legal_name'].tolist(),
+            df['trade_name'].tolist(),
+            df['status'].tolist(),
+            df['data_inclusao'].tolist(),
+            df['data_alteracao'].tolist()
+        ))
+        legacy_ids_list = df['legacy_id'].tolist()
+        
+        print(f"[ETAPA 2] {len(processed_tuples)} registros processados. Inserindo no banco (otimizado com execute_values)...")
+        
+        # Conectar ao PostgreSQL
         conn_pg = DatabaseConnection.get_postgresql_destino_connection()
         cursor_pg = conn_pg.cursor()
         
+        # Query de insert usando gen_random_uuid() - formato para execute_values
+        insert_query = f"""
+        INSERT INTO {schema}.customers (
+            id, legacy_id, cnpj, cnpj_status, state_registration,
+            municipal_registration, legal_name, trade_name, status,
+            created_at, updated_at
+        ) VALUES %s
+        """
+        insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        
         chunk_num = 0
         total_processed = 0
+        all_legacy_ids_inserted = []
         
         try:
-            while True:
-                rows = cursor_sql.fetchmany(CHUNK_SIZE)
-                if not rows:
-                    break
-                
+            for i in range(0, len(processed_tuples), CHUNK_SIZE):
+                chunk = processed_tuples[i:i + CHUNK_SIZE]
                 chunk_num += 1
-                print(f"[ETAPA 2] Processando chunk {chunk_num} ({len(rows)} registros)...")
-                logger.info(f"[ETAPA 2] Processando chunk {chunk_num} ({len(rows)} registros)...")
+                print(f"[ETAPA 2] Processando chunk {chunk_num} ({len(chunk)} registros)...")
                 
-                chunk_errors = 0
-                for row in rows:
+                if chunk:
                     try:
-                        customer_id = uuid.uuid4()
-                        legado_id = row[0]
-                        self.customer_id_map[legado_id] = customer_id
+                        # Usar execute_values() para inserção otimizada em bulk
+                        execute_values(
+                            cursor_pg,
+                            insert_query,
+                            chunk,
+                            template=insert_template,
+                            page_size=CHUNK_SIZE,
+                            fetch=False
+                        )
                         
-                        # Limpar CPF/CNPJ
-                        cpf_cnpj = self.clean_cpf_cnpj(row[3])
+                        # Coletar legacy_ids para lookup depois
+                        chunk_legacy_ids = [row[0] for row in chunk]  # primeiro elemento é legacy_id
+                        all_legacy_ids_inserted.extend(chunk_legacy_ids)
                         
-                        # Se não houver CPF/CNPJ, usar valor padrão (campo é NOT NULL)
-                        if not cpf_cnpj:
-                            cpf_cnpj = '00000000000000'  # Valor padrão para CNPJ vazio
+                        total_processed += len(chunk)
+                        self.stats['customers'] += len(chunk)
                         
-                        # Determinar status (mapear Ativo para status)
-                        # Se Ativo = True -> 'active', se False -> 'inactive'
-                        status = 'active' if row[8] is True else 'inactive'
-                        
-                        schema = get_schema_atual()
-                        insert_query = f"""
-                        INSERT INTO {schema}.customers (
-                            id, legacy_id, cnpj, cnpj_status, state_registration,
-                            municipal_registration, legal_name, trade_name, status,
-                            created_at, updated_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """
-                        
-                        cursor_pg.execute(insert_query, (
-                            str(customer_id),
-                            legado_id,  # legacy_id
-                            cpf_cnpj,  # cnpj (sempre preenchido, mesmo que com valor padrão)
-                            'valid' if cpf_cnpj and cpf_cnpj != '00000000000000' else 'invalid',  # cnpj_status
-                            self.clean_string(row[4], 20) if row[4] else None,  # InscricaoEstadual -> state_registration
-                            self.clean_string(row[5], 20) if row[5] else None,  # InscricaoMunicipal -> municipal_registration
-                            self.clean_string(row[6], 255),  # RazaoSocial -> legal_name
-                            self.clean_string(row[7], 255),  # NomeFantasia -> trade_name
-                            status,  # status
-                            row[9],  # DataInclusao -> created_at
-                            row[10] if row[10] else row[9]  # DataAlteracao -> updated_at
-                        ))
-                        
-                        self.stats['customers'] += 1
-                        total_processed += 1
-                        
-                    except Exception as e:
-                        error_msg = f"Erro ao inserir customer Id={row[0]}: {e}"
+                    except Exception as batch_error:
+                        error_msg = f"Erro ao inserir batch de customers: {batch_error}"
                         logger.error(error_msg)
                         print(f"ERRO - {error_msg}")
                         self.stats['errors'].append(error_msg)
-                        chunk_errors += 1
-                        # Fazer rollback imediato para não abortar toda a transação
                         try:
                             conn_pg.rollback()
                             cursor_pg = conn_pg.cursor()
@@ -525,15 +823,27 @@ class CustomersMigration:
                             logger.error(f"Erro ao fazer rollback: {rollback_error}")
                         continue
                 
-                # Commit do chunk apenas se não houve erro crítico
+                # Commit do chunk
                 try:
                     conn_pg.commit()
-                    print(f"[ETAPA 2] Chunk {chunk_num} processado: {total_processed} registros inseridos, {chunk_errors} erros")
-                    logger.info(f"[ETAPA 2] Chunk {chunk_num} processado: {total_processed} registros inseridos, {chunk_errors} erros")
+                    print(f"[ETAPA 2] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
+                    logger.info(f"[ETAPA 2] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
                 except Exception as commit_error:
                     logger.error(f"Erro no commit do chunk {chunk_num}: {commit_error}")
                     conn_pg.rollback()
                     cursor_pg = conn_pg.cursor()
+            
+            # Buscar UUIDs gerados para mapeamento (uma única query após todas as inserções)
+            if all_legacy_ids_inserted:
+                print(f"[ETAPA 2] Buscando UUIDs gerados para {len(all_legacy_ids_inserted)} registros...")
+                cursor_pg.execute(f"""
+                    SELECT id, legacy_id 
+                    FROM {schema}.customers 
+                    WHERE legacy_id = ANY(%s)
+                """, (all_legacy_ids_inserted,))
+                for uuid_row, leg_id in cursor_pg.fetchall():
+                    self.customer_id_map[leg_id] = uuid_row
+                print(f"[ETAPA 2] {len(self.customer_id_map)} UUIDs mapeados")
             
             print(f"\n[ETAPA 2] CONCLUIDA! Total de customers migrados: {self.stats['customers']}")
             logger.info(f"ETAPA 2 concluida: {self.stats['customers']} registros")
@@ -541,15 +851,21 @@ class CustomersMigration:
             # Validação e relatório de qualidade
             self.validate_step2_customers()
             
-        except Exception as e:
-            conn_pg.rollback()
-            logger.error(f"Erro na ETAPA 2: {e}")
-            raise
-        finally:
-            cursor_sql.close()
-            conn_sql.close()
+            # Fechar conexões
             cursor_pg.close()
             conn_pg.close()
+            
+        except Exception as e:
+            logger.error(f"Erro na ETAPA 2: {e}")
+            if 'conn_pg' in locals():
+                try:
+                    conn_pg.rollback()
+                    if 'cursor_pg' in locals():
+                        cursor_pg.close()
+                    conn_pg.close()
+                except:
+                    pass
+            raise
     
     def validate_step3_addresses(self):
         """Validação e relatório de qualidade - ETAPA 3"""
@@ -558,42 +874,50 @@ class CustomersMigration:
         print("-"*80)
         
         try:
-            # Aplicar limite se especificado
-            limit_clause = ""
-            if self.limit_rows > 0:
-                limit_clause = f" OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY"
-            
             # Contar origem - endereços principais (aplicando mesmo filtro e limite da migração)
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
-            query_main = f"""
-                SELECT COUNT(*) 
-                FROM (
-                    SELECT Id, Endereco, EnderecoCobranca
+            
+            # Se houver limite, usar subquery com TOP para aplicar o limite
+            if self.limit_rows > 0:
+                query_main = f"""
+                    SELECT COUNT(*) 
+                    FROM (
+                        SELECT TOP {self.limit_rows} Id, Endereco, EnderecoCobranca
+                        FROM Cliente
+                        WHERE (Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != '')
+                           OR (EnderecoCobranca IS NOT NULL AND LTRIM(RTRIM(EnderecoCobranca)) != '')
+                        ORDER BY Id
+                    ) AS limited
+                    WHERE Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != ''
+                """
+                query_billing = f"""
+                    SELECT COUNT(*) 
+                    FROM (
+                        SELECT TOP {self.limit_rows} Id, Endereco, EnderecoCobranca
+                        FROM Cliente
+                        WHERE (Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != '')
+                           OR (EnderecoCobranca IS NOT NULL AND LTRIM(RTRIM(EnderecoCobranca)) != '')
+                        ORDER BY Id
+                    ) AS limited
+                    WHERE EnderecoCobranca IS NOT NULL AND LTRIM(RTRIM(EnderecoCobranca)) != ''
+                """
+            else:
+                # Sem limite, query direta sem subquery
+                query_main = """
+                    SELECT COUNT(*) 
                     FROM Cliente
-                    WHERE (Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != '')
-                       OR (EnderecoCobranca IS NOT NULL AND LTRIM(RTRIM(EnderecoCobranca)) != '')
-                    ORDER BY Id
-                    {limit_clause}
-                ) AS limited
-                WHERE Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != ''
-            """
+                    WHERE Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != ''
+                """
+                query_billing = """
+                    SELECT COUNT(*) 
+                    FROM Cliente
+                    WHERE EnderecoCobranca IS NOT NULL AND LTRIM(RTRIM(EnderecoCobranca)) != ''
+                """
+            
             cursor_sql.execute(query_main)
             origem_main = cursor_sql.fetchone()[0]
             
-            # Contar origem - endereços de cobrança
-            query_billing = f"""
-                SELECT COUNT(*) 
-                FROM (
-                    SELECT Id, Endereco, EnderecoCobranca
-                    FROM Cliente
-                    WHERE (Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != '')
-                       OR (EnderecoCobranca IS NOT NULL AND LTRIM(RTRIM(EnderecoCobranca)) != '')
-                    ORDER BY Id
-                    {limit_clause}
-                ) AS limited
-                WHERE EnderecoCobranca IS NOT NULL AND LTRIM(RTRIM(EnderecoCobranca)) != ''
-            """
             cursor_sql.execute(query_billing)
             origem_billing = cursor_sql.fetchone()[0]
             
@@ -668,13 +992,14 @@ class CustomersMigration:
         logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
-        # Delete apenas addresses de customers (tabela polimórfica)
-        print("\n[ETAPA 3] Limpando addresses de customers...")
-        self.delete_polymorphic_table('addresses', 'customers', 'addressable_type')
-        
-        # Buscar dados do SQL Server
-        print("[ETAPA 3] Buscando dados do SQL Server...")
-        sql_query = """
+        try:
+            # Delete apenas addresses de customers (tabela polimórfica)
+            print("\n[ETAPA 3] Limpando addresses de customers...")
+            self.delete_polymorphic_table('addresses', 'customers', 'addressable_type')
+            
+            # Buscar dados do SQL Server
+            print("[ETAPA 3] Buscando dados do SQL Server...")
+            sql_query = """
         SELECT 
             Id,
             Endereco,
@@ -697,239 +1022,240 @@ class CustomersMigration:
             Longitude,
             DataInclusao,
             DataAlteracao
-        FROM Cliente
-        WHERE (Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != '')
-           OR (EnderecoCobranca IS NOT NULL AND LTRIM(RTRIM(EnderecoCobranca)) != '')
-        ORDER BY Id
-        """
-        
-        # Adicionar LIMIT se especificado
-        if self.limit_rows > 0:
-            sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
-        
-        conn_sql = DatabaseConnection.get_sql_server_prd_connection()
-        cursor_sql = conn_sql.cursor()
-        cursor_sql.execute(sql_query)
-        
-        # Processar em chunks
-        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
-        cursor_pg = conn_pg.cursor()
-        
-        chunk_num = 0
-        total_processed = 0
-        
-        try:
-            while True:
-                rows = cursor_sql.fetchmany(CHUNK_SIZE)
-                if not rows:
-                    break
+            FROM Cliente
+            WHERE (Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != '')
+               OR (EnderecoCobranca IS NOT NULL AND LTRIM(RTRIM(EnderecoCobranca)) != '')
+            ORDER BY Id
+            """
+            
+            # Adicionar LIMIT se especificado
+            if self.limit_rows > 0:
+                sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
+            
+            conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql = conn_sql.cursor()
+            cursor_sql.execute(sql_query)
+            
+            # Carregar TODOS os dados na memória de uma vez (otimizado)
+            print("[ETAPA 3] Carregando dados na memória...")
+            all_rows = cursor_sql.fetchall()
+            cursor_sql.close()
+            conn_sql.close()
+            
+            print(f"[ETAPA 3] {len(all_rows)} registros carregados. Processando conversões...")
+            
+            # Processar conversões em massa
+            schema = get_schema_atual()
+            import re
+            
+            # Preparar lista de valores para insert em batch (processar tudo em memória)
+            batch_values = []
+            chunk_errors = 0
+            
+            for row in all_rows:
+                legado_id = row[0]
+                customer_id = self.customer_id_map.get(legado_id)
                 
-                chunk_num += 1
-                print(f"[ETAPA 3] Processando chunk {chunk_num} ({len(rows)} registros)...")
-                logger.info(f"[ETAPA 3] Processando chunk {chunk_num} ({len(rows)} registros)...")
+                if not customer_id:
+                    continue
                 
-                chunk_errors = 0
-                for row in rows:
-                    legado_id = row[0]
-                    customer_id = self.customer_id_map.get(legado_id)
-                    
-                    if not customer_id:
+                # Endereço Principal
+                if row[1] and str(row[1]).strip():  # Endereco
+                    try:
+                        cep = re.sub(r'[^\d]', '', str(row[5])) if row[5] else None
+                        if not cep or cep == '0' * len(cep):
+                            cep = '00000000'  # Valor padrão (campo é NOT NULL)
+                        
+                        # Converter CodigoMunicipio para integer se possível
+                        municipal_code = 0  # Valor padrão (campo é NOT NULL)
+                        if row[7]:
+                            try:
+                                codigo_str = re.sub(r'[^\d]', '', str(row[7]))
+                                if codigo_str:
+                                    municipal_code = int(codigo_str[:10])  # Limitar a 10 dígitos
+                            except:
+                                pass
+                        
+                        # Converter latitude/longitude se possível
+                        lat = None
+                        lon = None
+                        if row[17]:  # Latitude
+                            try:
+                                lat = float(str(row[17]).replace(',', '.'))
+                            except:
+                                pass
+                        if row[18]:  # Longitude
+                            try:
+                                lon = float(str(row[18]).replace(',', '.'))
+                            except:
+                                pass
+                        
+                        # Zone e Region são obrigatórios - usar neighborhood como zone e string vazia como region
+                        zone_value = self.clean_string(row[4], 100) or ''  # neighborhood como zone (garantir que nunca seja None)
+                        region_value = ''  # region vazio (não temos na origem)
+                        
+                        # Number é obrigatório - usar 'S/N' se não houver número
+                        number_value = self.clean_string(row[2], 20) if row[2] and str(row[2]).strip() else 'S/N'
+                        
+                        # City é obrigatório - usar string vazia se não houver cidade
+                        city_value = self.clean_string(row[6], 100) if row[6] and str(row[6]).strip() else ''
+                        
+                        # State é obrigatório - usar string vazia se não houver UF
+                        state_value = self.clean_string(row[8], 2) if row[8] and str(row[8]).strip() else ''
+                        
+                        # Street é obrigatório - usar string vazia se não houver endereço
+                        street_value = self.clean_string(row[1], 500) or ''
+                        
+                        # Neighborhood é obrigatório - usar string vazia se não houver bairro
+                        neighborhood_value = self.clean_string(row[4], 100) or ''
+                        
+                        batch_values.append((
+                            legado_id,  # legacy_id
+                            str(customer_id),  # addressable_id (UUID do customer)
+                            'customers',  # addressable_type
+                            'main',  # type
+                            cep,  # postal_code (obrigatório, usar '00000000' se vazio)
+                            street_value,  # street (obrigatório, usar '' se vazio)
+                            number_value,  # number (obrigatório, usar 'S/N' se vazio)
+                            self.clean_string(row[3], 200),  # address_line_2 (Complemento - pode ser NULL)
+                            neighborhood_value,  # neighborhood (obrigatório, usar '' se vazio)
+                            city_value,  # city (obrigatório, usar '' se vazio)
+                            state_value,  # state (obrigatório, usar '' se vazio)
+                            municipal_code,  # municipal_code (obrigatório, usar 0 se vazio)
+                            lat,  # latitude
+                            lon,  # longitude
+                            zone_value,  # zone (obrigatório)
+                            region_value,  # region (obrigatório)
+                            row[19],  # created_at
+                            row[20] if row[20] else row[19]  # updated_at
+                        ))
+                        
+                        self.stats['addresses'] += 1
+                        
+                    except Exception as e:
+                        error_msg = f"Erro ao preparar endereco principal cliente Id={legado_id}: {e}"
+                        logger.error(error_msg)
+                        print(f"ERRO - {error_msg}")
+                        self.stats['errors'].append(error_msg)
+                        chunk_errors += 1
                         continue
-                    
-                    # Endereço Principal
-                    if row[1] and str(row[1]).strip():  # Endereco
-                        try:
-                            import re
-                            cep = re.sub(r'[^\d]', '', str(row[5])) if row[5] else None
-                            if not cep or cep == '0' * len(cep):
-                                cep = '00000000'  # Valor padrão (campo é NOT NULL)
-                            
-                            # Converter CodigoMunicipio para integer se possível
-                            municipal_code = 0  # Valor padrão (campo é NOT NULL)
-                            if row[7]:
-                                try:
-                                    codigo_str = re.sub(r'[^\d]', '', str(row[7]))
-                                    if codigo_str:
-                                        municipal_code = int(codigo_str[:10])  # Limitar a 10 dígitos
-                                except:
-                                    pass
-                            
-                            schema = get_schema_atual()
-                            insert_query = f"""
-                            INSERT INTO {schema}.addresses (
-                                id, legacy_id, addressable_id, addressable_type, type,
-                                postal_code, street, number, address_line_2, neighborhood,
-                                city, state, municipal_code, latitude, longitude, zone, region,
-                                created_at, updated_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            """
-                            
-                            # Converter latitude/longitude se possível
-                            lat = None
-                            lon = None
-                            if row[17]:  # Latitude
-                                try:
-                                    lat = float(str(row[17]).replace(',', '.'))
-                                except:
-                                    pass
-                            if row[18]:  # Longitude
-                                try:
-                                    lon = float(str(row[18]).replace(',', '.'))
-                                except:
-                                    pass
-                            
-                            # Zone e Region são obrigatórios - usar neighborhood como zone e string vazia como region
-                            zone_value = self.clean_string(row[4], 100) or ''  # neighborhood como zone (garantir que nunca seja None)
-                            region_value = ''  # region vazio (não temos na origem)
-                            
-                            # Number é obrigatório - usar 'S/N' se não houver número
-                            number_value = self.clean_string(row[2], 20) if row[2] and str(row[2]).strip() else 'S/N'
-                            
-                            # City é obrigatório - usar string vazia se não houver cidade
-                            city_value = self.clean_string(row[6], 100) if row[6] and str(row[6]).strip() else ''
-                            
-                            # State é obrigatório - usar string vazia se não houver UF
-                            state_value = self.clean_string(row[8], 2) if row[8] and str(row[8]).strip() else ''
-                            
-                            # Street é obrigatório - usar string vazia se não houver endereço
-                            street_value = self.clean_string(row[1], 500) or ''
-                            
-                            # Neighborhood é obrigatório - usar string vazia se não houver bairro
-                            neighborhood_value = self.clean_string(row[4], 100) or ''
-                            
-                            cursor_pg.execute(insert_query, (
-                                str(uuid.uuid4()),  # id (gerado automaticamente)
-                                legado_id,  # legacy_id
-                                str(customer_id),  # addressable_id (UUID do customer)
-                                'customers',  # addressable_type
-                                'main',  # type
-                                cep,  # postal_code (obrigatório, usar '00000000' se vazio)
-                                street_value,  # street (obrigatório, usar '' se vazio)
-                                number_value,  # number (obrigatório, usar 'S/N' se vazio)
-                                self.clean_string(row[3], 200),  # address_line_2 (Complemento - pode ser NULL)
-                                neighborhood_value,  # neighborhood (obrigatório, usar '' se vazio)
-                                city_value,  # city (obrigatório, usar '' se vazio)
-                                state_value,  # state (obrigatório, usar '' se vazio)
-                                municipal_code,  # municipal_code (obrigatório, usar 0 se vazio)
-                                lat,  # latitude
-                                lon,  # longitude
-                                zone_value,  # zone (obrigatório)
-                                region_value,  # region (obrigatório)
-                                row[19],  # created_at
-                                row[20] if row[20] else row[19]  # updated_at
-                            ))
-                            
-                            self.stats['addresses'] += 1
-                            
-                        except Exception as e:
-                            error_msg = f"Erro ao inserir endereco principal cliente Id={legado_id}: {e}"
-                            logger.error(error_msg)
-                            print(f"ERRO - {error_msg}")
-                            self.stats['errors'].append(error_msg)
-                            chunk_errors += 1
-                            # Fazer rollback imediato para não abortar toda a transação
-                            try:
-                                conn_pg.rollback()
-                                cursor_pg = conn_pg.cursor()
-                            except Exception as rollback_error:
-                                logger.error(f"Erro ao fazer rollback: {rollback_error}")
-                            continue
-                    
-                    # Endereço de Cobrança
-                    if row[9] and str(row[9]).strip():  # EnderecoCobranca
-                        try:
-                            import re
-                            cep = re.sub(r'[^\d]', '', str(row[13])) if row[13] else None
-                            if not cep or cep == '0' * len(cep):
-                                cep = '00000000'  # Valor padrão (campo é NOT NULL)
-                            
-                            # Converter CodigoMunicipioCobranca para integer se possível
-                            municipal_code = 0  # Valor padrão (campo é NOT NULL)
-                            if row[15]:
-                                try:
-                                    codigo_str = re.sub(r'[^\d]', '', str(row[15]))
-                                    if codigo_str:
-                                        municipal_code = int(codigo_str[:10])
-                                except:
-                                    pass
-                            
-                            schema = get_schema_atual()
-                            insert_query = f"""
-                            INSERT INTO {schema}.addresses (
-                                id, legacy_id, addressable_id, addressable_type, type,
-                                postal_code, street, number, address_line_2, neighborhood,
-                                city, state, municipal_code, latitude, longitude, zone, region,
-                                created_at, updated_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            """
-                            
-                            # Zone e Region são obrigatórios - usar neighborhood como zone e string vazia como region
-                            zone_value = self.clean_string(row[12], 100) or ''  # BairroCobranca como zone (garantir que nunca seja None)
-                            region_value = ''  # region vazio (não temos na origem)
-                            
-                            # Number é obrigatório - usar 'S/N' se não houver número
-                            number_value = self.clean_string(row[10], 20) if row[10] and str(row[10]).strip() else 'S/N'
-                            
-                            # City é obrigatório - usar string vazia se não houver cidade
-                            city_value = self.clean_string(row[14], 100) if row[14] and str(row[14]).strip() else ''
-                            
-                            # State é obrigatório - usar string vazia se não houver UF
-                            state_value = self.clean_string(row[16], 2) if row[16] and str(row[16]).strip() else ''
-                            
-                            # Street é obrigatório - usar string vazia se não houver endereço
-                            street_value = self.clean_string(row[9], 500) or ''
-                            
-                            # Neighborhood é obrigatório - usar string vazia se não houver bairro
-                            neighborhood_value = self.clean_string(row[12], 100) or ''
-                            
-                            cursor_pg.execute(insert_query, (
-                                str(uuid.uuid4()),
-                                legado_id,
-                                str(customer_id),
-                                'customers',
-                                'billing',  # type = billing
-                                cep,  # postal_code (obrigatório, usar '00000000' se vazio)
-                                street_value,  # street (obrigatório, usar '' se vazio)
-                                number_value,  # number (obrigatório, usar 'S/N' se vazio)
-                                self.clean_string(row[11], 200),  # ComplementoCobranca (pode ser NULL)
-                                neighborhood_value,  # neighborhood (obrigatório, usar '' se vazio)
-                                city_value,  # city (obrigatório, usar '' se vazio)
-                                state_value,  # state (obrigatório, usar '' se vazio)
-                                municipal_code,  # municipal_code (obrigatório, usar 0 se vazio)
-                                None,  # latitude (não temos para endereço de cobrança)
-                                None,  # longitude (não temos para endereço de cobrança)
-                                zone_value,  # zone (obrigatório)
-                                region_value,  # region (obrigatório)
-                                row[19],  # created_at
-                                row[20] if row[20] else row[19]  # updated_at
-                            ))
-                            
-                            self.stats['addresses'] += 1
-                            
-                        except Exception as e:
-                            error_msg = f"Erro ao inserir endereco cobranca cliente Id={legado_id}: {e}"
-                            logger.error(error_msg)
-                            print(f"ERRO - {error_msg}")
-                            self.stats['errors'].append(error_msg)
-                            chunk_errors += 1
-                            # Fazer rollback imediato para não abortar toda a transação
-                            try:
-                                conn_pg.rollback()
-                                cursor_pg = conn_pg.cursor()
-                            except Exception as rollback_error:
-                                logger.error(f"Erro ao fazer rollback: {rollback_error}")
-                            continue
                 
-                # Commit do chunk apenas se não houve erro crítico
+                # Endereço de Cobrança
+                if row[9] and str(row[9]).strip():  # EnderecoCobranca
+                    try:
+                        cep = re.sub(r'[^\d]', '', str(row[13])) if row[13] else None
+                        if not cep or cep == '0' * len(cep):
+                            cep = '00000000'  # Valor padrão (campo é NOT NULL)
+                        
+                        # Converter CodigoMunicipioCobranca para integer se possível
+                        municipal_code = 0  # Valor padrão (campo é NOT NULL)
+                        if row[15]:
+                            try:
+                                codigo_str = re.sub(r'[^\d]', '', str(row[15]))
+                                if codigo_str:
+                                    municipal_code = int(codigo_str[:10])
+                            except:
+                                pass
+                        
+                        # Zone e Region são obrigatórios - usar neighborhood como zone e string vazia como region
+                        zone_value = self.clean_string(row[12], 100) or ''  # BairroCobranca como zone (garantir que nunca seja None)
+                        region_value = ''  # region vazio (não temos na origem)
+                        
+                        # Number é obrigatório - usar 'S/N' se não houver número
+                        number_value = self.clean_string(row[10], 20) if row[10] and str(row[10]).strip() else 'S/N'
+                        
+                        # City é obrigatório - usar string vazia se não houver cidade
+                        city_value = self.clean_string(row[14], 100) if row[14] and str(row[14]).strip() else ''
+                        
+                        # State é obrigatório - usar string vazia se não houver UF
+                        state_value = self.clean_string(row[16], 2) if row[16] and str(row[16]).strip() else ''
+                        
+                        # Street é obrigatório - usar string vazia se não houver endereço
+                        street_value = self.clean_string(row[9], 500) or ''
+                        
+                        # Neighborhood é obrigatório - usar string vazia se não houver bairro
+                        neighborhood_value = self.clean_string(row[12], 100) or ''
+                        
+                        batch_values.append((
+                            legado_id,
+                            str(customer_id),
+                            'customers',
+                            'billing',  # type = billing
+                            cep,  # postal_code (obrigatório, usar '00000000' se vazio)
+                            street_value,  # street (obrigatório, usar '' se vazio)
+                            number_value,  # number (obrigatório, usar 'S/N' se vazio)
+                            self.clean_string(row[11], 200),  # ComplementoCobranca (pode ser NULL)
+                            neighborhood_value,  # neighborhood (obrigatório, usar '' se vazio)
+                            city_value,  # city (obrigatório, usar '' se vazio)
+                            state_value,  # state (obrigatório, usar '' se vazio)
+                            municipal_code,  # municipal_code (obrigatório, usar 0 se vazio)
+                            None,  # latitude (não temos para endereço de cobrança)
+                            None,  # longitude (não temos para endereço de cobrança)
+                            zone_value,  # zone (obrigatório)
+                            region_value,  # region (obrigatório)
+                            row[19],  # created_at
+                            row[20] if row[20] else row[19]  # updated_at
+                        ))
+                        
+                        self.stats['addresses'] += 1
+                        
+                    except Exception as e:
+                        error_msg = f"Erro ao preparar endereco cobranca cliente Id={legado_id}: {e}"
+                        logger.error(error_msg)
+                        print(f"ERRO - {error_msg}")
+                        self.stats['errors'].append(error_msg)
+                        chunk_errors += 1
+                        continue
+            
+            # Executar insert em batch (otimizado com execute_values)
+            if batch_values:
                 try:
-                    conn_pg.commit()
-                    total_processed = self.stats['addresses']
-                    print(f"[ETAPA 3] Chunk {chunk_num} processado: {total_processed} enderecos inseridos, {chunk_errors} erros")
-                    logger.info(f"[ETAPA 3] Chunk {chunk_num} processado: {total_processed} enderecos inseridos, {chunk_errors} erros")
-                except Exception as commit_error:
-                    logger.error(f"Erro no commit do chunk {chunk_num}: {commit_error}")
-                    conn_pg.rollback()
+                    insert_query = f"""
+                    INSERT INTO {schema}.addresses (
+                        id, legacy_id, addressable_id, addressable_type, type,
+                        postal_code, street, number, address_line_2, neighborhood,
+                        city, state, municipal_code, latitude, longitude, zone, region,
+                        created_at, updated_at
+                    ) VALUES %s
+                    """
+                    insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                    
+                    # Processar em chunks para inserção
+                    conn_pg = DatabaseConnection.get_postgresql_destino_connection()
                     cursor_pg = conn_pg.cursor()
+                    
+                    chunk_num = 0
+                    for i in range(0, len(batch_values), CHUNK_SIZE):
+                        chunk = batch_values[i:i + CHUNK_SIZE]
+                        chunk_num += 1
+                        execute_values(
+                            cursor_pg,
+                            insert_query,
+                            chunk,
+                            template=insert_template,
+                            page_size=CHUNK_SIZE,
+                            fetch=False
+                        )
+                        conn_pg.commit()
+                        self.stats['addresses'] += len(chunk)
+                        print(f"[ETAPA 3] Chunk {chunk_num} inserido: {len(chunk)} enderecos")
+                    
+                    cursor_pg.close()
+                    conn_pg.close()
+                except Exception as batch_error:
+                    error_msg = f"Erro ao inserir batch de addresses: {batch_error}"
+                    logger.error(error_msg)
+                    print(f"ERRO - {error_msg}")
+                    self.stats['errors'].append(error_msg)
+                    chunk_errors += len(batch_values)
+                    try:
+                        if 'conn_pg' in locals():
+                            conn_pg.rollback()
+                            if 'cursor_pg' in locals():
+                                cursor_pg.close()
+                            conn_pg.close()
+                    except Exception as rollback_error:
+                        logger.error(f"Erro ao fazer rollback: {rollback_error}")
             
             print(f"\n[ETAPA 3] CONCLUIDA! Total de addresses migrados: {self.stats['addresses']}")
             logger.info(f"ETAPA 3 concluida: {self.stats['addresses']} registros")
@@ -938,14 +1264,16 @@ class CustomersMigration:
             self.validate_step3_addresses()
             
         except Exception as e:
-            conn_pg.rollback()
             logger.error(f"Erro na ETAPA 3: {e}")
+            if 'conn_pg' in locals():
+                try:
+                    conn_pg.rollback()
+                    if 'cursor_pg' in locals():
+                        cursor_pg.close()
+                    conn_pg.close()
+                except:
+                    pass
             raise
-        finally:
-            cursor_sql.close()
-            conn_sql.close()
-            cursor_pg.close()
-            conn_pg.close()
     
     def validate_step4_contacts(self):
         """Validação e relatório de qualidade - ETAPA 4"""
@@ -957,59 +1285,68 @@ class CustomersMigration:
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
             
-            # Aplicar limite se especificado
-            limit_clause = ""
+            # Se houver limite, usar subquery com TOP para aplicar o limite
             if self.limit_rows > 0:
-                limit_clause = f" OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY"
-            
-            # Contar origem - emails (aplicando mesmo filtro e limite da migração)
-            query_email = f"""
-                SELECT COUNT(*) 
-                FROM (
-                    SELECT Id, Email, Telefone, Celular
+                query_email = f"""
+                    SELECT COUNT(*) 
+                    FROM (
+                        SELECT TOP {self.limit_rows} Id, Email, Telefone, Celular
+                        FROM Cliente
+                        WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
+                           OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
+                           OR (Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != '')
+                        ORDER BY Id
+                    ) AS limited
+                    WHERE Email IS NOT NULL AND LTRIM(RTRIM(Email)) != ''
+                """
+                query_phone = f"""
+                    SELECT COUNT(*) 
+                    FROM (
+                        SELECT TOP {self.limit_rows} Id, Email, Telefone, Celular
+                        FROM Cliente
+                        WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
+                           OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
+                           OR (Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != '')
+                        ORDER BY Id
+                    ) AS limited
+                    WHERE Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != ''
+                """
+                query_cellphone = f"""
+                    SELECT COUNT(*) 
+                    FROM (
+                        SELECT TOP {self.limit_rows} Id, Email, Telefone, Celular
+                        FROM Cliente
+                        WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
+                           OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
+                           OR (Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != '')
+                        ORDER BY Id
+                    ) AS limited
+                    WHERE Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != ''
+                """
+            else:
+                # Sem limite, query direta sem subquery
+                query_email = """
+                    SELECT COUNT(*) 
                     FROM Cliente
-                    WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
-                       OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
-                       OR (Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != '')
-                    ORDER BY Id
-                    {limit_clause}
-                ) AS limited
-                WHERE Email IS NOT NULL AND LTRIM(RTRIM(Email)) != ''
-            """
+                    WHERE Email IS NOT NULL AND LTRIM(RTRIM(Email)) != ''
+                """
+                query_phone = """
+                    SELECT COUNT(*) 
+                    FROM Cliente
+                    WHERE Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != ''
+                """
+                query_cellphone = """
+                    SELECT COUNT(*) 
+                    FROM Cliente
+                    WHERE Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != ''
+                """
+            
             cursor_sql.execute(query_email)
             origem_email = cursor_sql.fetchone()[0]
             
-            # Contar origem - telefones
-            query_phone = f"""
-                SELECT COUNT(*) 
-                FROM (
-                    SELECT Id, Email, Telefone, Celular
-                    FROM Cliente
-                    WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
-                       OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
-                       OR (Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != '')
-                    ORDER BY Id
-                    {limit_clause}
-                ) AS limited
-                WHERE Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != ''
-            """
             cursor_sql.execute(query_phone)
             origem_phone = cursor_sql.fetchone()[0]
             
-            # Contar origem - celulares
-            query_cellphone = f"""
-                SELECT COUNT(*) 
-                FROM (
-                    SELECT Id, Email, Telefone, Celular
-                    FROM Cliente
-                    WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
-                       OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
-                       OR (Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != '')
-                    ORDER BY Id
-                    {limit_clause}
-                ) AS limited
-                WHERE Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != ''
-            """
             cursor_sql.execute(query_cellphone)
             origem_cellphone = cursor_sql.fetchone()[0]
             
@@ -1084,13 +1421,14 @@ class CustomersMigration:
         logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
-        # Delete apenas contacts de customers (tabela polimórfica)
-        print("\n[ETAPA 4] Limpando contacts de customers...")
-        self.delete_polymorphic_table('contacts', 'customers', 'contactable_type')
-        
-        # Buscar dados do SQL Server
-        print("[ETAPA 4] Buscando dados do SQL Server...")
-        sql_query = """
+        try:
+            # Delete apenas contacts de customers (tabela polimórfica)
+            print("\n[ETAPA 4] Limpando contacts de customers...")
+            self.delete_polymorphic_table('contacts', 'customers', 'contactable_type')
+            
+            # Buscar dados do SQL Server
+            print("[ETAPA 4] Buscando dados do SQL Server...")
+            sql_query = """
         SELECT 
             Id,
             Email,
@@ -1101,180 +1439,150 @@ class CustomersMigration:
         FROM Cliente
         WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
            OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
-           OR (Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != '')
-        ORDER BY Id
-        """
-        
-        # Adicionar LIMIT se especificado
-        if self.limit_rows > 0:
-            sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
-        
-        conn_sql = DatabaseConnection.get_sql_server_prd_connection()
-        cursor_sql = conn_sql.cursor()
-        cursor_sql.execute(sql_query)
-        
-        # Processar em chunks
-        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
-        cursor_pg = conn_pg.cursor()
-        
-        chunk_num = 0
-        total_processed = 0
-        
-        try:
-            rows_remaining = self.limit_rows if self.limit_rows > 0 else None
-            while True:
-                fetch_size = CHUNK_SIZE
-                if rows_remaining is not None and rows_remaining > 0:
-                    fetch_size = min(CHUNK_SIZE, rows_remaining)
+               OR (Celular IS NOT NULL AND LTRIM(RTRIM(Celular)) != '')
+            ORDER BY Id
+            """
+            
+            # Adicionar LIMIT se especificado
+            if self.limit_rows > 0:
+                sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
+            
+            conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql = conn_sql.cursor()
+            cursor_sql.execute(sql_query)
+            
+            # Carregar TODOS os dados na memória de uma vez (otimizado)
+            print("[ETAPA 4] Carregando dados na memória...")
+            all_rows = cursor_sql.fetchall()
+            cursor_sql.close()
+            conn_sql.close()
+            
+            print(f"[ETAPA 4] {len(all_rows)} registros carregados. Processando conversões...")
+            
+            # Preparar lista de valores para insert em batch (processar tudo em memória)
+            batch_values = []
+            chunk_errors = 0
+            import re
+            
+            for row in all_rows:
+                legado_id = row[0]
+                customer_id = self.customer_id_map.get(legado_id)
                 
-                rows = cursor_sql.fetchmany(fetch_size)
-                if not rows:
-                    break
+                if not customer_id:
+                    continue
                 
-                if rows_remaining is not None:
-                    rows_remaining -= len(rows)
-                    if rows_remaining <= 0:
-                        # Processar ultimo chunk e parar
-                        pass
+                data_inclusao = row[4]
+                data_alteracao = row[5] if row[5] else row[4]
                 
-                chunk_num += 1
-                print(f"[ETAPA 4] Processando chunk {chunk_num} ({len(rows)} registros)...")
-                logger.info(f"[ETAPA 4] Processando chunk {chunk_num} ({len(rows)} registros)...")
+                # REGISTRO 1 - Email
+                if row[1] and str(row[1]).strip():
+                    try:
+                        email_value = str(row[1]).strip().lower()
+                        batch_values.append((
+                            str(customer_id),  # contactable_id
+                            'customers',  # contactable_type
+                            'email',  # type
+                            email_value,  # value (em minusculo)
+                            data_inclusao,  # created_at
+                            data_alteracao  # updated_at
+                        ))
+                        self.stats['contacts'] += 1
+                    except Exception as e:
+                        error_msg = f"Erro ao preparar email para Cliente Id={legado_id}: {e}"
+                        logger.error(error_msg)
+                        print(f"ERRO - {error_msg}")
+                        self.stats['errors'].append(error_msg)
+                        chunk_errors += 1
                 
-                chunk_errors = 0
-                for row in rows:
-                    legado_id = row[0]
-                    customer_id = self.customer_id_map.get(legado_id)
-                    
-                    if not customer_id:
-                        continue
-                    
-                    import re
-                    data_inclusao = row[4]
-                    data_alteracao = row[5] if row[5] else row[4]
-                    
-                    # REGISTRO 1 - Email
-                    if row[1] and str(row[1]).strip():
-                        try:
-                            email_value = str(row[1]).strip().lower()
-                            
-                            insert_query = f"""
-                            INSERT INTO {schema}.contacts (
-                                id, contactable_id, contactable_type, type, value,
-                                created_at, updated_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            """
-                            
-                            cursor_pg.execute(insert_query, (
-                                str(uuid.uuid4()),  # id
+                # REGISTRO 2 - Telefone
+                if row[2] and str(row[2]).strip():
+                    try:
+                        telefone_value = re.sub(r'[^\d]', '', str(row[2]))
+                        if telefone_value:
+                            batch_values.append((
                                 str(customer_id),  # contactable_id
                                 'customers',  # contactable_type
-                                'email',  # type
-                                email_value,  # value (em minusculo)
+                                'phone',  # type
+                                telefone_value,  # value (apenas numeros)
                                 data_inclusao,  # created_at
                                 data_alteracao  # updated_at
                             ))
-                            
                             self.stats['contacts'] += 1
-                            total_processed += 1
-                            
-                        except Exception as e:
-                            error_msg = f"Erro ao inserir email para Cliente Id={legado_id}: {e}"
-                            logger.error(error_msg)
-                            print(f"ERRO - {error_msg}")
-                            self.stats['errors'].append(error_msg)
-                            chunk_errors += 1
-                            try:
-                                conn_pg.rollback()
-                                cursor_pg = conn_pg.cursor()
-                            except Exception as rollback_error:
-                                logger.error(f"Erro ao fazer rollback: {rollback_error}")
-                    
-                    # REGISTRO 2 - Telefone
-                    if row[2] and str(row[2]).strip():
-                        try:
-                            telefone_value = re.sub(r'[^\d]', '', str(row[2]))
-                            
-                            if telefone_value:
-                                insert_query = f"""
-                                INSERT INTO {schema}.contacts (
-                                    id, contactable_id, contactable_type, type, value,
-                                    created_at, updated_at
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                """
-                                
-                                cursor_pg.execute(insert_query, (
-                                    str(uuid.uuid4()),  # id
-                                    str(customer_id),  # contactable_id
-                                    'customers',  # contactable_type
-                                    'phone',  # type
-                                    telefone_value,  # value (apenas numeros)
-                                    data_inclusao,  # created_at
-                                    data_alteracao  # updated_at
-                                ))
-                                
-                                self.stats['contacts'] += 1
-                                total_processed += 1
-                            
-                        except Exception as e:
-                            error_msg = f"Erro ao inserir telefone para Cliente Id={legado_id}: {e}"
-                            logger.error(error_msg)
-                            print(f"ERRO - {error_msg}")
-                            self.stats['errors'].append(error_msg)
-                            chunk_errors += 1
-                            try:
-                                conn_pg.rollback()
-                                cursor_pg = conn_pg.cursor()
-                            except Exception as rollback_error:
-                                logger.error(f"Erro ao fazer rollback: {rollback_error}")
-                    
-                    # REGISTRO 3 - Celular
-                    if row[3] and str(row[3]).strip():
-                        try:
-                            celular_value = re.sub(r'[^\d]', '', str(row[3]))
-                            
-                            if celular_value:
-                                insert_query = f"""
-                                INSERT INTO {schema}.contacts (
-                                    id, contactable_id, contactable_type, type, value,
-                                    created_at, updated_at
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                """
-                                
-                                cursor_pg.execute(insert_query, (
-                                    str(uuid.uuid4()),  # id
-                                    str(customer_id),  # contactable_id
-                                    'customers',  # contactable_type
-                                    'cellphone',  # type
-                                    celular_value,  # value (apenas numeros)
-                                    data_inclusao,  # created_at
-                                    data_alteracao  # updated_at
-                                ))
-                                
-                                self.stats['contacts'] += 1
-                                total_processed += 1
-                            
-                        except Exception as e:
-                            error_msg = f"Erro ao inserir celular para Cliente Id={legado_id}: {e}"
-                            logger.error(error_msg)
-                            print(f"ERRO - {error_msg}")
-                            self.stats['errors'].append(error_msg)
-                            chunk_errors += 1
-                            try:
-                                conn_pg.rollback()
-                                cursor_pg = conn_pg.cursor()
-                            except Exception as rollback_error:
-                                logger.error(f"Erro ao fazer rollback: {rollback_error}")
+                    except Exception as e:
+                        error_msg = f"Erro ao preparar telefone para Cliente Id={legado_id}: {e}"
+                        logger.error(error_msg)
+                        print(f"ERRO - {error_msg}")
+                        self.stats['errors'].append(error_msg)
+                        chunk_errors += 1
                 
-                # Commit do chunk apenas se não houve erro crítico
+                # REGISTRO 3 - Celular
+                if row[3] and str(row[3]).strip():
+                    try:
+                        celular_value = re.sub(r'[^\d]', '', str(row[3]))
+                        if celular_value:
+                            batch_values.append((
+                                str(customer_id),  # contactable_id
+                                'customers',  # contactable_type
+                                'cellphone',  # type
+                                celular_value,  # value (apenas numeros)
+                                data_inclusao,  # created_at
+                                data_alteracao  # updated_at
+                            ))
+                            self.stats['contacts'] += 1
+                    except Exception as e:
+                        error_msg = f"Erro ao preparar celular para Cliente Id={legado_id}: {e}"
+                        logger.error(error_msg)
+                        print(f"ERRO - {error_msg}")
+                        self.stats['errors'].append(error_msg)
+                        chunk_errors += 1
+            
+            # Executar insert em batch (otimizado com execute_values)
+            if batch_values:
                 try:
-                    conn_pg.commit()
-                    print(f"[ETAPA 4] Chunk {chunk_num} processado: {total_processed} contacts inseridos, {chunk_errors} erros")
-                    logger.info(f"[ETAPA 4] Chunk {chunk_num} processado: {total_processed} contacts inseridos, {chunk_errors} erros")
-                except Exception as commit_error:
-                    logger.error(f"Erro no commit do chunk {chunk_num}: {commit_error}")
-                    conn_pg.rollback()
+                    insert_query = f"""
+                    INSERT INTO {schema}.contacts (
+                        id, contactable_id, contactable_type, type, value,
+                        created_at, updated_at
+                    ) VALUES %s
+                    """
+                    insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s)"
+                    
+                    # Processar em chunks para inserção
+                    conn_pg = DatabaseConnection.get_postgresql_destino_connection()
                     cursor_pg = conn_pg.cursor()
+                    
+                    chunk_num = 0
+                    for i in range(0, len(batch_values), CHUNK_SIZE):
+                        chunk = batch_values[i:i + CHUNK_SIZE]
+                        chunk_num += 1
+                        execute_values(
+                            cursor_pg,
+                            insert_query,
+                            chunk,
+                            template=insert_template,
+                            page_size=CHUNK_SIZE,
+                            fetch=False
+                        )
+                        conn_pg.commit()
+                        self.stats['contacts'] += len(chunk)
+                        print(f"[ETAPA 4] Chunk {chunk_num} inserido: {len(chunk)} contacts")
+                    
+                    cursor_pg.close()
+                    conn_pg.close()
+                except Exception as batch_error:
+                    error_msg = f"Erro ao inserir batch de contacts: {batch_error}"
+                    logger.error(error_msg)
+                    print(f"ERRO - {error_msg}")
+                    self.stats['errors'].append(error_msg)
+                    chunk_errors += len(batch_values)
+                    try:
+                        if 'conn_pg' in locals():
+                            conn_pg.rollback()
+                            if 'cursor_pg' in locals():
+                                cursor_pg.close()
+                            conn_pg.close()
+                    except Exception as rollback_error:
+                        logger.error(f"Erro ao fazer rollback: {rollback_error}")
             
             print(f"\n[ETAPA 4] CONCLUIDA! Total de contacts migrados: {self.stats['contacts']}")
             logger.info(f"ETAPA 4 concluida: {self.stats['contacts']} registros")
@@ -1283,14 +1591,16 @@ class CustomersMigration:
             self.validate_step4_contacts()
             
         except Exception as e:
-            conn_pg.rollback()
             logger.error(f"Erro na ETAPA 4: {e}")
+            if 'conn_pg' in locals():
+                try:
+                    conn_pg.rollback()
+                    if 'cursor_pg' in locals():
+                        cursor_pg.close()
+                    conn_pg.close()
+                except:
+                    pass
             raise
-        finally:
-            cursor_sql.close()
-            conn_sql.close()
-            cursor_pg.close()
-            conn_pg.close()
     
     def run(self):
         """Executa a migração completa"""

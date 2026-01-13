@@ -60,6 +60,16 @@ Descricao: Armazena o ID original da tabela Orcamento do SQL Server PRD para ref
 
 ====================================================================================================
 
+TABELA: gmcommercial.contract_scenarios
+----------------------------------------------------------------------------------------------------
+Coluna: legacy_id
+Tipo: INTEGER
+Nullable: SIM
+Origem do dado: OrcamentoLojas.Id (ViewOrcamentosLojas.IdOrcamentoLoja)
+Descricao: Armazena o ID original da tabela OrcamentoLojas do SQL Server PRD para referencia. Esta coluna sera criada automaticamente quando o ambiente for HML e quando ela nao existir na tabela.
+
+====================================================================================================
+
 TABELA: gmcommercial.contract_scenario_stores
 ----------------------------------------------------------------------------------------------------
 Coluna: legacy_id
@@ -70,10 +80,20 @@ Descricao: Armazena o ID original da tabela OrcamentoLojas do SQL Server PRD par
 
 ====================================================================================================
 
+TABELA: gmcore.users
+----------------------------------------------------------------------------------------------------
+Coluna: legacy_id
+Tipo: INTEGER
+Nullable: SIM
+Origem do dado: Usuario.Id (tabela Usuario do SQL Server PRD)
+Descricao: Armazena o ID original da tabela Usuario do SQL Server PRD para referencia. Esta coluna foi criada manualmente para permitir o mapeamento de IdUsuarioVendedor em contracts.
+
+====================================================================================================
+
 RESUMO
 ----------------------------------------------------------------------------------------------------
-Total de tabelas com colunas adicionadas: 6
-Total de colunas adicionadas: 6
+Total de tabelas com colunas adicionadas: 8
+Total de colunas adicionadas: 8
 
 Todas as colunas adicionadas sao do tipo INTEGER e servem para manter a referencia com os IDs
 originais das tabelas do SQL Server PRD, facilitando o rastreamento e validacao dos dados migrados.

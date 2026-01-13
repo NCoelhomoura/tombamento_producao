@@ -106,6 +106,8 @@ DESTINO_PADRAO = 'PRD'
 migration-erp-to-supera-core/
 │
 ├── README.md                          # Este arquivo
+├── ORDEM_DEPENDENCIAS.md             # Documentação sobre ordem de dependências
+├── rules.txt                          # Regras de migração e filtros
 ├── diretrizes_migracao.txt            # Credenciais de conexão
 ├── orchestrator_tasks.py              # Orquestrador principal
 ├── log_execution.txt                  # Log de execução (gerado automaticamente)
@@ -127,6 +129,37 @@ migration-erp-to-supera-core/
 └── clone_tables/                     # Clonagem de tabelas
     ├── clone_tables_from_prd.py      # Script de clonagem
     └── clone_tables.log              # Log de clonagem
+```
+
+## 🔗 Ordem de Dependências
+
+⚠️ **IMPORTANTE:** As migrações devem ser executadas em uma ordem específica para garantir integridade referencial.
+
+**Ordem obrigatória:**
+1. **Users** (opcional - apenas se necessário)
+2. **Customers** (steps 2, 3, 4) - ANTES de contracts
+3. **Stores** (steps 2, 3, 4) - ANTES de contracts
+4. **Contracts** (todas as etapas) - DEPOIS de customers e stores
+
+**Por quê?**
+- `contracts` referencia `customers` via `customer_id`
+- `contracts` referencia `stores` via `store_id` em `contract_scenarios`
+- Se executar `contracts` antes, haverá erros de chaves estrangeiras
+
+**Documentação completa:** Consulte `ORDEM_DEPENDENCIAS.md` para detalhes sobre dependências, sincronização e casos especiais.
+
+**Exemplo de execução correta:**
+```bash
+# 1. Customers (apenas relacionados ao contrato)
+python orchestrator_tasks.py customers 2
+
+# 2. Stores (apenas relacionados ao contrato)
+python orchestrator_tasks.py stores 2
+python orchestrator_tasks.py stores 3
+python orchestrator_tasks.py stores 4
+
+# 3. Contracts (com filtros e --clear-data)
+python orchestrator_tasks.py contracts --id-orcamento 6192 --clear-data
 ```
 
 ## 🚀 Uso do Orquestrador
@@ -342,10 +375,14 @@ No Windows, pode ser necessário instalar o driver ODBC:
 
 ## 📋 Etapas de Migração
 
+### Users (1 etapa)
+
+1. **users** - Usuários do sistema (opcional, apenas se necessário)
+
 ### Customers (4 etapas)
 
 1. **customer_segments** - Segmentos de produtos
-2. **customers** - Clientes
+2. **customers** - Clientes ⚠️ **OBRIGATÓRIO antes de contracts**
 3. **addresses** - Endereços (polimórfico)
 4. **contacts** - Contatos (polimórfico)
 
@@ -354,10 +391,21 @@ No Windows, pode ser necessário instalar o driver ODBC:
 1. **store_segments** - Segmentos de estabelecimentos
 2. **retail_chains** - Redes de varejo
 3. **store_brands** - Bandeiras
-4. **stores** - Estabelecimentos
+4. **stores** - Estabelecimentos ⚠️ **OBRIGATÓRIO antes de contracts**
 5. **store_cnpjs** - CNPJs dos estabelecimentos
 6. **addresses** - Endereços (polimórfico)
 7. **contacts** - Contatos (polimórfico)
+
+### Contracts (8 etapas)
+
+1. **contracts** - Contratos ⚠️ **DEPENDE de customers e stores**
+2. **contract_scenarios** - Cenários de contratos
+3. **contract_scenario_stores** - Lojas por cenário
+4. **contract_sellers** - Vendedores
+5. **contract_team_members** - Membros da equipe
+6. **contract_contacts** - Contatos
+7. **contract_partners** - Parceiros
+8. **contract_additional_charges** - Cargas adicionais
 
 ## 🔐 Segurança
 

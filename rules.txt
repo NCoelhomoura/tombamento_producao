@@ -1,0 +1,981 @@
+TARGET:
+O Objetivo desse documento é garantir que as regras de negócio e de migração dos dados seja seguida rigorosamente para que os dados cheguem ao destino sem a necessidade de serem tratados no novo sistema 
+
+
+IMPORTANTE - REGRAS DE LIMPEZA DE DADOS (TRUNCATE vs DELETE):
+
+⚠️ ATENÇÃO: Quando filtros são aplicados (IdOrcamento, DataAvisoPrevio, DataInicioOperacao), NÃO pode ser usado TRUNCATE a menos que tenha um comando master como "--clear-data".
+
+REGRAS GERAIS:
+1. SEM filtros aplicados E SEM flag --clear-data:
+   - Usar TRUNCATE (apaga todos os dados da tabela)
+   - Comportamento padrão quando migrando todos os dados
+
+2. COM filtros aplicados E SEM flag --clear-data:
+   - NÃO usar TRUNCATE (apagaria dados não migrados nesta execução)
+   - Usar DELETE com WHERE baseado nos filtros aplicados
+   - Exemplo: DELETE FROM contracts WHERE legacy_id IN (lista de IdOrcamento dos filtros aplicados)
+
+EXEMPLO DE DETECÇÃO DE FILTROS:
+- Se IdOrcamento foi especificado: usar DELETE WHERE legacy_id IN (...)
+- Se DataAvisoPrevio foi especificado: usar DELETE WHERE ... (aplicar mesma lógica do filtro)
+- Se DataInicioOperacao foi especificado: usar DELETE WHERE ... (aplicar mesma lógica do filtro)
+- Se nenhum filtro foi aplicado: usar TRUNCATE (comportamento padrão)
+
+
+-- FLAG --clear-data: REGRAS ESPECÍFICAS --
+
+⚠️ CRÍTICO: O flag --clear-data NÃO pode apagar dados de tabelas que NÃO serão atualizadas na execução atual.
+
+REGRAS DO --clear-data:
+1. Escopo limitado: O --clear-data só pode limpar (TRUNCATE) tabelas que serão migradas na execução atual
+   - Se executar apenas step1: pode limpar apenas contracts
+   - Se executar step1 e step2: pode limpar contracts e contract_scenarios
+   - NUNCA limpar tabelas de steps que não serão executados
+
+2. Comportamento com filtros:
+   - SEM filtros + --clear-data: TRUNCATE nas tabelas do escopo atual
+   - COM filtros + --clear-data: TRUNCATE nas tabelas do escopo atual (ignora filtros para limpeza)
+   - Use apenas quando tiver certeza que deseja limpar COMPLETAMENTE as tabelas do escopo antes de migrar
+
+3. Exemplos de uso seguro:
+   ✅ python orchestrator_tasks.py contracts 1 --clear-data
+      → Limpa apenas contracts (única tabela do step1)
+   
+   ✅ python orchestrator_tasks.py contracts --clear-data
+      → Limpa contracts, contract_scenarios, contract_scenario_stores, contract_sellers, 
+        contract_team_members, contract_contacts, contract_partners, contract_additional_charges
+        (todas as tabelas que serão migradas)
+   
+   ❌ python orchestrator_tasks.py contracts 1 --clear-data
+      → NÃO pode limpar contract_scenarios, contract_sellers, etc. (steps não executados)
+
+4. Quando usar --clear-data:
+   - Migração completa de um módulo (sem filtros)
+   - Reset completo antes de nova migração
+   - Testes em ambiente de desenvolvimento
+   - Quando precisa garantir que não há dados antigos misturados
+
+5. Quando NÃO usar --clear-data:
+   - Migração incremental com filtros
+   - Quando outros steps já foram executados anteriormente
+   - Em produção sem backup adequado
+   - Quando não tem certeza do escopo da execução
+
+
+ORIGIN RULES
+
+-- CONTRACTS --
+
+-- STEP 1: step1_migrate_contracts
+
+Tabela Origem: ViewOrcamentosLojas + Orcamento (INNER JOIN)
+Tabela Destino: contracts
+
+LIMPEZA DE DADOS:
+- SEM filtros aplicados: TRUNCATE TABLE contracts CASCADE
+- COM filtros aplicados: DELETE FROM contracts WHERE legacy_id IN (lista de IdOrcamento dos filtros)
+- COM flag --clear-data: TRUNCATE TABLE contracts CASCADE (mesmo com filtros)
+
+Pegar todos os contratos da ViewOrcamentosLojas seguindo os filtros abaixo:
+Todos os filtros são OPCIONAIS e devem ser aplicados apenas se definidos via parâmetros de linha de comando ou configuração.
+
+- IdOrcamento: Não é obrigatório, mas filtrar caso tiver definido um ou mais orçamentos específicos e separar esses orçamentos por vírgula
+Exemplo de uso: IdOrcamento IN (valores definidos via parâmetros de linha de comando ou configuração)
+
+- DataAvisoPrevio: Não é obrigatório, mas filtrar caso tiver definido uma data mínima
+Exemplo de uso: 
+AND (
+    CONVERT(DATE, DataAvisoPrevio) >= '2025-01-01'
+    OR DataAvisoPrevio IS NULL
+)
+
+- DataInicioOperacao: Não é obrigatório, mas filtrar caso tiver definido uma data máxima
+Exemplo de uso: 
+AND CONVERT(DATE, DataInicioOperacao) <= '2026-01-13'
+
+
+* USE CASE *
+Exemplo de script filtrado seguindo modelo que já está definido no projeto inicial:
+SELECT 
+    v.IdOrcamento,
+    MAX(v.IdCliente) AS IdCliente,
+    MAX(v.DiaFaturamento) AS DiaFaturamento,
+    MAX(v.DiaVencimento) AS DiaVencimento,
+    MAX(v.StatusPedido) AS StatusPedido,
+    MAX(v.DataInicioOperacao) AS DataInicioOperacao,
+    MAX(v.DataInclusaoOrcamento) AS DataInclusaoOrcamento,
+    MAX(v.DataAlteracaoOrcamento) AS DataAlteracaoOrcamento,
+    MAX(o.ModoFaturamento) AS ModoFaturamento,
+    MAX(o.TipoOrcamento) AS TipoOrcamento,
+    MAX(o.TipoCalculoDecimoTerceiro) AS TipoCalculoDecimoTerceiro,
+    MAX(o.TradeMarketing) AS TradeMarketing
+FROM ViewOrcamentosLojas v
+    INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+WHERE IdOrcamento IN (valores do filtro IdOrcamento se aplicado)
+        AND (
+            CONVERT(DATE, DataAvisoPrevio) >= (data mínima do filtro DataAvisoPrevio se aplicado)
+            OR DataAvisoPrevio IS NULL
+        )
+        AND CONVERT(DATE, DataInicioOperacao) <= (data máxima do filtro DataInicioOperacao se aplicado)
+GROUP BY v.IdOrcamento
+ORDER BY v.IdOrcamento
+
+Após a execução do step1_migrate_contracts, será gerado automaticamente um arquivo JSON chamado "contracts_filter_main.json" na pasta contracts/ contendo:
+- Lista de IdOrcamento migrados (para uso como filtro nos steps seguintes)
+- Lista agregada de IdCliente, IdEstabelecimento, IdBandeira, IdRede (para referência)
+- Filtros aplicados (para rastreabilidade e debug)
+
+
+-- STEPS DENTRO DE CONTRACTS --
+
+Dentro de Contracts existem vários STEPS (2 a 8) e todos devem seguir a lógica da step1_migrate_contracts.
+A lógica é pegar tudo que pertence ao step1_migrate_contracts, ou seja, pegar o resultado de step1_migrate_contracts e usar esse resultado como filtro.
+
+Os steps 2 a 8 devem usar o arquivo JSON gerado (contracts/contracts_filter_main.json) para filtrar seus dados, garantindo que apenas dados relacionados aos contratos migrados no step1 sejam processados.
+
+
+-- STEP 2: step2_migrate_contract_scenarios
+
+Tabela Origem: ViewOrcamentosLojas + OrcamentoLojas (LEFT JOIN)
+Tabela Destino: contract_scenarios
+
+LIMPEZA DE DADOS:
+- SEM filtros aplicados no step1: TRUNCATE TABLE contract_scenarios CASCADE
+- COM filtros aplicados no step1: DELETE FROM contract_scenarios WHERE contract_id IN (SELECT id FROM contracts WHERE legacy_id IN (lista de IdOrcamento))
+- COM flag --clear-data: TRUNCATE TABLE contract_scenarios CASCADE
+
+FILTRO OBRIGATÓRIO: Aplicar filtro WHERE IdOrcamento IN (lista de IdOrcamento do step1)
+Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento
+
+Exemplo de uso do filtro:
+WHERE v.IdOrcamento IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento)
+
+Query base:
+SELECT 
+    v.IdOrcamentoLoja,
+    v.IdOrcamento,
+    v.IdEstabelecimento,
+    v.NomeTarefa,
+    v.Frequencia,
+    v.Horas,
+    v.ValorHora,
+    v.DataInicioOperacao,
+    v.StatusPedido,
+    v.DataInclusaoOrcamentoLojas,
+    v.DataAlteracaoOrcamentoLojas,
+    v.IdTarefa,
+    ol.Ativo
+FROM ViewOrcamentosLojas v
+LEFT JOIN OrcamentoLojas ol ON ol.Id = v.IdOrcamentoLoja
+WHERE v.IdOrcamento IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento)
+ORDER BY v.IdOrcamentoLoja
+
+
+-- STEP 3: step3_migrate_contract_scenario_stores
+
+Tabela Origem: ViewOrcamentosLojas + OrcamentoLojas (LEFT JOIN)
+Tabela Destino: contract_scenario_stores
+
+LIMPEZA DE DADOS:
+- SEM filtros aplicados no step1: TRUNCATE TABLE contract_scenario_stores CASCADE
+- COM filtros aplicados no step1: DELETE FROM contract_scenario_stores WHERE contract_scenario_id IN (SELECT id FROM contract_scenarios WHERE legacy_id IN (lista de IdOrcamentoLoja do step2))
+- COM flag --clear-data: TRUNCATE TABLE contract_scenario_stores CASCADE
+
+FILTRO OBRIGATÓRIO: Aplicar filtro WHERE IdOrcamentoLoja IN (lista de IdOrcamentoLoja do step2)
+Fonte do filtro: Resultado do step2_migrate_contract_scenarios (buscar IdOrcamentoLoja migrados)
+
+NOTA: Este step depende do step2. O step2 deve ser executado primeiro para gerar os IdOrcamentoLoja que serão usados como filtro.
+
+Query base:
+SELECT 
+    v.IdOrcamentoLoja,
+    v.IdEstabelecimento,
+    v.DataInicioOperacao,
+    v.DataInclusaoOrcamentoLojas,
+    v.DataAlteracaoOrcamentoLojas,
+    ol.Ativo,
+    ol.DataExclusao
+FROM ViewOrcamentosLojas v
+LEFT JOIN OrcamentoLojas ol ON ol.Id = v.IdOrcamentoLoja
+WHERE v.IdOrcamentoLoja IN (lista_de_ids_do_step2)
+ORDER BY v.IdOrcamentoLoja
+
+
+-- STEP 4: step4_migrate_contract_sellers
+
+Tabela Origem: Orcamento + FaturamentoOrcamentoComissao
+Tabela Destino: contract_sellers
+
+LIMPEZA DE DADOS:
+- SEM filtros aplicados no step1: TRUNCATE TABLE contract_sellers CASCADE
+- COM filtros aplicados no step1: DELETE FROM contract_sellers WHERE contract_id IN (SELECT id FROM contracts WHERE legacy_id IN (lista de IdOrcamento))
+- COM flag --clear-data: TRUNCATE TABLE contract_sellers CASCADE
+
+FILTRO OBRIGATÓRIO: Aplicar filtro WHERE Id IN (lista de IdOrcamento do step1)
+Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento
+
+Query base - Parte 1 (Orcamento):
+SELECT 
+    Id,
+    IdUsuarioVendedor
+FROM Orcamento
+WHERE Id IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento)
+    AND IdUsuarioVendedor IS NOT NULL
+ORDER BY Id
+
+Query base - Parte 2 (FaturamentoOrcamentoComissao):
+SELECT 
+    IdOrcamento,
+    IdUsuarioVendedor
+FROM FaturamentoOrcamentoComissao
+WHERE IdOrcamento IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento)
+    AND IdUsuarioVendedor IS NOT NULL
+ORDER BY IdOrcamento
+
+
+-- STEP 5: step5_migrate_contract_team_members
+
+Tabela Origem: ViewOrcamentosLojas + Orcamento (INNER JOIN)
+Tabela Destino: contract_team_members
+
+LIMPEZA DE DADOS:
+- SEM filtros aplicados no step1: TRUNCATE TABLE contract_team_members CASCADE
+- COM filtros aplicados no step1: DELETE FROM contract_team_members WHERE contract_id IN (SELECT id FROM contracts WHERE legacy_id IN (lista de IdOrcamento))
+- COM flag --clear-data: TRUNCATE TABLE contract_team_members CASCADE
+
+FILTRO OBRIGATÓRIO: Aplicar filtro WHERE IdOrcamento IN (lista de IdOrcamento do step1)
+Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento
+
+Query base:
+SELECT DISTINCT
+    v.IdOrcamento,
+    o.IdUsuarioVendedor,
+    v.DataInclusaoOrcamento,
+    v.DataAlteracaoOrcamento
+FROM ViewOrcamentosLojas v
+INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+WHERE v.IdOrcamento IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento)
+    AND o.IdUsuarioVendedor IS NOT NULL
+ORDER BY v.IdOrcamento
+
+
+-- STEP 6: step6_migrate_contract_contacts
+
+Tabela Origem: ViewOrcamentosLojas
+Tabela Destino: contract_contacts
+
+LIMPEZA DE DADOS:
+- SEM filtros aplicados no step1: TRUNCATE TABLE contract_contacts CASCADE
+- COM filtros aplicados no step1: DELETE FROM contract_contacts WHERE contract_id IN (SELECT id FROM contracts WHERE legacy_id IN (lista de IdOrcamento))
+- COM flag --clear-data: TRUNCATE TABLE contract_contacts CASCADE
+
+FILTRO OBRIGATÓRIO: Aplicar filtro WHERE IdOrcamento IN (lista de IdOrcamento do step1)
+Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento
+
+Query base:
+SELECT DISTINCT
+    v.IdOrcamento,
+    v.NomeCliente,
+    v.NomeSistemaCliente,
+    v.DataInclusaoOrcamento,
+    v.DataAlteracaoOrcamento
+FROM ViewOrcamentosLojas v
+WHERE v.IdOrcamento IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento)
+    AND v.NomeCliente IS NOT NULL
+ORDER BY v.IdOrcamento
+
+
+-- STEP 7: step7_migrate_contract_partners
+
+Tabela Origem: ViewOrcamentosLojas
+Tabela Destino: contract_partners
+
+LIMPEZA DE DADOS:
+- SEM filtros aplicados no step1: TRUNCATE TABLE contract_partners CASCADE
+- COM filtros aplicados no step1: DELETE FROM contract_partners WHERE contract_id IN (SELECT id FROM contracts WHERE legacy_id IN (lista de IdOrcamento))
+- COM flag --clear-data: TRUNCATE TABLE contract_partners CASCADE
+
+FILTRO OBRIGATÓRIO: Aplicar filtro WHERE IdOrcamento IN (lista de IdOrcamento do step1)
+Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento
+
+Query base:
+SELECT DISTINCT
+    v.IdOrcamento,
+    v.IdClienteLoja,
+    v.NomeClienteLoja,
+    v.DataInclusaoOrcamento,
+    v.DataAlteracaoOrcamento
+FROM ViewOrcamentosLojas v
+WHERE v.IdOrcamento IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento)
+    AND v.IdClienteLoja IS NOT NULL 
+    AND v.NomeClienteLoja IS NOT NULL
+ORDER BY v.IdOrcamento
+
+
+-- STEP 8: step8_migrate_contract_additional_charges
+
+Tabela Origem: Orcamento
+Tabela Destino: contract_additional_charges
+
+LIMPEZA DE DADOS:
+- SEM filtros aplicados no step1: TRUNCATE TABLE contract_additional_charges CASCADE
+- COM filtros aplicados no step1: DELETE FROM contract_additional_charges WHERE contract_id IN (SELECT id FROM contracts WHERE legacy_id IN (lista de IdOrcamento))
+- COM flag --clear-data: TRUNCATE TABLE contract_additional_charges CASCADE
+
+FILTRO OBRIGATÓRIO: Aplicar filtro WHERE Id IN (lista de IdOrcamento do step1)
+Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento
+
+Query base:
+SELECT 
+    Id,
+    ValorEPI,
+    ValorTradeMarketing,
+    ValorOutros,
+    CobrarEPI,
+    InicioCobrancaEPI,
+    Juros,
+    Desconto,
+    Multa,
+    DataInclusao,
+    DataAlteracao
+FROM Orcamento
+WHERE Id IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento)
+    AND (
+        (ValorEPI > 0 OR CobrarEPI = 1)
+        OR ValorTradeMarketing > 0
+        OR ValorOutros > 0
+        OR Juros > 0
+        OR Desconto > 0
+        OR Multa > 0
+    )
+ORDER BY Id
+
+
+-- RESUMO DE DEPENDÊNCIAS ENTRE STEPS --
+
+STEP 1 (step1_migrate_contracts):
+- Não depende de nenhum outro step
+- Gera: contracts com legacy_id = IdOrcamento
+- Gera arquivo: contracts/contracts_filter_main.json
+
+STEP 2 (step2_migrate_contract_scenarios):
+- DEPENDE DE: STEP 1
+- Filtro: WHERE IdOrcamento IN (do step1)
+- Gera: contract_scenarios com legacy_id = IdOrcamentoLoja
+
+STEP 3 (step3_migrate_contract_scenario_stores):
+- DEPENDE DE: STEP 1 e STEP 2
+- Filtro: WHERE IdOrcamentoLoja IN (do step2)
+- Gera: contract_scenario_stores
+
+STEP 4 (step4_migrate_contract_sellers):
+- DEPENDE DE: STEP 1
+- Filtro: WHERE Id IN (do step1) ou WHERE IdOrcamento IN (do step1)
+- Gera: contract_sellers
+
+STEP 5 (step5_migrate_contract_team_members):
+- DEPENDE DE: STEP 1
+- Filtro: WHERE IdOrcamento IN (do step1)
+- Gera: contract_team_members
+
+STEP 6 (step6_migrate_contract_contacts):
+- DEPENDE DE: STEP 1
+- Filtro: WHERE IdOrcamento IN (do step1)
+- Gera: contract_contacts
+
+STEP 7 (step7_migrate_contract_partners):
+- DEPENDE DE: STEP 1
+- Filtro: WHERE IdOrcamento IN (do step1)
+- Gera: contract_partners
+
+STEP 8 (step8_migrate_contract_additional_charges):
+- DEPENDE DE: STEP 1
+- Filtro: WHERE Id IN (do step1)
+- Gera: contract_additional_charges
+
+
+-- STORES --
+
+⚠️ IMPORTANTE: Stores sempre deve filtrar pelos IdEstabelecimento que estão na ViewOrcamentosLojas, independentemente de Contracts ter sido executado ou não.
+
+⚠️ SINCRONIZAÇÃO COM CONTRACTS:
+Se Contracts step1 for atualizado (novos contratos adicionados ou contratos modificados que incluam novos estabelecimentos), Stores DEVE ser atualizado também.
+- Novos contratos podem adicionar novos IdEstabelecimento à ViewOrcamentosLojas
+- Se stores não for atualizado, haverá inconsistência: contratos referenciando estabelecimentos que não existem em stores
+- REGRA: Sempre que contracts step1 for executado e gerar/atualizar contracts_filter_main.json, stores deve ser re-executado para sincronizar
+
+REGRAS GERAIS:
+1. Stores sempre deve usar os IdEstabelecimento, IdBandeira e IdRede que estão na ViewOrcamentosLojas
+2. Mesmo em full load (sem filtros), stores só deve trazer lojas que estejam na ViewOrcamentosLojas
+3. Apenas lojas ativas que estejam na ViewOrcamentosLojas devem ser migradas
+4. ⚠️ OBRIGATÓRIO: Se contracts step1 for atualizado, stores step4 (e steps dependentes 5, 6, 7) devem ser re-executados
+5. ⚠️ ORDEM OBRIGATÓRIA: Store Segments (step1) → Retail Chains (step2) → Store Brands (step3) → Stores (step4) → Store CNPJs (step5) → Addresses (step6) → Contacts (step7)
+6. Store Brands padrão: Se IdBandeira não for encontrado ou for NULL, usar store_brand padrão "Teste store_brands" (criado automaticamente se não existir)
+7. Validação de dependências: Antes de migrar stores, verificar se retail_chains e store_brands existem no banco
+8. Performance: CHUNK_SIZE = 20000 para stores (maior que o padrão devido ao volume de dados)
+
+CENÁRIOS DE EXECUÇÃO:
+
+CENÁRIO 1: Stores executado COM Contracts step1 executado anteriormente
+- Fonte dos filtros: contracts/contracts_filter_main.json -> aggregated_ids.IdEstabelecimento, IdBandeira, IdRede
+- Usar os valores do JSON gerado pelo contracts step1
+- Se contracts step1 foi executado com filtros, usar apenas os IdEstabelecimento filtrados
+
+CENÁRIO 2: Stores executado SEM Contracts step1 (apenas stores)
+- Fonte dos filtros: Buscar diretamente da ViewOrcamentosLojas
+- Query: SELECT DISTINCT IdEstabelecimento, IdBandeira, IdRede FROM ViewOrcamentosLojas WHERE ... IS NOT NULL
+- Sempre filtrar apenas estabelecimentos que estão na ViewOrcamentosLojas (mesmo em full load)
+
+
+-- STEP 4: step4_migrate_stores
+
+Tabela Origem: Estabelecimento
+Tabela Destino: stores
+
+DEPENDÊNCIAS INTERNAS:
+- ⚠️ OBRIGATÓRIO: Store Segments (step1) deve ser executado primeiro
+- ⚠️ OBRIGATÓRIO: Retail Chains (step2) deve ser executado antes
+- ⚠️ OBRIGATÓRIO: Store Brands (step3) deve ser executado antes (stores referencia store_brands)
+
+VALIDAÇÃO PRÉ-EXECUÇÃO:
+- Verificar se existem registros em store_segments (pelo menos 1)
+- Verificar se existem registros em retail_chains (pelo menos 1)
+- Verificar se existem registros em store_brands (pelo menos 1, ou será criado padrão)
+
+LIMPEZA DE DADOS:
+⚠️ ATENÇÃO: Stores sempre filtra pela ViewOrcamentosLojas, então sempre há filtro aplicado (mesmo em full load).
+- SEM filtros de contracts (busca direta da ViewOrcamentosLojas): DELETE FROM stores WHERE legacy_id IN (SELECT DISTINCT IdEstabelecimento FROM ViewOrcamentosLojas WHERE IdEstabelecimento IS NOT NULL)
+- COM filtros de contracts (via contracts_filter_main.json): DELETE FROM stores WHERE legacy_id IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdEstabelecimento)
+- COM flag --clear-data: TRUNCATE TABLE stores CASCADE (permite limpeza completa mesmo com filtros)
+
+FILTRO OBRIGATÓRIO: Aplicar filtro WHERE Id IN (lista de IdEstabelecimento da ViewOrcamentosLojas)
+
+TRATAMENTO DE IdBandeira:
+- Se IdBandeira não for encontrado no mapeamento de store_brands: usar store_brand padrão "Teste store_brands"
+- Se IdBandeira for NULL: usar store_brand padrão "Teste store_brands"
+- Store brand padrão será criado automaticamente se não existir (com legacy_id = 0 em HML)
+- Log de warning será gerado para cada IdBandeira não encontrado
+
+⚠️ CRÍTICO: Mesmo em full load, stores DEVE filtrar apenas estabelecimentos que estão na ViewOrcamentosLojas.
+Isso garante que apenas lojas ativas relacionadas a contratos sejam migradas.
+
+CENÁRIO 1: Se contracts/contracts_filter_main.json existe (contracts step1 foi executado):
+- Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdEstabelecimento
+- Query:
+SELECT 
+    e.Id,
+    e.NomeFantasia,
+    e.IdBandeira,
+    e.Ativo,
+    e.DataInclusao,
+    e.DataAlteracao
+FROM Estabelecimento e
+WHERE e.Id IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdEstabelecimento)
+ORDER BY e.Id
+
+CENÁRIO 2: Se contracts/contracts_filter_main.json NÃO existe (apenas stores executado):
+- Fonte do filtro: Buscar diretamente da ViewOrcamentosLojas
+- Query:
+SELECT 
+    e.Id,
+    e.NomeFantasia,
+    e.IdBandeira,
+    e.Ativo,
+    e.DataInclusao,
+    e.DataAlteracao
+FROM Estabelecimento e
+WHERE e.Id IN (
+    SELECT DISTINCT IdEstabelecimento 
+    FROM ViewOrcamentosLojas
+    WHERE IdEstabelecimento IS NOT NULL
+)
+ORDER BY e.Id
+
+
+-- STEP 3: step3_migrate_store_brands
+
+Tabela Origem: Bandeira
+Tabela Destino: store_brands
+
+DEPENDÊNCIAS INTERNAS:
+- ⚠️ OBRIGATÓRIO: Store Segments (step1) deve ser executado primeiro (store_brands referencia store_segments)
+- ⚠️ OBRIGATÓRIO: Retail Chains (step2) deve ser executado antes (store_brands referencia retail_chains)
+
+VALIDAÇÃO PRÉ-EXECUÇÃO:
+- Verificar se existem registros em store_segments (pelo menos 1)
+- Verificar se existem registros em retail_chains (pelo menos 1)
+
+LIMPEZA DE DADOS:
+⚠️ ATENÇÃO: Store Brands sempre filtra pela ViewOrcamentosLojas, então sempre há filtro aplicado (mesmo em full load).
+- SEM filtros de contracts (busca direta da ViewOrcamentosLojas): DELETE FROM store_brands WHERE legacy_id IN (SELECT DISTINCT IdBandeira FROM ViewOrcamentosLojas WHERE IdBandeira IS NOT NULL)
+- COM filtros de contracts (via contracts_filter_main.json): DELETE FROM store_brands WHERE legacy_id IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdBandeira)
+- COM flag --clear-data: TRUNCATE TABLE store_brands CASCADE (permite limpeza completa mesmo com filtros)
+
+FILTRO OBRIGATÓRIO: Aplicar filtro WHERE Id IN (lista de IdBandeira da ViewOrcamentosLojas)
+
+CAMPOS ESPECIAIS:
+- abras_code: Sempre preencher com "empty" (campo obrigatório, não mapeado da origem)
+- store_segment_id: Buscar via IdCanalEstabelecimento da ViewOrcamentosLojas (agrupado por IdBandeira)
+
+⚠️ CRÍTICO: Mesmo em full load, store_brands DEVE filtrar apenas bandeiras que estão relacionadas a estabelecimentos na ViewOrcamentosLojas.
+
+CENÁRIO 1: Se contracts/contracts_filter_main.json existe (contracts step1 foi executado):
+- Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdBandeira
+- Query:
+SELECT 
+    b.Id,
+    b.NomeFantasia,
+    b.IdRede,
+    b.Ativo,
+    b.DataInclusao,
+    b.DataAlteracao
+FROM Bandeira b
+WHERE b.Id IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdBandeira)
+ORDER BY b.Id
+
+CENÁRIO 2: Se contracts/contracts_filter_main.json NÃO existe (apenas stores executado):
+- Fonte do filtro: Buscar diretamente da ViewOrcamentosLojas
+- Query:
+SELECT 
+    b.Id,
+    b.NomeFantasia,
+    b.IdRede,
+    b.Ativo,
+    b.DataInclusao,
+    b.DataAlteracao
+FROM Bandeira b
+WHERE b.Id IN (
+    SELECT DISTINCT IdBandeira 
+    FROM ViewOrcamentosLojas
+    WHERE IdBandeira IS NOT NULL
+)
+ORDER BY b.Id
+
+
+-- STEP 2: step2_migrate_retail_chains
+
+Tabela Origem: Rede
+Tabela Destino: retail_chains
+
+DEPENDÊNCIAS INTERNAS:
+- ⚠️ OBRIGATÓRIO: Store Segments (step1) deve ser executado primeiro (pode ser referenciado por store_brands)
+
+LIMPEZA DE DADOS:
+⚠️ ATENÇÃO: Retail Chains sempre filtra pela ViewOrcamentosLojas, então sempre há filtro aplicado (mesmo em full load).
+- SEM filtros de contracts (busca direta da ViewOrcamentosLojas): DELETE FROM retail_chains WHERE legacy_id IN (SELECT DISTINCT IdRede FROM ViewOrcamentosLojas WHERE IdRede IS NOT NULL)
+- COM filtros de contracts (via contracts_filter_main.json): DELETE FROM retail_chains WHERE legacy_id IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdRede)
+- COM flag --clear-data: TRUNCATE TABLE retail_chains CASCADE (permite limpeza completa mesmo com filtros)
+
+FILTRO OBRIGATÓRIO: Aplicar filtro WHERE Id IN (lista de IdRede da ViewOrcamentosLojas)
+
+⚠️ CRÍTICO: Mesmo em full load, retail_chains DEVE filtrar apenas redes que estão relacionadas a estabelecimentos na ViewOrcamentosLojas.
+
+CENÁRIO 1: Se contracts/contracts_filter_main.json existe (contracts step1 foi executado):
+- Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdRede
+- Query:
+SELECT 
+    r.Id,
+    r.NomeFantasia,
+    r.Ativo,
+    r.DataInclusao,
+    r.DataAlteracao
+FROM Rede r
+WHERE r.Id IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdRede)
+ORDER BY r.Id
+
+CENÁRIO 2: Se contracts/contracts_filter_main.json NÃO existe (apenas stores executado):
+- Fonte do filtro: Buscar diretamente da ViewOrcamentosLojas
+- Query:
+SELECT 
+    r.Id,
+    r.NomeFantasia,
+    r.Ativo,
+    r.DataInclusao,
+    r.DataAlteracao
+FROM Rede r
+WHERE r.Id IN (
+    SELECT DISTINCT IdRede 
+    FROM ViewOrcamentosLojas
+    WHERE IdRede IS NOT NULL
+)
+ORDER BY r.Id
+
+
+-- STEP 1: step1_migrate_store_segments
+
+Tabela Origem: CanalEstabelecimento
+Tabela Destino: store_segments
+
+LIMPEZA DE DADOS:
+- SEM filtros aplicados: TRUNCATE TABLE store_segments CASCADE
+- COM filtros aplicados (limit_rows > 0): DELETE FROM store_segments WHERE legacy_id IN (lista de Id migrados)
+- COM flag --clear-data: TRUNCATE TABLE store_segments CASCADE
+
+NOTA: Store Segments NÃO filtra pela ViewOrcamentosLojas. Busca todos os registros de CanalEstabelecimento.
+Portanto, pode usar TRUNCATE quando não há filtros (limit_rows = 0).
+
+Query base:
+SELECT 
+    Id,
+    Nome,
+    Ativo,
+    DataInclusao,
+    DataAlteracao
+FROM CanalEstabelecimento
+ORDER BY Id
+
+
+-- RESUMO DE DEPENDÊNCIAS STORES --
+
+STORE_SEGMENTS (step1):
+- Não depende de Contracts
+- Não depende de outros steps de stores
+- Pode ser executado independentemente
+- ⚠️ DEVE ser executado primeiro (outros steps podem referenciar)
+- NÃO filtra pela ViewOrcamentosLojas (pode usar TRUNCATE quando sem filtros)
+
+RETAIL_CHAINS (step2):
+- Filtro: WHERE Id IN (IdRede da ViewOrcamentosLojas)
+- Se contracts step1 foi executado: usar contracts/contracts_filter_main.json -> aggregated_ids.IdRede
+- Se apenas stores executado: buscar diretamente da ViewOrcamentosLojas
+- Mesmo em full load: filtrar apenas redes da ViewOrcamentosLojas
+
+STORE_BRANDS (step3):
+- Filtro: WHERE Id IN (IdBandeira da ViewOrcamentosLojas)
+- Se contracts step1 foi executado: usar contracts/contracts_filter_main.json -> aggregated_ids.IdBandeira
+- Se apenas stores executado: buscar diretamente da ViewOrcamentosLojas
+- Mesmo em full load: filtrar apenas bandeiras da ViewOrcamentosLojas
+
+STORES (step4):
+- Filtro: WHERE Id IN (IdEstabelecimento da ViewOrcamentosLojas)
+- Se contracts step1 foi executado: usar contracts/contracts_filter_main.json -> aggregated_ids.IdEstabelecimento
+- Se apenas stores executado: buscar diretamente da ViewOrcamentosLojas
+- Mesmo em full load: filtrar apenas estabelecimentos da ViewOrcamentosLojas
+- ⚠️ CRÍTICO: Apenas lojas ativas relacionadas a contratos
+
+STORE_CNPJS (step5):
+- DEPENDE DE: Stores step4
+- Filtro: WHERE Id IN (IdEstabelecimento migrados no step4)
+
+ADDRESSES (step6):
+- DEPENDE DE: Stores step4
+- Filtro: WHERE Id IN (IdEstabelecimento migrados no step4)
+
+CONTACTS (step7):
+- DEPENDE DE: Stores step4
+- Filtro: WHERE Id IN (IdEstabelecimento migrados no step4)
+
+
+-- RECOMENDAÇÕES ADICIONAIS PARA STORES --
+
+1. VALIDAÇÃO PÓS-MIGRAÇÃO:
+   - Verificar se todos os IdEstabelecimento da ViewOrcamentosLojas foram migrados
+   - Comparar quantidade de stores migrados com quantidade de IdEstabelecimento únicos na ViewOrcamentosLojas
+   - Verificar se há stores sem store_brand_id (deve usar padrão)
+
+2. TRATAMENTO DE ERROS:
+   - Se store_brand não for encontrado: usar padrão "Teste store_brands" (não falhar migração)
+   - Se retail_chain não for encontrado: verificar se step2 foi executado
+   - Se store_segment não for encontrado: verificar se step1 foi executado
+   - Logar warnings para todos os casos acima
+
+3. PERFORMANCE:
+   - CHUNK_SIZE = 20000 para stores (maior que padrão devido ao volume)
+   - Processar em memória usando DataFrames (vetorizado)
+   - Usar execute_values() para inserção em bulk
+
+4. INTEGRIDADE DE DADOS:
+   - Garantir que todos os stores migrados tenham store_brand_id válido
+   - Garantir que store_brands referenciados existam antes de migrar stores
+   - Validar que não há stores órfãos (sem store_brand válido)
+
+5. CASOS ESPECIAIS:
+   - Store brand padrão "Teste store_brands" é criado automaticamente se necessário
+   - Store brand padrão tem legacy_id = 0 em HML (para rastreabilidade)
+   - Se nenhum store_brand existir no mapeamento, todos os stores usarão o padrão
+
+
+-- SINCRONIZAÇÃO CONTRACTS ↔ STORES --
+
+REGRAS DE SINCRONIZAÇÃO:
+
+1. Se Contracts step1 for executado/atualizado:
+   ⚠️ OBRIGATÓRIO executar Stores steps 2, 3, 4 (e steps dependentes 5, 6, 7 se necessário)
+   - Novos contratos podem incluir novos IdEstabelecimento, IdBandeira, IdRede
+   - Stores precisa ser atualizado para incluir esses novos registros
+   - Caso contrário: inconsistência de dados (contratos referenciando stores inexistentes)
+
+2. Se apenas Stores for executado (sem contracts):
+   - Buscar diretamente da ViewOrcamentosLojas
+   - Não há necessidade de executar contracts primeiro
+   - Mas se contracts for executado depois, stores deve ser re-executado
+
+3. Ordem recomendada de execução:
+   ✅ Opção 1: Contracts step1 → Stores steps 2,3,4 (sincronizado)
+   ✅ Opção 2: Apenas Stores (busca direta da ViewOrcamentosLojas)
+   ❌ Opção 3: Contracts step1 → Não executar Stores (INCONSISTÊNCIA)
+
+4. Detecção de necessidade de atualização:
+   - Comparar contracts/contracts_filter_main.json -> aggregated_ids.IdEstabelecimento
+   - Com stores.legacy_id existentes no banco
+   - Se houver IdEstabelecimento no JSON que não está em stores: stores precisa ser atualizado
+
+
+-- CUSTOMERS --
+
+⚠️ IMPORTANTE: Customers sempre deve filtrar pelos IdCliente que estão na ViewOrcamentosLojas, independentemente de Contracts ter sido executado ou não.
+
+⚠️ SINCRONIZAÇÃO COM CONTRACTS:
+Se Contracts step1 for atualizado (novos contratos adicionados ou contratos modificados que incluam novos clientes), Customers DEVE ser atualizado também.
+- Novos contratos podem adicionar novos IdCliente à ViewOrcamentosLojas
+- Se customers não for atualizado, haverá inconsistência: contratos referenciando clientes que não existem em customers
+- REGRA: Sempre que contracts step1 for executado e gerar/atualizar contracts_filter_main.json, customers deve ser re-executado para sincronizar
+
+REGRAS GERAIS:
+1. Customers sempre deve usar os IdCliente que estão na ViewOrcamentosLojas
+2. Mesmo em full load (sem filtros), customers só deve trazer clientes que estejam na ViewOrcamentosLojas
+3. Apenas clientes ativos que estejam na ViewOrcamentosLojas devem ser migrados
+4. ⚠️ OBRIGATÓRIO: Se contracts step1 for atualizado, customers step2 (e steps dependentes 3, 4) devem ser re-executados
+5. ⚠️ ORDEM OBRIGATÓRIA: Customer Segments (step1) → Customers (step2) → Addresses (step3) → Contacts (step4)
+6. Validação de dependências: Antes de migrar customers, verificar se customer_segments existe no banco
+7. Performance: CHUNK_SIZE = 1000 para customers (padrão)
+
+CENÁRIOS DE EXECUÇÃO:
+
+CENÁRIO 1: Customers executado COM Contracts step1 executado anteriormente
+- Fonte dos filtros: contracts/contracts_filter_main.json -> aggregated_ids.IdCliente
+- Usar os valores do JSON gerado pelo contracts step1
+- Se contracts step1 foi executado com filtros, usar apenas os IdCliente filtrados
+
+CENÁRIO 2: Customers executado SEM Contracts step1 (apenas customers)
+- Fonte dos filtros: Buscar diretamente da ViewOrcamentosLojas
+- Query: SELECT DISTINCT IdCliente FROM ViewOrcamentosLojas WHERE IdCliente IS NOT NULL
+- Sempre filtrar apenas clientes que estão na ViewOrcamentosLojas (mesmo em full load)
+
+
+-- STEP 1: step1_migrate_customer_segments
+
+Tabela Origem: SegmentoProduto
+Tabela Destino: customer_segments
+
+LIMPEZA DE DADOS:
+- SEM filtros aplicados: TRUNCATE TABLE customer_segments CASCADE
+- COM filtros aplicados (limit_rows > 0): DELETE FROM customer_segments WHERE legacy_id IN (lista de Id migrados)
+- COM flag --clear-data: TRUNCATE TABLE customer_segments CASCADE
+
+NOTA: Customer Segments NÃO filtra pela ViewOrcamentosLojas. Busca todos os registros de SegmentoProduto.
+Portanto, pode usar TRUNCATE quando não há filtros (limit_rows = 0).
+
+Query base:
+SELECT 
+    Id,
+    Nome,
+    Ativo,
+    DataInclusao,
+    DataAlteracao
+FROM SegmentoProduto
+ORDER BY Id
+
+
+-- STEP 2: step2_migrate_customers
+
+Tabela Origem: Cliente
+Tabela Destino: customers
+
+DEPENDÊNCIAS INTERNAS:
+- ⚠️ OBRIGATÓRIO: Customer Segments (step1) deve ser executado primeiro (customers referencia customer_segments)
+
+VALIDAÇÃO PRÉ-EXECUÇÃO:
+- Verificar se existem registros em customer_segments (pelo menos 1)
+
+LIMPEZA DE DADOS:
+⚠️ ATENÇÃO: Customers sempre filtra pela ViewOrcamentosLojas, então sempre há filtro aplicado (mesmo em full load).
+- SEM filtros de contracts (busca direta da ViewOrcamentosLojas): DELETE FROM customers WHERE legacy_id IN (SELECT DISTINCT IdCliente FROM ViewOrcamentosLojas WHERE IdCliente IS NOT NULL)
+- COM filtros de contracts (via contracts_filter_main.json): DELETE FROM customers WHERE legacy_id IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdCliente)
+- COM flag --clear-data: TRUNCATE TABLE customers CASCADE (permite limpeza completa mesmo com filtros)
+
+FILTRO OBRIGATÓRIO: Aplicar filtro WHERE Id IN (lista de IdCliente da ViewOrcamentosLojas)
+
+⚠️ CRÍTICO: Mesmo em full load, customers DEVE filtrar apenas clientes que estão na ViewOrcamentosLojas.
+Isso garante que apenas clientes ativos relacionados a contratos sejam migrados.
+
+CENÁRIO 1: Se contracts/contracts_filter_main.json existe (contracts step1 foi executado):
+- Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdCliente
+- Query:
+SELECT 
+    c.Id,
+    c.Codigo,
+    c.TipoPessoa,
+    c.CpfCnpj,
+    c.InscricaoEstadual,
+    c.InscricaoMunicipal,
+    c.RazaoSocial,
+    c.NomeFantasia,
+    c.Ativo,
+    c.DataInclusao,
+    c.DataAlteracao,
+    c.DataAtivacao
+FROM Cliente c
+WHERE c.Id IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdCliente)
+ORDER BY c.Id
+
+CENÁRIO 2: Se contracts/contracts_filter_main.json NÃO existe (apenas customers executado):
+- Fonte do filtro: Buscar diretamente da ViewOrcamentosLojas
+- Query:
+SELECT 
+    c.Id,
+    c.Codigo,
+    c.TipoPessoa,
+    c.CpfCnpj,
+    c.InscricaoEstadual,
+    c.InscricaoMunicipal,
+    c.RazaoSocial,
+    c.NomeFantasia,
+    c.Ativo,
+    c.DataInclusao,
+    c.DataAlteracao,
+    c.DataAtivacao
+FROM Cliente c
+WHERE c.Id IN (
+    SELECT DISTINCT IdCliente 
+    FROM ViewOrcamentosLojas
+    WHERE IdCliente IS NOT NULL
+)
+ORDER BY c.Id
+
+
+-- STEP 3: step3_migrate_addresses
+
+Tabela Origem: Cliente
+Tabela Destino: addresses (tabela polimórfica)
+
+DEPENDÊNCIAS INTERNAS:
+- ⚠️ OBRIGATÓRIO: Customers (step2) deve ser executado antes (addresses referencia customers)
+
+LIMPEZA DE DADOS:
+⚠️ ATENÇÃO: Addresses sempre filtra pelos IdCliente da ViewOrcamentosLojas, então sempre há filtro aplicado.
+- SEM filtros de contracts (busca direta da ViewOrcamentosLojas): DELETE FROM addresses WHERE addressable_type = 'customers' AND addressable_id IN (SELECT id FROM customers WHERE legacy_id IN (SELECT DISTINCT IdCliente FROM ViewOrcamentosLojas WHERE IdCliente IS NOT NULL))
+- COM filtros de contracts (via contracts_filter_main.json): DELETE FROM addresses WHERE addressable_type = 'customers' AND addressable_id IN (SELECT id FROM customers WHERE legacy_id IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdCliente))
+- COM flag --clear-data: DELETE FROM addresses WHERE addressable_type = 'customers' (permite limpeza completa de addresses de customers)
+
+FILTRO OBRIGATÓRIO: Aplicar filtro WHERE Id IN (lista de IdCliente da ViewOrcamentosLojas)
+
+NOTA: Addresses é uma tabela polimórfica. Usar delete_polymorphic_table() ao invés de truncate_table().
+
+CENÁRIO 1: Se contracts/contracts_filter_main.json existe (contracts step1 foi executado):
+- Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdCliente
+- Buscar apenas clientes que estão no JSON
+
+CENÁRIO 2: Se contracts/contracts_filter_main.json NÃO existe (apenas customers executado):
+- Fonte do filtro: Buscar diretamente da ViewOrcamentosLojas
+- Buscar apenas clientes que estão na ViewOrcamentosLojas
+
+
+-- STEP 4: step4_migrate_contacts
+
+Tabela Origem: Cliente
+Tabela Destino: contacts (tabela polimórfica)
+
+DEPENDÊNCIAS INTERNAS:
+- ⚠️ OBRIGATÓRIO: Customers (step2) deve ser executado antes (contacts referencia customers)
+
+LIMPEZA DE DADOS:
+⚠️ ATENÇÃO: Contacts sempre filtra pelos IdCliente da ViewOrcamentosLojas, então sempre há filtro aplicado.
+- SEM filtros de contracts (busca direta da ViewOrcamentosLojas): DELETE FROM contacts WHERE contactable_type = 'customers' AND contactable_id IN (SELECT id FROM customers WHERE legacy_id IN (SELECT DISTINCT IdCliente FROM ViewOrcamentosLojas WHERE IdCliente IS NOT NULL))
+- COM filtros de contracts (via contracts_filter_main.json): DELETE FROM contacts WHERE contactable_type = 'customers' AND contactable_id IN (SELECT id FROM customers WHERE legacy_id IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdCliente))
+- COM flag --clear-data: DELETE FROM contacts WHERE contactable_type = 'customers' (permite limpeza completa de contacts de customers)
+
+FILTRO OBRIGATÓRIO: Aplicar filtro WHERE Id IN (lista de IdCliente da ViewOrcamentosLojas)
+
+NOTA: Contacts é uma tabela polimórfica. Usar delete_polymorphic_table() ao invés de truncate_table().
+
+CENÁRIO 1: Se contracts/contracts_filter_main.json existe (contracts step1 foi executado):
+- Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdCliente
+- Buscar apenas clientes que estão no JSON
+
+CENÁRIO 2: Se contracts/contracts_filter_main.json NÃO existe (apenas customers executado):
+- Fonte do filtro: Buscar diretamente da ViewOrcamentosLojas
+- Buscar apenas clientes que estão na ViewOrcamentosLojas
+
+
+-- RESUMO DE DEPENDÊNCIAS CUSTOMERS --
+
+CUSTOMER_SEGMENTS (step1):
+- Não depende de Contracts
+- Não depende de outros steps de customers
+- Pode ser executado independentemente
+- ⚠️ DEVE ser executado primeiro (customers referencia customer_segments)
+- NÃO filtra pela ViewOrcamentosLojas (pode usar TRUNCATE quando sem filtros)
+
+CUSTOMERS (step2):
+- Filtro: WHERE Id IN (IdCliente da ViewOrcamentosLojas)
+- Se contracts step1 foi executado: usar contracts/contracts_filter_main.json -> aggregated_ids.IdCliente
+- Se apenas customers executado: buscar diretamente da ViewOrcamentosLojas
+- Mesmo em full load: filtrar apenas clientes da ViewOrcamentosLojas
+- ⚠️ CRÍTICO: Apenas clientes ativos relacionados a contratos
+
+ADDRESSES (step3):
+- DEPENDE DE: Customers step2
+- Filtro: WHERE Id IN (IdCliente migrados no step2)
+- Tabela polimórfica: usar delete_polymorphic_table() ao invés de truncate_table()
+
+CONTACTS (step4):
+- DEPENDE DE: Customers step2
+- Filtro: WHERE Id IN (IdCliente migrados no step2)
+- Tabela polimórfica: usar delete_polymorphic_table() ao invés de truncate_table()
+
+
+-- SINCRONIZAÇÃO CONTRACTS ↔ CUSTOMERS --
+
+REGRAS DE SINCRONIZAÇÃO:
+
+1. Se Contracts step1 for executado/atualizado:
+   ⚠️ OBRIGATÓRIO executar Customers steps 2, 3, 4 (e steps dependentes se necessário)
+   - Novos contratos podem incluir novos IdCliente
+   - Customers precisa ser atualizado para incluir esses novos registros
+   - Caso contrário: inconsistência de dados (contratos referenciando customers inexistentes)
+
+2. Se apenas Customers for executado (sem contracts):
+   - Buscar diretamente da ViewOrcamentosLojas
+   - Não há necessidade de executar contracts primeiro
+   - Mas se contracts for executado depois, customers deve ser re-executado
+
+3. Ordem recomendada de execução:
+   ✅ Opção 1: Contracts step1 → Customers steps 2,3,4 (sincronizado)
+   ✅ Opção 2: Apenas Customers (busca direta da ViewOrcamentosLojas)
+   ❌ Opção 3: Contracts step1 → Não executar Customers (INCONSISTÊNCIA)
+
+4. Detecção de necessidade de atualização:
+   - Comparar contracts/contracts_filter_main.json -> aggregated_ids.IdCliente
+   - Com customers.legacy_id existentes no banco
+   - Se houver IdCliente no JSON que não está em customers: customers precisa ser atualizado
+
+
+-- RECOMENDAÇÕES ADICIONAIS PARA CUSTOMERS --
+
+1. VALIDAÇÃO PÓS-MIGRAÇÃO:
+   - Verificar se todos os IdCliente da ViewOrcamentosLojas foram migrados
+   - Comparar quantidade de customers migrados com quantidade de IdCliente únicos na ViewOrcamentosLojas
+   - Verificar se há customers sem customer_segment_id válido
+
+2. TRATAMENTO DE ERROS:
+   - Se customer_segment não for encontrado: verificar se step1 foi executado
+   - Logar warnings para todos os casos de dados não encontrados
+   - Não falhar migração por dados faltantes (apenas logar)
+
+3. PERFORMANCE:
+   - CHUNK_SIZE = 1000 para customers (padrão)
+   - Processar em memória usando DataFrames (vetorizado)
+   - Usar execute_values() para inserção em bulk
+
+4. INTEGRIDADE DE DADOS:
+   - Garantir que todos os customers migrados tenham customer_segment_id válido
+   - Garantir que customer_segments referenciados existam antes de migrar customers
+   - Validar que não há customers órfãos (sem customer_segment válido)
+
+5. TABELAS POLIMÓRFICAS:
+   - Addresses e Contacts são tabelas polimórficas
+   - Sempre usar delete_polymorphic_table() ao invés de truncate_table()
+   - Filtrar por contactable_type = 'customers' ou addressable_type = 'customers'
+

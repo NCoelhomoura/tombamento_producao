@@ -1,0 +1,32 @@
+{
+  "filters_applied": {
+    "id_orcamento": [
+      6192
+    ],
+    "data_aviso_previo_min": "2025-01-01",
+    "data_inicio_operacao_max": "2026-01-13",
+    "limit_rows": 0,
+    "clear_data": true
+  },
+  "aggregated_ids": {
+    "IdOrcamento": [
+      6192
+    ],
+    "IdCliente": [
+      2962
+    ],
+    "IdEstabelecimento": [
+      35148
+    ],
+    "IdBandeira": [
+      6664
+    ],
+    "IdRede": [
+      6153
+    ]
+  },
+  "execution_info": {
+    "timestamp": "2026-01-13T17:46:54.622742",
+    "total_contracts_migrated": 1
+  }
+}

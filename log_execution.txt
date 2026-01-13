@@ -1,146 +1,178 @@
-2025-11-28 10:40:57,530 - INFO - ================================================================================
-2025-11-28 10:40:57,530 - INFO - INICIANDO MIGRACAO COMPLETA
-2025-11-28 10:40:57,530 - INFO - ================================================================================
-2025-11-28 10:40:57,530 - INFO - Data/Hora: 2025-11-28 10:40:57.530021
-2025-11-28 10:40:57,531 - INFO - Ambiente Destino: PRD
-2025-11-28 10:40:57,531 - INFO - Schema Destino: core
-2025-11-28 10:40:57,531 - INFO - Limite de Linhas: 8
-2025-11-28 10:40:57,531 - INFO - Tamanho do Chunk: 1000
-2025-11-28 10:40:57,531 - INFO - Origem: SQL Server PRD (Database: FINANCEIRO)
-2025-11-28 10:40:57,532 - INFO - Destino: PostgreSQL PRD (Schema: core)
-2025-11-28 10:40:57,532 - INFO - ================================================================================
-2025-11-28 10:40:57,532 - INFO - ================================================================================
-2025-11-28 10:40:57,532 - INFO - ETAPA 1: Migrando customer_segments
-2025-11-28 10:40:57,532 - INFO - Ambiente: PRD | Schema: core | Limite: 8
-2025-11-28 10:40:57,532 - INFO - ================================================================================
-2025-11-28 10:41:00,042 - INFO - Tabela core.customer_segments truncada com sucesso
-2025-11-28 10:41:03,659 - INFO - [ETAPA 1] Chunk 1 processado: 8 registros inseridos, 0 erros
-2025-11-28 10:41:03,660 - INFO - ETAPA 1 concluida: 8 registros
-2025-11-28 10:41:05,016 - INFO - VALIDACAO ETAPA 1: OK - Origem: 8, Destino: 8
-2025-11-28 10:41:05,033 - INFO - ================================================================================
-2025-11-28 10:41:05,034 - INFO - ETAPA 2: Migrando customers
-2025-11-28 10:41:05,034 - INFO - Ambiente: PRD | Schema: core | Limite: 8
-2025-11-28 10:41:05,034 - INFO - ================================================================================
-2025-11-28 10:41:06,513 - INFO - Tabela core.customers truncada com sucesso
-2025-11-28 10:41:07,516 - INFO - [ETAPA 2] Processando chunk 1 (8 registros)...
-2025-11-28 10:41:08,884 - INFO - [ETAPA 2] Chunk 1 processado: 8 registros inseridos, 0 erros
-2025-11-28 10:41:08,884 - INFO - ETAPA 2 concluida: 8 registros
-2025-11-28 10:41:11,571 - INFO - VALIDACAO ETAPA 2: OK - Origem: 8, Destino: 8
-2025-11-28 10:41:11,602 - INFO - ================================================================================
-2025-11-28 10:41:11,603 - INFO - ETAPA 3: Migrando addresses
-2025-11-28 10:41:11,603 - INFO - Ambiente: PRD | Schema: core | Limite: 8
-2025-11-28 10:41:11,604 - INFO - ================================================================================
-2025-11-28 10:41:13,063 - INFO - Tabela core.addresses: 1597 registros deletados (tipo: customers)
-2025-11-28 10:41:14,094 - INFO - [ETAPA 3] Processando chunk 1 (8 registros)...
-2025-11-28 10:41:16,059 - INFO - [ETAPA 3] Chunk 1 processado: 12 enderecos inseridos, 0 erros
-2025-11-28 10:41:16,059 - INFO - ETAPA 3 concluida: 12 registros
-2025-11-28 10:41:18,056 - WARNING - VALIDACAO ETAPA 3: Diferenca - Origem: 15, Destino: 56, Diferenca: -41
-2025-11-28 10:41:18,070 - INFO - ================================================================================
-2025-11-28 10:41:18,070 - INFO - ETAPA 4: Migrando contacts
-2025-11-28 10:41:18,070 - INFO - Ambiente: PRD | Schema: core | Limite: 8
-2025-11-28 10:41:18,070 - INFO - ================================================================================
-2025-11-28 10:41:19,465 - INFO - Tabela core.contacts: 1951 registros deletados (tipo: customers)
-2025-11-28 10:41:20,514 - INFO - [ETAPA 4] Processando chunk 1 (8 registros)...
-2025-11-28 10:41:22,639 - INFO - [ETAPA 4] Chunk 1 processado: 13 contacts inseridos, 0 erros
-2025-11-28 10:41:22,639 - INFO - ETAPA 4 concluida: 13 registros
-2025-11-28 10:41:24,605 - WARNING - VALIDACAO ETAPA 4: Diferenca - Origem: 18, Destino: 13, Diferenca: 5
-2025-11-28 10:41:24,618 - INFO - ================================================================================
-2025-11-28 10:41:24,619 - INFO - MIGRACAO CONCLUIDA COM SUCESSO!
-2025-11-28 10:41:24,619 - INFO - ================================================================================
-2025-11-28 10:41:24,620 - INFO - Duracao: 0:00:27.086434
-2025-11-28 10:41:24,620 - INFO - Customer Segments: 8
-2025-11-28 10:41:24,620 - INFO - Customers: 8
-2025-11-28 10:41:24,620 - INFO - Addresses: 12
-2025-11-28 10:41:24,620 - INFO - Contacts: 13
-2025-11-28 10:41:24,621 - INFO - Erros: 0
-2025-11-28 10:41:24,621 - INFO - Nenhum erro encontrado!
-2025-11-28 10:41:24,627 - INFO - ================================================================================
-2025-11-28 10:41:24,627 - INFO - INICIANDO MIGRACAO COMPLETA - STORES
-2025-11-28 10:41:24,628 - INFO - ================================================================================
-2025-11-28 10:41:24,628 - INFO - Data/Hora: 2025-11-28 10:41:24.628282
-2025-11-28 10:41:24,628 - INFO - Ambiente Destino: PRD
-2025-11-28 10:41:24,628 - INFO - Schema Destino: core
-2025-11-28 10:41:24,628 - INFO - Limite de Linhas: 8
-2025-11-28 10:41:24,628 - INFO - Tamanho do Chunk: 1000
-2025-11-28 10:41:24,628 - INFO - Origem: SQL Server PRD (Database: FINANCEIRO)
-2025-11-28 10:41:24,629 - INFO - Destino: PostgreSQL PRD (Schema: core)
-2025-11-28 10:41:24,629 - INFO - ================================================================================
-2025-11-28 10:41:24,629 - INFO - ================================================================================
-2025-11-28 10:41:24,629 - INFO - ETAPA 1: Migrando store_segments
-2025-11-28 10:41:24,629 - INFO - Ambiente: PRD | Schema: core | Limite: 8
-2025-11-28 10:41:24,629 - INFO - ================================================================================
-2025-11-28 10:41:26,058 - INFO - Tabela core.store_segments truncada com sucesso
-2025-11-28 10:41:28,449 - INFO - [ETAPA 1] Chunk 1 processado: 8 registros inseridos, 0 erros
-2025-11-28 10:41:28,449 - INFO - ETAPA 1 concluida: 8 registros
-2025-11-28 10:41:29,797 - INFO - VALIDACAO ETAPA 1: OK - Origem: 8, Destino: 8
-2025-11-28 10:41:29,813 - INFO - ================================================================================
-2025-11-28 10:41:29,813 - INFO - ETAPA 2: Migrando retail_chains
-2025-11-28 10:41:29,814 - INFO - Ambiente: PRD | Schema: core | Limite: 8
-2025-11-28 10:41:29,814 - INFO - ================================================================================
-2025-11-28 10:41:31,241 - INFO - Tabela core.retail_chains truncada com sucesso
-2025-11-28 10:41:33,750 - INFO - [ETAPA 2] Chunk 1 processado: 8 registros inseridos, 0 erros
-2025-11-28 10:41:33,751 - INFO - ETAPA 2 concluida: 8 registros
-2025-11-28 10:41:35,123 - INFO - VALIDACAO ETAPA 2: OK - Origem: 8, Destino: 8
-2025-11-28 10:41:35,139 - INFO - ================================================================================
-2025-11-28 10:41:35,140 - INFO - ETAPA 3: Migrando store_brands
-2025-11-28 10:41:35,140 - INFO - Ambiente: PRD | Schema: core | Limite: 8
-2025-11-28 10:41:35,140 - INFO - ================================================================================
-2025-11-28 10:41:36,628 - INFO - Tabela core.store_brands truncada com sucesso
-2025-11-28 10:41:39,093 - WARNING - Store segment não encontrado para Bandeira Id=3, usando padrão: e183281c-d507-4662-b743-5dfe97ed54df
-2025-11-28 10:41:39,245 - WARNING - Store segment não encontrado para Bandeira Id=4, usando padrão: e183281c-d507-4662-b743-5dfe97ed54df
-2025-11-28 10:41:39,396 - WARNING - Store segment não encontrado para Bandeira Id=5, usando padrão: e183281c-d507-4662-b743-5dfe97ed54df
-2025-11-28 10:41:39,553 - WARNING - Store segment não encontrado para Bandeira Id=6, usando padrão: e183281c-d507-4662-b743-5dfe97ed54df
-2025-11-28 10:41:39,846 - WARNING - Store segment não encontrado para Bandeira Id=8, usando padrão: e183281c-d507-4662-b743-5dfe97ed54df
-2025-11-28 10:41:40,123 - INFO - [ETAPA 3] Chunk 1 processado: 8 registros inseridos, 0 erros
-2025-11-28 10:41:40,123 - INFO - ETAPA 3 concluida: 8 registros
-2025-11-28 10:41:41,500 - INFO - VALIDACAO ETAPA 3: OK - Origem: 8, Destino: 8
-2025-11-28 10:41:41,516 - INFO - ================================================================================
-2025-11-28 10:41:41,517 - INFO - ETAPA 4: Migrando stores
-2025-11-28 10:41:41,517 - INFO - Ambiente: PRD | Schema: core | Limite: 8
-2025-11-28 10:41:41,517 - INFO - ================================================================================
-2025-11-28 10:41:42,941 - INFO - Tabela core.stores truncada com sucesso
-2025-11-28 10:41:46,048 - INFO - Store brand padrão 'Teste store_brands' criado: 97e99918-3a7f-4f5c-8536-990c30d50628
-2025-11-28 10:41:47,113 - INFO - [ETAPA 4] Processando chunk 1 (8 registros)...
-2025-11-28 10:41:48,528 - INFO - [ETAPA 4] Chunk 1 processado: 8 registros inseridos, 0 erros
-2025-11-28 10:41:48,529 - INFO - ETAPA 4 concluida: 8 registros
-2025-11-28 10:41:49,888 - INFO - VALIDACAO ETAPA 4: OK - Origem: 8, Destino: 8
-2025-11-28 10:41:49,906 - INFO - ================================================================================
-2025-11-28 10:41:49,907 - INFO - ETAPA 5: Migrando store_cnpjs
-2025-11-28 10:41:49,907 - INFO - Ambiente: PRD | Schema: core | Limite: 8
-2025-11-28 10:41:49,907 - INFO - ================================================================================
-2025-11-28 10:41:51,320 - INFO - Tabela core.store_cnpjs truncada com sucesso
-2025-11-28 10:41:52,412 - INFO - [ETAPA 5] Processando chunk 1 (8 registros)...
-2025-11-28 10:41:53,809 - INFO - [ETAPA 5] Chunk 1 processado: 8 registros inseridos, 0 erros
-2025-11-28 10:41:53,809 - INFO - ETAPA 5 concluida: 8 registros
-2025-11-28 10:41:55,123 - INFO - VALIDACAO ETAPA 5: OK - Origem: 8, Destino: 8
-2025-11-28 10:41:55,139 - INFO - ================================================================================
-2025-11-28 10:41:55,139 - INFO - ETAPA 6: Migrando addresses para stores
-2025-11-28 10:41:55,140 - INFO - Ambiente: PRD | Schema: core | Limite: 8
-2025-11-28 10:41:55,140 - INFO - ================================================================================
-2025-11-28 10:41:56,569 - INFO - Tabela core.addresses: 41 registros deletados (tipo: stores)
-2025-11-28 10:41:57,621 - INFO - [ETAPA 6] Processando chunk 1 (8 registros)...
-2025-11-28 10:41:59,004 - INFO - [ETAPA 6] Chunk 1 processado: 8 enderecos inseridos, 0 erros
-2025-11-28 10:41:59,005 - INFO - ETAPA 6 concluida: 8 registros
-2025-11-28 10:42:00,333 - INFO - VALIDACAO ETAPA 6: OK - Origem: 8, Destino: 8
-2025-11-28 10:42:00,366 - INFO - ================================================================================
-2025-11-28 10:42:00,367 - INFO - ETAPA 7: Migrando contacts para stores
-2025-11-28 10:42:00,367 - INFO - Ambiente: PRD | Schema: core | Limite: 8
-2025-11-28 10:42:00,367 - INFO - ================================================================================
-2025-11-28 10:42:01,784 - INFO - Tabela core.contacts: 16 registros deletados (tipo: stores)
-2025-11-28 10:42:02,892 - INFO - [ETAPA 7] Processando chunk 1 (2 registros)...
-2025-11-28 10:42:03,715 - INFO - [ETAPA 7] Chunk 1 processado: 4 contacts inseridos, 0 erros
-2025-11-28 10:42:03,715 - INFO - ETAPA 7 concluida: 4 registros
-2025-11-28 10:42:05,503 - INFO - VALIDACAO ETAPA 7: OK - Origem: 4, Destino: 4
-2025-11-28 10:42:05,520 - INFO - ================================================================================
-2025-11-28 10:42:05,520 - INFO - MIGRACAO CONCLUIDA COM SUCESSO!
-2025-11-28 10:42:05,521 - INFO - ================================================================================
-2025-11-28 10:42:05,521 - INFO - Duracao: 0:00:40.891496
-2025-11-28 10:42:05,521 - INFO - Store Segments: 8
-2025-11-28 10:42:05,521 - INFO - Retail Chains: 8
-2025-11-28 10:42:05,521 - INFO - Store Brands: 8
-2025-11-28 10:42:05,521 - INFO - Stores: 8
-2025-11-28 10:42:05,521 - INFO - Store CNPJs: 8
-2025-11-28 10:42:05,521 - INFO - Addresses: 8
-2025-11-28 10:42:05,522 - INFO - Contacts: 4
-2025-11-28 10:42:05,522 - INFO - Erros: 0
-2025-11-28 10:42:05,522 - INFO - Nenhum erro encontrado!
+2026-01-13 17:46:14,710 - INFO - ================================================================================
+2026-01-13 17:46:14,710 - INFO - ETAPA 1: Migrando customer_segments
+2026-01-13 17:46:14,710 - INFO - Ambiente: HML | Schema: gmcore | Limite: TODOS
+2026-01-13 17:46:14,711 - INFO - ================================================================================
+2026-01-13 17:46:15,977 - INFO - Tabela gmcore.customer_segments truncada com sucesso
+2026-01-13 17:46:18,488 - INFO - [ETAPA 1] Chunk 1 processado: 34/34 registros inseridos
+2026-01-13 17:46:18,727 - INFO - ETAPA 1 concluida: 34 registros
+2026-01-13 17:46:19,849 - INFO - VALIDACAO ETAPA 1: OK - Origem: 34, Destino: 34
+2026-01-13 17:46:20,950 - INFO - ================================================================================
+2026-01-13 17:46:20,951 - INFO - ETAPA 2: Migrando customers
+2026-01-13 17:46:20,951 - INFO - Ambiente: HML | Schema: gmcore | Limite: TODOS
+2026-01-13 17:46:20,951 - INFO - ================================================================================
+2026-01-13 17:46:20,951 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
+2026-01-13 17:46:20,951 - INFO - [ETAPA 2] Carregados 1 IdCliente do arquivo de filtros do contracts
+2026-01-13 17:46:22,138 - INFO - Tabela gmcore.customers: 1 registros deletados (de 1 legacy_ids fornecidos)
+2026-01-13 17:46:23,378 - INFO - [ETAPA 2] Chunk 1 processado: 1/1 registros inseridos
+2026-01-13 17:46:23,613 - INFO - ETAPA 2 concluida: 1 registros
+2026-01-13 17:46:23,614 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
+2026-01-13 17:46:24,958 - INFO - VALIDACAO ETAPA 2: OK - Origem: 1, Destino: 1
+2026-01-13 17:46:24,963 - INFO - ================================================================================
+2026-01-13 17:46:24,963 - INFO - ETAPA 1: Migrando store_segments
+2026-01-13 17:46:24,963 - INFO - Ambiente: HML | Schema: gmcore | Limite: TODOS
+2026-01-13 17:46:24,963 - INFO - ================================================================================
+2026-01-13 17:46:26,189 - INFO - Tabela gmcore.store_segments truncada com sucesso
+2026-01-13 17:46:27,432 - INFO - [ETAPA 1] Chunk 1 processado: 14/14 registros inseridos
+2026-01-13 17:46:27,670 - INFO - ETAPA 1 concluida: 14 registros
+2026-01-13 17:46:28,784 - INFO - VALIDACAO ETAPA 1: OK - Origem: 14, Destino: 14
+2026-01-13 17:46:28,785 - INFO - ================================================================================
+2026-01-13 17:46:28,785 - INFO - ETAPA 2: Migrando retail_chains
+2026-01-13 17:46:28,785 - INFO - Ambiente: HML | Schema: gmcore | Limite: TODOS
+2026-01-13 17:46:28,785 - INFO - ================================================================================
+2026-01-13 17:46:28,786 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-01-13 17:46:28,786 - INFO - [ETAPA 2] Carregados 1 IdRede do arquivo de filtros do contracts
+2026-01-13 17:46:30,108 - INFO - Tabela gmcore.retail_chains: 1 registros deletados (de 1 legacy_ids fornecidos)
+2026-01-13 17:46:31,342 - INFO - [ETAPA 2] Chunk 1 processado: 1/1 registros inseridos
+2026-01-13 17:46:31,578 - INFO - ETAPA 2 concluida: 1 registros
+2026-01-13 17:46:31,578 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-01-13 17:46:32,695 - INFO - VALIDACAO ETAPA 2: OK - Origem: 1, Destino: 1
+2026-01-13 17:46:34,418 - INFO - ================================================================================
+2026-01-13 17:46:34,419 - INFO - ETAPA 3: Migrando store_brands
+2026-01-13 17:46:34,419 - INFO - Ambiente: HML | Schema: gmcore | Limite: TODOS
+2026-01-13 17:46:34,419 - INFO - ================================================================================
+2026-01-13 17:46:34,419 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-01-13 17:46:34,419 - INFO - [ETAPA 3] Carregados 1 IdBandeira do arquivo de filtros do contracts
+2026-01-13 17:46:35,755 - INFO - Tabela gmcore.store_brands: 1 registros deletados (de 1 legacy_ids fornecidos)
+2026-01-13 17:46:37,547 - WARNING - Store segment não encontrado para 1 Bandeiras. Usando padrão: b7cfe918-add3-466c-a5fb-8ef7cb4027cd
+2026-01-13 17:46:38,745 - INFO - [ETAPA 3] Chunk 1 processado: 1/1 registros inseridos
+2026-01-13 17:46:38,983 - INFO - ETAPA 3 concluida: 1 registros
+2026-01-13 17:46:38,984 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-01-13 17:46:40,101 - INFO - VALIDACAO ETAPA 3: OK - Origem: 1, Destino: 1
+2026-01-13 17:46:41,716 - INFO - ================================================================================
+2026-01-13 17:46:41,717 - INFO - ETAPA 4: Migrando stores
+2026-01-13 17:46:41,717 - INFO - Ambiente: HML | Schema: gmcore | Limite: TODOS
+2026-01-13 17:46:41,717 - INFO - ================================================================================
+2026-01-13 17:46:41,717 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-01-13 17:46:41,717 - INFO - [ETAPA 4] Carregados 1 IdEstabelecimento do arquivo de filtros do contracts
+2026-01-13 17:46:43,031 - INFO - Tabela gmcore.stores: 1 registros deletados (de 1 legacy_ids fornecidos)
+2026-01-13 17:46:46,994 - INFO - [ETAPA 4] Chunk 1 processado: 1/1 registros inseridos
+2026-01-13 17:46:47,235 - INFO - ETAPA 4 concluida: 1 registros
+2026-01-13 17:46:47,235 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-01-13 17:46:48,401 - INFO - VALIDACAO ETAPA 4: OK - Origem: 1, Destino: 1
+2026-01-13 17:46:49,610 - INFO - ================================================================================
+2026-01-13 17:46:49,610 - INFO - INICIANDO MIGRACAO COMPLETA
+2026-01-13 17:46:49,610 - INFO - ================================================================================
+2026-01-13 17:46:49,610 - INFO - Data/Hora: 2026-01-13 17:46:49.610484
+2026-01-13 17:46:49,611 - INFO - Ambiente Destino: HML
+2026-01-13 17:46:49,611 - INFO - Schema Destino: gmcommercial
+2026-01-13 17:46:49,611 - INFO - Limite de Linhas: TODOS
+2026-01-13 17:46:49,611 - INFO - Tamanho do Chunk: 20000
+2026-01-13 17:46:49,611 - INFO - Origem: SQL Server PRD (Database: FINANCEIRO)
+2026-01-13 17:46:49,611 - INFO - Destino: PostgreSQL HML (Schema: gmcommercial)
+2026-01-13 17:46:49,611 - INFO - ================================================================================
+2026-01-13 17:46:49,612 - INFO - ================================================================================
+2026-01-13 17:46:49,612 - INFO - ETAPA 1: Migrando contracts
+2026-01-13 17:46:49,612 - INFO - Ambiente: HML | Schema: gmcommercial | Limite: TODOS
+2026-01-13 17:46:49,612 - INFO - ================================================================================
+2026-01-13 17:46:53,101 - INFO - Tabela gmcommercial.contracts truncada com sucesso
+2026-01-13 17:46:53,101 - INFO - Filtros aplicados: IdOrcamento=[6192], DataAvisoPrevio_min=2025-01-01, DataInicioOperacao_max=2026-01-13, limit_rows=0, clear_data=True
+2026-01-13 17:46:54,388 - INFO - [ETAPA 1] Chunk 1 processado: 1/1 registros inseridos
+2026-01-13 17:46:54,622 - INFO - [ETAPA 1] CONCLUIDA! Total inseridos: 1, Processados: 1, Erros: 0
+2026-01-13 17:46:54,623 - INFO - Arquivo de filtros salvo: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:46:54,623 - INFO - Total de IdOrcamento: 1
+2026-01-13 17:46:55,566 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:46:55,799 - INFO - VALIDACAO ETAPA 1: OK - Origem: 1, Destino: 1
+2026-01-13 17:46:55,799 - INFO - ================================================================================
+2026-01-13 17:46:55,799 - INFO - ETAPA 2: Migrando contract_scenarios
+2026-01-13 17:46:55,799 - INFO - Ambiente: HML | Schema: gmcommercial | Limite: TODOS
+2026-01-13 17:46:55,799 - INFO - ================================================================================
+2026-01-13 17:47:06,066 - INFO - Carregados 40960 stores para mapeamento
+2026-01-13 17:47:06,067 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:47:06,067 - INFO - [ETAPA 2] Carregados 1 IdOrcamento do arquivo de filtros
+2026-01-13 17:47:07,300 - INFO - Tabela gmcommercial.contract_scenarios truncada com sucesso
+2026-01-13 17:47:09,059 - INFO - [ETAPA 2] Chunk 1 processado: 612/612 registros inseridos
+2026-01-13 17:47:09,425 - INFO - [ETAPA 2] 428 UUIDs mapeados no scenario_id_map
+2026-01-13 17:47:09,426 - INFO - [ETAPA 2] CONCLUIDA! Total: 612
+2026-01-13 17:47:09,426 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:47:10,582 - INFO - VALIDACAO ETAPA 2: OK - Origem: 612, Destino: 612
+2026-01-13 17:47:10,582 - INFO - ================================================================================
+2026-01-13 17:47:10,583 - INFO - ETAPA 3: Migrando contract_scenario_stores
+2026-01-13 17:47:10,583 - INFO - Ambiente: HML | Schema: gmcommercial | Limite: TODOS
+2026-01-13 17:47:10,583 - INFO - ================================================================================
+2026-01-13 17:47:11,799 - INFO - Carregados 428 scenarios para mapeamento
+2026-01-13 17:47:13,839 - INFO - Carregados 40960 stores para mapeamento
+2026-01-13 17:47:16,198 - INFO - Tabela gmcommercial.contract_scenario_stores truncada com sucesso
+2026-01-13 17:47:23,018 - WARNING - Scenario nao encontrado para 260042 IdOrcamentoLoja(s): [2287, 2288, 2289, 2290, 2291, 2292, 2293, 2294, 2295, 2296]...
+2026-01-13 17:47:24,661 - INFO - [ETAPA 3] Chunk 1 processado: 612/612 registros inseridos
+2026-01-13 17:47:24,661 - INFO - [ETAPA 3] CONCLUIDA! Total: 612
+2026-01-13 17:47:24,662 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:47:25,803 - INFO - VALIDACAO ETAPA 3: OK - Origem: 612, Destino: 612
+2026-01-13 17:47:25,834 - INFO - ================================================================================
+2026-01-13 17:47:25,834 - INFO - ETAPA 4: Migrando contract_sellers
+2026-01-13 17:47:25,834 - INFO - Ambiente: HML | Schema: gmcommercial | Limite: TODOS
+2026-01-13 17:47:25,834 - INFO - ================================================================================
+2026-01-13 17:47:27,139 - INFO - Carregados 305 users para mapeamento
+2026-01-13 17:47:28,376 - INFO - Tabela gmcommercial.contract_sellers truncada com sucesso
+2026-01-13 17:47:28,378 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:47:28,378 - INFO - [ETAPA 4] Carregados 1 IdOrcamento do arquivo de filtros
+2026-01-13 17:47:30,469 - INFO - [ETAPA 4] Chunk 1 processado: 4095/4095 registros inseridos
+2026-01-13 17:47:30,469 - INFO - [ETAPA 4] CONCLUIDA! Total: 4095
+2026-01-13 17:47:30,469 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:47:31,598 - INFO - VALIDACAO ETAPA 4: OK - Origem: 4095, Destino: 4095
+2026-01-13 17:47:31,600 - INFO - ================================================================================
+2026-01-13 17:47:31,600 - INFO - ETAPA 5: Migrando contract_team_members
+2026-01-13 17:47:31,601 - INFO - Ambiente: HML | Schema: gmcommercial | Limite: TODOS
+2026-01-13 17:47:31,601 - INFO - ================================================================================
+2026-01-13 17:47:32,911 - INFO - Carregados 305 users para mapeamento
+2026-01-13 17:47:32,911 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:47:32,912 - INFO - [ETAPA 5] Carregados 1 IdOrcamento do arquivo de filtros
+2026-01-13 17:47:34,123 - INFO - Tabela gmcommercial.contract_team_members: 0 registros deletados
+2026-01-13 17:47:35,566 - INFO - [ETAPA 5] Chunk 1 processado: 1/1 registros inseridos
+2026-01-13 17:47:35,566 - INFO - [ETAPA 5] CONCLUIDA! Total: 1
+2026-01-13 17:47:35,567 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:47:36,712 - INFO - VALIDACAO ETAPA 5: OK - Origem: 1, Destino: 1
+2026-01-13 17:47:36,713 - INFO - ================================================================================
+2026-01-13 17:47:36,715 - INFO - ETAPA 6: Migrando contract_contacts
+2026-01-13 17:47:36,715 - INFO - Ambiente: HML | Schema: gmcommercial | Limite: TODOS
+2026-01-13 17:47:36,715 - INFO - ================================================================================
+2026-01-13 17:47:36,715 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:47:36,715 - INFO - [ETAPA 6] Carregados 1 IdOrcamento do arquivo de filtros
+2026-01-13 17:47:37,922 - INFO - Tabela gmcommercial.contract_contacts: 0 registros deletados
+2026-01-13 17:47:39,339 - INFO - [ETAPA 6] Chunk 1 processado: 1/1 registros inseridos
+2026-01-13 17:47:39,339 - INFO - [ETAPA 6] CONCLUIDA! Total: 1
+2026-01-13 17:47:39,340 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:47:40,472 - INFO - VALIDACAO ETAPA 6: OK - Origem: 1, Destino: 1
+2026-01-13 17:47:40,472 - INFO - ================================================================================
+2026-01-13 17:47:40,472 - INFO - ETAPA 7: Migrando contract_partners
+2026-01-13 17:47:40,472 - INFO - Ambiente: HML | Schema: gmcommercial | Limite: TODOS
+2026-01-13 17:47:40,472 - INFO - ================================================================================
+2026-01-13 17:47:41,538 - INFO - Carregados 0 persons para mapeamento
+2026-01-13 17:47:41,538 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:47:41,538 - INFO - [ETAPA 7] Carregados 1 IdOrcamento do arquivo de filtros
+2026-01-13 17:47:42,745 - INFO - Tabela gmcommercial.contract_partners: 0 registros deletados
+2026-01-13 17:47:43,931 - INFO - [ETAPA 7] CONCLUIDA! Total: 0
+2026-01-13 17:47:43,932 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:47:45,145 - INFO - VALIDACAO ETAPA 7: OK - Origem: 0, Destino: 0
+2026-01-13 17:47:45,146 - INFO - ================================================================================
+2026-01-13 17:47:45,146 - INFO - ETAPA 8: Migrando contract_additional_charges
+2026-01-13 17:47:45,146 - INFO - Ambiente: HML | Schema: gmcommercial | Limite: TODOS
+2026-01-13 17:47:45,146 - INFO - ================================================================================
+2026-01-13 17:47:45,147 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:47:45,147 - INFO - [ETAPA 8] Carregados 1 IdOrcamento do arquivo de filtros
+2026-01-13 17:47:46,380 - INFO - Tabela gmcommercial.contract_additional_charges: 0 registros deletados
+2026-01-13 17:47:47,270 - INFO - [ETAPA 8] CONCLUIDA! Total: 0
+2026-01-13 17:47:47,271 - INFO - Arquivo de filtros carregado: c:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-01-13 17:47:48,432 - INFO - VALIDACAO ETAPA 8: OK - Origem: 0, Destino: 0
+2026-01-13 17:47:48,432 - INFO - ================================================================================
+2026-01-13 17:47:48,432 - INFO - MIGRACAO CONCLUIDA COM SUCESSO!
+2026-01-13 17:47:48,432 - INFO - ================================================================================
+2026-01-13 17:47:48,433 - INFO - Duracao: 0:00:58.821093
+2026-01-13 17:47:48,433 - INFO - Contracts: 1
+2026-01-13 17:47:48,433 - INFO - Contract Scenarios: 612
+2026-01-13 17:47:48,433 - INFO - Contract Scenario Stores: 612
+2026-01-13 17:47:48,433 - INFO - Contract Sellers: 4095
+2026-01-13 17:47:48,433 - INFO - Contract Team Members: 1
+2026-01-13 17:47:48,433 - INFO - Contract Contacts: 1
+2026-01-13 17:47:48,433 - INFO - Contract Partners: 0
+2026-01-13 17:47:48,433 - INFO - Contract Additional Charges: 0
+2026-01-13 17:47:48,433 - INFO - Erros: 0

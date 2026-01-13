@@ -12,8 +12,12 @@ import os
 import uuid
 import logging
 import re
+import json
+import pandas as pd
+import numpy as np
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
+from psycopg2.extras import execute_values
 
 # Adicionar diretório utils ao path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
@@ -69,13 +73,13 @@ except Exception:
     pass
 
 # Tamanho do chunk para processamento
-CHUNK_SIZE = 1000
+CHUNK_SIZE = 20000
 
 
 class StoresMigration:
     """Classe para executar a migração de dados de stores"""
     
-    def __init__(self, limit_rows=0):
+    def __init__(self, limit_rows=0, id_orcamento_filter=None):
         self.stats = {
             'store_segments': 0,
             'retail_chains': 0,
@@ -91,11 +95,46 @@ class StoresMigration:
         self.store_brand_id_map = {}    # Map: legado_id -> uuid
         self.store_id_map = {}          # Map: legado_id -> uuid
         self.limit_rows = limit_rows     # 0 = todos, > 0 = limitar quantidade
+        self.id_orcamento_filter = id_orcamento_filter  # Lista de IdOrcamento para filtrar
+        
+        # Caminho do arquivo JSON de filtros do contracts
+        contracts_dir = os.path.join(os.path.dirname(__file__), '..', 'contracts')
+        self.filter_json_path = os.path.join(contracts_dir, 'contracts_filter_main.json')
     
     def should_include_legacy_id(self):
         """Retorna True se deve incluir legacy_id (apenas em HML)"""
         destino = DatabaseConnection.get_destino()
         return destino == 'HML'
+    
+    def load_filter_json(self) -> Optional[Dict]:
+        """
+        Carrega arquivo JSON com filtros e IDs agregados do contracts
+        
+        Returns:
+            Dicionário com dados do JSON ou None se arquivo não existir
+        """
+        try:
+            if os.path.exists(self.filter_json_path):
+                with open(self.filter_json_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                logger.info(f"Arquivo de filtros carregado: {self.filter_json_path}")
+                return data
+            else:
+                logger.info(f"Arquivo de filtros não encontrado: {self.filter_json_path} (buscando diretamente da ViewOrcamentosLojas)")
+                return None
+        except Exception as e:
+            logger.error(f"Erro ao carregar arquivo de filtros: {e}")
+            return None
+    
+    def _get_filter_ids_for_validation(self):
+        """
+        Retorna os IDs filtrados para validação (do JSON ou ViewOrcamentosLojas)
+        Retorna: dict com IdEstabelecimento, IdBandeira, IdRede, etc.
+        """
+        filter_data = self.load_filter_json()
+        if filter_data and 'aggregated_ids' in filter_data:
+            return filter_data['aggregated_ids']
+        return {}
     
     def _get_or_create_default_store_brand(self, schema: str, include_legacy: bool):
         """Obtém ou cria um store_brand padrão chamado 'Teste store_brands'"""
@@ -198,6 +237,72 @@ class StoresMigration:
             return None
         return cleaned
     
+    # ========================================================================
+    # MÉTODOS VETORIZADOS COM PANDAS
+    # ========================================================================
+    
+    def clean_string_vectorized(self, series: pd.Series, max_length: Optional[int] = None) -> pd.Series:
+        """Limpa e trunca strings de forma vetorizada"""
+        # Converter para string (mantendo None como None)
+        cleaned = series.astype(str)
+        # Substituir 'nan', 'None' por string vazia para processar
+        cleaned = cleaned.replace(['nan', 'None', 'NULL', 'NONE'], '')
+        # Remover espaços
+        cleaned = cleaned.str.strip()
+        # Substituir valores vazios, 'null', 'none' por None
+        cleaned = cleaned.replace(['', 'null', 'none'], None)
+        # Truncar se necessário
+        if max_length:
+            cleaned = cleaned.str[:max_length]
+        return cleaned
+    
+    def clean_cnpj_vectorized(self, series: pd.Series) -> pd.Series:
+        """Remove formatação de CNPJ de forma vetorizada"""
+        # Converter para string
+        cleaned = series.astype(str)
+        # Substituir 'nan', 'None' por string vazia para processar
+        cleaned = cleaned.replace(['nan', 'None', 'NULL', 'NONE'], '')
+        # Remover tudo que não é dígito
+        cleaned = cleaned.str.replace(r'[^\d]', '', regex=True)
+        # Substituir strings de zeros (qualquer tamanho) por None
+        cleaned = cleaned.apply(lambda x: None if x and x == '0' * len(x) else x)
+        # Substituir valores vazios por None
+        cleaned = cleaned.replace('', None)
+        return cleaned
+    
+    def process_dataframe(self, all_rows: List[Tuple], column_names: List[str], 
+                         transformations: Dict[str, callable] = None,
+                         map_lookups: Dict[str, Dict] = None) -> pd.DataFrame:
+        """
+        Processa dados usando DataFrame com operações vetorizadas
+        
+        Args:
+            all_rows: Lista de tuplas com os dados do SQL Server
+            column_names: Lista com nomes das colunas
+            transformations: Dict com funções de transformação por coluna
+            map_lookups: Dict com mapeamentos (legacy_id -> uuid) por coluna
+        
+        Returns:
+            DataFrame processado
+        """
+        # Criar DataFrame
+        df = pd.DataFrame.from_records(all_rows, columns=column_names)
+        
+        # Aplicar transformações se especificadas
+        if transformations:
+            for col, func in transformations.items():
+                if col in df.columns:
+                    df[col] = func(df[col])
+        
+        # Aplicar lookups de mapeamento
+        if map_lookups:
+            for col, mapping_dict in map_lookups.items():
+                if col in df.columns:
+                    # Criar série de lookup
+                    df[f'{col}_mapped'] = df[col].map(mapping_dict)
+        
+        return df
+    
     def truncate_table(self, table_name: str, schema: str = None):
         """Faz TRUNCATE em uma tabela (apenas para tabelas não polimórficas)"""
         if schema is None:
@@ -224,6 +329,78 @@ class StoresMigration:
                 conn.rollback()
                 conn.close()
             raise
+    
+    def delete_table_with_filter(self, table_name: str, legacy_ids: List[int], schema: str = None):
+        """
+        Faz DELETE em uma tabela filtrando por legacy_id
+        
+        Args:
+            table_name: Nome da tabela
+            legacy_ids: Lista de legacy_ids para deletar
+            schema: Schema (opcional, usa get_schema_atual() se None)
+        """
+        if schema is None:
+            schema = get_schema_atual()
+        
+        if not legacy_ids:
+            logger.info(f"Nenhum legacy_id fornecido para deletar de {schema}.{table_name}")
+            print(f"[INFO] Nenhum legacy_id fornecido para deletar de {schema}.{table_name}")
+            return
+        
+        conn = None
+        try:
+            conn = DatabaseConnection.get_postgresql_destino_connection()
+            cursor = conn.cursor()
+            
+            # Verificar se a coluna legacy_id existe
+            cursor.execute(f"""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_schema = '{schema}' 
+                AND table_name = '{table_name}' 
+                AND column_name = 'legacy_id'
+            """)
+            has_legacy_id = cursor.fetchone() is not None
+            
+            if not has_legacy_id:
+                logger.warning(f"Tabela {schema}.{table_name} não possui coluna legacy_id. Não é possível deletar por filtro.")
+                print(f"[AVISO] Tabela {schema}.{table_name} não possui coluna legacy_id. Pulando limpeza filtrada.")
+                cursor.close()
+                conn.close()
+                return
+            
+            # Deletar registros com legacy_id na lista
+            query = f"DELETE FROM {schema}.{table_name} WHERE legacy_id = ANY(%s)"
+            cursor.execute(query, (legacy_ids,))
+            deleted_count = cursor.rowcount
+            conn.commit()
+            
+            logger.info(f"Tabela {schema}.{table_name}: {deleted_count} registros deletados (de {len(legacy_ids)} legacy_ids fornecidos)")
+            print(f"OK - Tabela {schema}.{table_name}: {deleted_count} registros deletados")
+            
+            cursor.close()
+            conn.close()
+            
+        except Exception as e:
+            logger.error(f"Erro ao deletar registros da tabela {schema}.{table_name}: {e}")
+            if conn:
+                conn.rollback()
+                conn.close()
+            raise
+    
+    def clean_table(self, table_name: str, legacy_ids: List[int] = None, schema: str = None):
+        """
+        Limpa tabela usando TRUNCATE ou DELETE baseado em filtros
+        
+        Args:
+            table_name: Nome da tabela
+            legacy_ids: Lista de legacy_ids para filtrar (se None, usa TRUNCATE)
+            schema: Schema (opcional)
+        """
+        if legacy_ids:
+            self.delete_table_with_filter(table_name, legacy_ids, schema)
+        else:
+            self.truncate_table(table_name, schema)
     
     def delete_polymorphic_table(self, table_name: str, entity_type: str, type_column: str, schema: str = None):
         """
@@ -327,7 +504,7 @@ class StoresMigration:
         print("\n[ETAPA 1] Limpando tabela store_segments...")
         self.truncate_table('store_segments')
         
-        # Buscar dados do SQL Server
+        # Buscar TODOS os dados do SQL Server de uma vez
         print("[ETAPA 1] Buscando dados do SQL Server...")
         sql_query = """
         SELECT 
@@ -340,7 +517,6 @@ class StoresMigration:
         ORDER BY Id
         """
         
-        # Adicionar LIMIT se especificado
         if self.limit_rows > 0:
             sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
         
@@ -348,68 +524,105 @@ class StoresMigration:
         cursor_sql = conn_sql.cursor()
         cursor_sql.execute(sql_query)
         
-        # Processar em chunks
+        # Carregar TODOS os dados na memória de uma vez
+        print("[ETAPA 1] Carregando dados na memória...")
+        all_rows = cursor_sql.fetchall()
+        cursor_sql.close()
+        conn_sql.close()
+        
+        print(f"[ETAPA 1] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
+        
+        # Processar conversões em massa usando DataFrame (vetorizado)
+        include_legacy = self.should_include_legacy_id()
+        
+        # Criar DataFrame usando from_records que é mais adequado para dados de banco
+        df = pd.DataFrame.from_records(all_rows, columns=['Id', 'Nome', 'Ativo', 'DataInclusao', 'DataAlteracao'])
+        
+        # Aplicar transformações vetorizadas
+        df['legacy_id'] = df['Id']
+        df['nome'] = self.clean_string_vectorized(df['Nome'])
+        df['ativo'] = df['Ativo'].fillna(False).astype(bool)
+        df['data_inclusao'] = df['DataInclusao']
+        df['data_alteracao'] = df['DataAlteracao'].fillna(df['DataInclusao'])
+        
+        # Remover linhas com erros (nome None após limpeza)
+        df = df[df['nome'].notna()]
+        
+        # Converter DataFrame diretamente para lista de tuplas (otimizado)
+        if include_legacy:
+            processed_tuples = list(zip(
+                df['nome'].tolist(),
+                df['ativo'].tolist(),
+                df['data_inclusao'].tolist(),
+                df['data_alteracao'].tolist(),
+                df['legacy_id'].tolist()
+            ))
+            legacy_ids_list = df['legacy_id'].tolist()
+        else:
+            processed_tuples = list(zip(
+                df['nome'].tolist(),
+                df['ativo'].tolist(),
+                df['data_inclusao'].tolist(),
+                df['data_alteracao'].tolist()
+            ))
+            processed_data = df[['legacy_id', 'nome', 'ativo', 'data_inclusao', 'data_alteracao']].to_dict('records')
+        
+        print(f"[ETAPA 1] {len(processed_tuples)} registros processados. Inserindo no banco (otimizado com execute_values)...")
+        
+        # Conectar ao PostgreSQL
         conn_pg = DatabaseConnection.get_postgresql_destino_connection()
         cursor_pg = conn_pg.cursor()
         
+        # Query de insert usando gen_random_uuid() - formato para execute_values
+        if include_legacy:
+            insert_query = f"""
+            INSERT INTO {schema}.store_segments (
+                id, name, is_active, created_at, updated_at, legacy_id
+            ) VALUES %s
+            """
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s)"
+        else:
+            insert_query = f"""
+            INSERT INTO {schema}.store_segments (
+                id, name, is_active, created_at, updated_at
+            ) VALUES %s
+            """
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s)"
+        
         chunk_num = 0
         total_processed = 0
+        all_legacy_ids_inserted = []  # Para buscar UUIDs depois
         
         try:
-            while True:
-                rows = cursor_sql.fetchmany(CHUNK_SIZE)
-                if not rows:
-                    break
-                
+            for i in range(0, len(processed_tuples), CHUNK_SIZE):
+                chunk = processed_tuples[i:i + CHUNK_SIZE]
                 chunk_num += 1
-                print(f"[ETAPA 1] Processando chunk {chunk_num} ({len(rows)} registros)...")
                 
-                chunk_errors = 0
-                for row in rows:
+                if chunk:
                     try:
-                        segment_id = uuid.uuid4()
-                        legado_id = row[0]
-                        self.store_segment_id_map[legado_id] = segment_id
+                        # Usar execute_values() para inserção otimizada em bulk
+                        execute_values(
+                            cursor_pg,
+                            insert_query,
+                            chunk,
+                            template=insert_template,
+                            page_size=CHUNK_SIZE,
+                            fetch=False
+                        )
                         
-                        # Construir INSERT condicionalmente (legacy_id apenas em HML)
-                        include_legacy = self.should_include_legacy_id()
+                        # Coletar legacy_ids para lookup depois (se necessário)
                         if include_legacy:
-                            insert_query = f"""
-                            INSERT INTO {schema}.store_segments (
-                                id, name, is_active, created_at, updated_at, legacy_id
-                            ) VALUES (%s, %s, %s, %s, %s, %s)
-                            """
-                            cursor_pg.execute(insert_query, (
-                                str(segment_id),
-                                self.clean_string(row[1]),  # Nome
-                                row[2] if row[2] is not None else False,  # Ativo
-                                row[3],  # DataInclusao -> created_at
-                                row[4] if row[4] else row[3],  # DataAlteracao -> updated_at
-                                legado_id  # legacy_id
-                            ))
-                        else:
-                            insert_query = f"""
-                            INSERT INTO {schema}.store_segments (
-                                id, name, is_active, created_at, updated_at
-                            ) VALUES (%s, %s, %s, %s, %s)
-                            """
-                            cursor_pg.execute(insert_query, (
-                                str(segment_id),
-                                self.clean_string(row[1]),  # Nome
-                                row[2] if row[2] is not None else False,  # Ativo
-                                row[3],  # DataInclusao -> created_at
-                                row[4] if row[4] else row[3]  # DataAlteracao -> updated_at
-                            ))
+                            chunk_legacy_ids = [row[-1] for row in chunk]  # último elemento é legacy_id
+                            all_legacy_ids_inserted.extend(chunk_legacy_ids)
                         
-                        self.stats['store_segments'] += 1
-                        total_processed += 1
+                        total_processed += len(chunk)
+                        self.stats['store_segments'] += len(chunk)
                         
-                    except Exception as e:
-                        error_msg = f"Erro ao inserir store_segment Id={row[0]}: {e}"
+                    except Exception as batch_error:
+                        error_msg = f"Erro ao inserir batch de store_segments: {batch_error}"
                         logger.error(error_msg)
                         print(f"ERRO - {error_msg}")
                         self.stats['errors'].append(error_msg)
-                        chunk_errors += 1
                         try:
                             conn_pg.rollback()
                             cursor_pg = conn_pg.cursor()
@@ -417,20 +630,39 @@ class StoresMigration:
                             logger.error(f"Erro ao fazer rollback: {rollback_error}")
                         continue
                 
-                # Commit do chunk
                 try:
                     conn_pg.commit()
-                    print(f"[ETAPA 1] Chunk {chunk_num} processado: {total_processed} registros inseridos, {chunk_errors} erros")
-                    logger.info(f"[ETAPA 1] Chunk {chunk_num} processado: {total_processed} registros inseridos, {chunk_errors} erros")
+                    print(f"[ETAPA 1] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
+                    logger.info(f"[ETAPA 1] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
                 except Exception as commit_error:
                     logger.error(f"Erro no commit do chunk {chunk_num}: {commit_error}")
                     conn_pg.rollback()
                     cursor_pg = conn_pg.cursor()
             
+            # Buscar UUIDs gerados para mapeamento (uma única query após todas as inserções)
+            if include_legacy and all_legacy_ids_inserted:
+                print(f"[ETAPA 1] Buscando UUIDs gerados para {len(all_legacy_ids_inserted)} registros...")
+                cursor_pg.execute(f"""
+                    SELECT id, legacy_id 
+                    FROM {schema}.store_segments 
+                    WHERE legacy_id = ANY(%s)
+                """, (all_legacy_ids_inserted,))
+                for uuid_row, leg_id in cursor_pg.fetchall():
+                    self.store_segment_id_map[leg_id] = uuid_row
+                print(f"[ETAPA 1] {len(self.store_segment_id_map)} UUIDs mapeados")
+            
+            # Se não tem legacy_id, buscar UUIDs por ordem
+            if not include_legacy:
+                cursor_pg.execute(f"SELECT id, created_at FROM {schema}.store_segments ORDER BY created_at")
+                uuid_rows = cursor_pg.fetchall()
+                for idx, (uuid_row, created_at) in enumerate(uuid_rows):
+                    if idx < len(processed_data):
+                        leg_id = processed_data[idx]['legacy_id']
+                        self.store_segment_id_map[leg_id] = uuid_row
+            
             print(f"\n[ETAPA 1] CONCLUIDA! Total de store_segments migrados: {self.stats['store_segments']}")
             logger.info(f"ETAPA 1 concluida: {self.stats['store_segments']} registros")
             
-            # Validação e relatório de qualidade
             self.validate_step1_store_segments()
             
         except Exception as e:
@@ -438,10 +670,16 @@ class StoresMigration:
             logger.error(f"Erro na ETAPA 1: {e}")
             raise
         finally:
-            cursor_sql.close()
-            conn_sql.close()
-            cursor_pg.close()
-            conn_pg.close()
+            try:
+                if 'cursor_pg' in locals() and cursor_pg:
+                    cursor_pg.close()
+            except:
+                pass
+            try:
+                if 'conn_pg' in locals() and conn_pg:
+                    conn_pg.close()
+            except:
+                pass
     
     # ========================================================================
     # ETAPA 2: RETAIL_CHAINS
@@ -454,23 +692,37 @@ class StoresMigration:
         print("-"*80)
         
         try:
-            # Contar origem (aplicando limite se especificado)
+            # Carregar filtros do contracts ou buscar da ViewOrcamentosLojas
+            filter_ids = self._get_filter_ids_for_validation()
+            id_rede_list = filter_ids.get('IdRede', [])
+            
+            # Contar origem aplicando os mesmos filtros
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
-            if self.limit_rows > 0:
-                cursor_sql.execute(f"SELECT COUNT(*) FROM (SELECT TOP {self.limit_rows} Id FROM Rede ORDER BY Id) AS limited")
+            
+            if id_rede_list:
+                # Aplicar filtro de IdRede do JSON
+                placeholders = ','.join(['?' for _ in id_rede_list])
+                cursor_sql.execute(f"SELECT COUNT(*) FROM Rede WHERE Id IN ({placeholders})", id_rede_list)
             else:
-                cursor_sql.execute("SELECT COUNT(*) FROM Rede")
+                # Buscar diretamente da ViewOrcamentosLojas (mesmo em full load)
+                cursor_sql.execute("SELECT COUNT(DISTINCT IdRede) FROM ViewOrcamentosLojas WHERE IdRede IS NOT NULL")
             origem_count = cursor_sql.fetchone()[0]
             cursor_sql.close()
             conn_sql.close()
             
-            # Contar destino
+            # Contar destino aplicando os mesmos filtros
             schema = get_schema_atual()
             destino_nome = DatabaseConnection.get_destino()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.retail_chains")
+            
+            if id_rede_list:
+                # Contar apenas os retail_chains migrados nesta execução
+                cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.retail_chains WHERE legacy_id = ANY(%s)", (id_rede_list,))
+            else:
+                # Contar todos (fallback)
+                cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.retail_chains")
             destino_count = cursor_pg.fetchone()[0]
             cursor_pg.close()
             conn_pg.close()
@@ -510,96 +762,208 @@ class StoresMigration:
         logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
-        # Truncate
-        print("\n[ETAPA 2] Limpando tabela retail_chains...")
-        self.truncate_table('retail_chains')
+        # Carregar filtros do contracts (se existir)
+        filter_data = self.load_filter_json()
+        id_rede_filter_list = []
         
-        # Buscar dados do SQL Server
+        if filter_data and 'aggregated_ids' in filter_data:
+            id_rede_filter_list = filter_data['aggregated_ids'].get('IdRede', [])
+            logger.info(f"[ETAPA 2] Carregados {len(id_rede_filter_list)} IdRede do arquivo de filtros do contracts")
+            print(f"[ETAPA 2] Carregados {len(id_rede_filter_list)} IdRede do arquivo de filtros do contracts")
+        else:
+            # Se não há JSON, buscar diretamente da ViewOrcamentosLojas
+            print("[ETAPA 2] Arquivo de filtros do contracts não encontrado. Buscando IdRede da ViewOrcamentosLojas...")
+            logger.info("[ETAPA 2] Arquivo de filtros do contracts não encontrado. Buscando IdRede da ViewOrcamentosLojas...")
+            conn_sql_view = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql_view = conn_sql_view.cursor()
+            
+            # Se há filtro de IdOrcamento, aplicar na query
+            if self.id_orcamento_filter:
+                placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
+                query = f"SELECT DISTINCT IdRede FROM ViewOrcamentosLojas WHERE IdRede IS NOT NULL AND IdOrcamento IN ({placeholders})"
+                cursor_sql_view.execute(query, self.id_orcamento_filter)
+                print(f"[ETAPA 2] Aplicando filtro de IdOrcamento: {self.id_orcamento_filter}")
+                logger.info(f"[ETAPA 2] Aplicando filtro de IdOrcamento: {self.id_orcamento_filter}")
+            else:
+                cursor_sql_view.execute("SELECT DISTINCT IdRede FROM ViewOrcamentosLojas WHERE IdRede IS NOT NULL")
+            
+            id_rede_filter_list = [row[0] for row in cursor_sql_view.fetchall()]
+            cursor_sql_view.close()
+            conn_sql_view.close()
+            print(f"[ETAPA 2] Carregados {len(id_rede_filter_list)} IdRede da ViewOrcamentosLojas")
+            logger.info(f"[ETAPA 2] Carregados {len(id_rede_filter_list)} IdRede da ViewOrcamentosLojas")
+        
+        # Limpar tabela (TRUNCATE ou DELETE baseado em filtros)
+        if not id_rede_filter_list:
+            # Se não há filtros, usar TRUNCATE (caso raro)
+            print("\n[ETAPA 2] Limpando tabela retail_chains (sem filtros)...")
+            self.truncate_table('retail_chains')
+        else:
+            # Sempre há filtro (ViewOrcamentosLojas), então usar DELETE
+            print("\n[ETAPA 2] Limpando registros filtrados da tabela retail_chains...")
+            self.delete_table_with_filter('retail_chains', legacy_ids=id_rede_filter_list)
+        
+        # Buscar dados do SQL Server aplicando filtro de IdRede
         print("[ETAPA 2] Buscando dados do SQL Server...")
-        sql_query = """
-        SELECT 
-            Id,
-            Nome,
-            Codigo,
-            Ativo,
-            DataInclusao,
-            DataAlteracao
-        FROM Rede
-        ORDER BY Id
-        """
+        query_params = []
         
-        # Adicionar LIMIT se especificado
-        if self.limit_rows > 0:
-            sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
+        if id_rede_filter_list:
+            # Aplicar filtro de IdRede do JSON ou ViewOrcamentosLojas
+            placeholders = ','.join(['?' for _ in id_rede_filter_list])
+            sql_query = f"""
+            SELECT 
+                Id,
+                Nome,
+                Codigo,
+                Ativo,
+                DataInclusao,
+                DataAlteracao
+            FROM Rede
+            WHERE Id IN ({placeholders})
+            ORDER BY Id
+            """
+            query_params.extend(id_rede_filter_list)
+        elif self.limit_rows > 0:
+            sql_query = f"""
+            SELECT 
+                Id,
+                Nome,
+                Codigo,
+                Ativo,
+                DataInclusao,
+                DataAlteracao
+            FROM Rede
+            ORDER BY Id
+            OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY
+            """
+        else:
+            # Sem filtros e sem limite: buscar apenas da ViewOrcamentosLojas (mesmo em full load)
+            sql_query = """
+            SELECT 
+                r.Id,
+                r.Nome,
+                r.Codigo,
+                r.Ativo,
+                r.DataInclusao,
+                r.DataAlteracao
+            FROM Rede r
+            WHERE r.Id IN (
+                SELECT DISTINCT IdRede 
+                FROM ViewOrcamentosLojas
+                WHERE IdRede IS NOT NULL
+            )
+            ORDER BY r.Id
+            """
         
         conn_sql = DatabaseConnection.get_sql_server_prd_connection()
         cursor_sql = conn_sql.cursor()
-        cursor_sql.execute(sql_query)
+        if query_params:
+            cursor_sql.execute(sql_query, query_params)
+        else:
+            cursor_sql.execute(sql_query)
         
-        # Processar em chunks
+        # Carregar TODOS os dados na memória de uma vez
+        print("[ETAPA 2] Carregando dados na memória...")
+        all_rows = cursor_sql.fetchall()
+        cursor_sql.close()
+        conn_sql.close()
+        
+        print(f"[ETAPA 2] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
+        
+        # Processar conversões em massa usando DataFrame (vetorizado)
+        include_legacy = self.should_include_legacy_id()
+        
+        # Criar DataFrame usando from_records que é mais adequado para dados de banco
+        df = pd.DataFrame.from_records(all_rows, columns=['Id', 'Nome', 'Codigo', 'Ativo', 'DataInclusao', 'DataAlteracao'])
+        
+        # Aplicar transformações vetorizadas
+        df['legacy_id'] = df['Id']
+        df['nome'] = self.clean_string_vectorized(df['Nome'])
+        df['codigo'] = df['Codigo'].astype(str).replace('nan', '')
+        df['ativo'] = df['Ativo'].fillna(False).astype(bool)
+        df['data_inclusao'] = df['DataInclusao']
+        df['data_alteracao'] = df['DataAlteracao'].fillna(df['DataInclusao'])
+        
+        # Remover linhas com erros (nome None após limpeza)
+        df = df[df['nome'].notna()]
+        
+        # Converter DataFrame diretamente para lista de tuplas (otimizado)
+        if include_legacy:
+            processed_tuples = list(zip(
+                df['nome'].tolist(),
+                df['codigo'].tolist(),
+                df['ativo'].tolist(),
+                df['data_inclusao'].tolist(),
+                df['data_alteracao'].tolist(),
+                df['legacy_id'].tolist()
+            ))
+            legacy_ids_list = df['legacy_id'].tolist()
+        else:
+            processed_tuples = list(zip(
+                df['nome'].tolist(),
+                df['codigo'].tolist(),
+                df['ativo'].tolist(),
+                df['data_inclusao'].tolist(),
+                df['data_alteracao'].tolist()
+            ))
+            processed_data = df[['legacy_id', 'nome', 'codigo', 'ativo', 'data_inclusao', 'data_alteracao']].to_dict('records')
+        
+        print(f"[ETAPA 2] {len(processed_tuples)} registros processados. Inserindo no banco (otimizado com execute_values)...")
+        
+        # Conectar ao PostgreSQL
         conn_pg = DatabaseConnection.get_postgresql_destino_connection()
         cursor_pg = conn_pg.cursor()
         
+        # Query de insert usando gen_random_uuid() - formato para execute_values
+        if include_legacy:
+            insert_query = f"""
+            INSERT INTO {schema}.retail_chains (
+                id, name, description, is_active, created_at, updated_at, legacy_id
+            ) VALUES %s
+            """
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s)"
+        else:
+            insert_query = f"""
+            INSERT INTO {schema}.retail_chains (
+                id, name, description, is_active, created_at, updated_at
+            ) VALUES %s
+            """
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s)"
+        
         chunk_num = 0
         total_processed = 0
+        all_legacy_ids_inserted = []  # Para buscar UUIDs depois
         
         try:
-            while True:
-                rows = cursor_sql.fetchmany(CHUNK_SIZE)
-                if not rows:
-                    break
-                
+            for i in range(0, len(processed_tuples), CHUNK_SIZE):
+                chunk = processed_tuples[i:i + CHUNK_SIZE]
                 chunk_num += 1
-                print(f"[ETAPA 2] Processando chunk {chunk_num} ({len(rows)} registros)...")
                 
-                chunk_errors = 0
-                for row in rows:
+                if chunk:
                     try:
-                        retail_chain_id = uuid.uuid4()
-                        legado_id = row[0]
-                        self.retail_chain_id_map[legado_id] = retail_chain_id
+                        # Usar execute_values() para inserção otimizada em bulk
+                        execute_values(
+                            cursor_pg,
+                            insert_query,
+                            chunk,
+                            template=insert_template,
+                            page_size=CHUNK_SIZE,
+                            fetch=False
+                        )
                         
-                        # Construir INSERT condicionalmente (legacy_id apenas em HML)
-                        include_legacy = self.should_include_legacy_id()
+                        # Coletar legacy_ids para lookup depois (se necessário)
                         if include_legacy:
-                            insert_query = f"""
-                            INSERT INTO {schema}.retail_chains (
-                                id, name, description, is_active, created_at, updated_at, legacy_id
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            """
-                            cursor_pg.execute(insert_query, (
-                                str(retail_chain_id),
-                                self.clean_string(row[1]),  # Nome -> name
-                                str(row[2]) if row[2] is not None else '',  # Codigo -> description (converter para string)
-                                row[3] if row[3] is not None else False,  # Ativo -> is_active
-                                row[4],  # DataInclusao -> created_at
-                                row[5] if row[5] else row[4],  # DataAlteracao -> updated_at
-                                legado_id  # legacy_id
-                            ))
-                        else:
-                            insert_query = f"""
-                            INSERT INTO {schema}.retail_chains (
-                                id, name, description, is_active, created_at, updated_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s)
-                            """
-                            cursor_pg.execute(insert_query, (
-                                str(retail_chain_id),
-                                self.clean_string(row[1]),  # Nome -> name
-                                str(row[2]) if row[2] is not None else '',  # Codigo -> description (converter para string)
-                                row[3] if row[3] is not None else False,  # Ativo -> is_active
-                                row[4],  # DataInclusao -> created_at
-                                row[5] if row[5] else row[4]  # DataAlteracao -> updated_at
-                            ))
+                            chunk_legacy_ids = [row[-1] for row in chunk]  # último elemento é legacy_id
+                            all_legacy_ids_inserted.extend(chunk_legacy_ids)
                         
-                        self.stats['retail_chains'] += 1
-                        total_processed += 1
+                        total_processed += len(chunk)
+                        self.stats['retail_chains'] += len(chunk)
                         
-                    except Exception as e:
-                        error_msg = f"Erro ao inserir retail_chain Id={row[0]}: {e}"
+                    except Exception as batch_error:
+                        error_msg = f"Erro ao inserir batch de retail_chains: {batch_error}"
                         logger.error(error_msg)
                         print(f"ERRO - {error_msg}")
                         self.stats['errors'].append(error_msg)
-                        chunk_errors += 1
                         try:
                             conn_pg.rollback()
                             cursor_pg = conn_pg.cursor()
@@ -610,12 +974,34 @@ class StoresMigration:
                 # Commit do chunk
                 try:
                     conn_pg.commit()
-                    print(f"[ETAPA 2] Chunk {chunk_num} processado: {total_processed} registros inseridos, {chunk_errors} erros")
-                    logger.info(f"[ETAPA 2] Chunk {chunk_num} processado: {total_processed} registros inseridos, {chunk_errors} erros")
+                    print(f"[ETAPA 2] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
+                    logger.info(f"[ETAPA 2] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
                 except Exception as commit_error:
                     logger.error(f"Erro no commit do chunk {chunk_num}: {commit_error}")
                     conn_pg.rollback()
                     cursor_pg = conn_pg.cursor()
+            
+            # Buscar UUIDs gerados para mapeamento (uma única query após todas as inserções)
+            if include_legacy and all_legacy_ids_inserted:
+                print(f"[ETAPA 2] Buscando UUIDs gerados para {len(all_legacy_ids_inserted)} registros...")
+                cursor_pg.execute(f"""
+                    SELECT id, legacy_id 
+                    FROM {schema}.retail_chains 
+                    WHERE legacy_id = ANY(%s)
+                """, (all_legacy_ids_inserted,))
+                for uuid_row, leg_id in cursor_pg.fetchall():
+                    self.retail_chain_id_map[leg_id] = uuid_row
+                print(f"[ETAPA 2] {len(self.retail_chain_id_map)} UUIDs mapeados")
+            
+            # Se não tem legacy_id, buscar todos os UUIDs gerados após inserção completa
+            if not include_legacy:
+                print("[ETAPA 2] Carregando mapeamento de UUIDs gerados...")
+                cursor_pg.execute(f"SELECT id, created_at FROM {schema}.retail_chains ORDER BY created_at")
+                uuid_rows = cursor_pg.fetchall()
+                for idx, (uuid_row, created_at) in enumerate(uuid_rows):
+                    if idx < len(processed_data):
+                        leg_id = processed_data[idx]['legacy_id']
+                        self.retail_chain_id_map[leg_id] = uuid_row
             
             print(f"\n[ETAPA 2] CONCLUIDA! Total de retail_chains migrados: {self.stats['retail_chains']}")
             logger.info(f"ETAPA 2 concluida: {self.stats['retail_chains']} registros")
@@ -628,10 +1014,16 @@ class StoresMigration:
             logger.error(f"Erro na ETAPA 2: {e}")
             raise
         finally:
-            cursor_sql.close()
-            conn_sql.close()
-            cursor_pg.close()
-            conn_pg.close()
+            try:
+                if 'cursor_pg' in locals() and cursor_pg:
+                    cursor_pg.close()
+            except:
+                pass
+            try:
+                if 'conn_pg' in locals() and conn_pg:
+                    conn_pg.close()
+            except:
+                pass
     
     # ========================================================================
     # ETAPA 3: STORE_BRANDS
@@ -644,23 +1036,37 @@ class StoresMigration:
         print("-"*80)
         
         try:
-            # Contar origem (aplicando limite se especificado)
+            # Carregar filtros do contracts ou buscar da ViewOrcamentosLojas
+            filter_ids = self._get_filter_ids_for_validation()
+            id_bandeira_list = filter_ids.get('IdBandeira', [])
+            
+            # Contar origem aplicando os mesmos filtros
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
-            if self.limit_rows > 0:
-                cursor_sql.execute(f"SELECT COUNT(*) FROM (SELECT TOP {self.limit_rows} Id FROM Bandeira ORDER BY Id) AS limited")
+            
+            if id_bandeira_list:
+                # Aplicar filtro de IdBandeira do JSON
+                placeholders = ','.join(['?' for _ in id_bandeira_list])
+                cursor_sql.execute(f"SELECT COUNT(*) FROM Bandeira WHERE Id IN ({placeholders})", id_bandeira_list)
             else:
-                cursor_sql.execute("SELECT COUNT(*) FROM Bandeira")
+                # Buscar diretamente da ViewOrcamentosLojas (mesmo em full load)
+                cursor_sql.execute("SELECT COUNT(DISTINCT IdBandeira) FROM ViewOrcamentosLojas WHERE IdBandeira IS NOT NULL")
             origem_count = cursor_sql.fetchone()[0]
             cursor_sql.close()
             conn_sql.close()
             
-            # Contar destino
+            # Contar destino aplicando os mesmos filtros
             schema = get_schema_atual()
             destino_nome = DatabaseConnection.get_destino()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.store_brands")
+            
+            if id_bandeira_list:
+                # Contar apenas os store_brands migrados nesta execução
+                cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.store_brands WHERE legacy_id = ANY(%s)", (id_bandeira_list,))
+            else:
+                # Contar todos (fallback)
+                cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.store_brands")
             destino_count = cursor_pg.fetchone()[0]
             cursor_pg.close()
             conn_pg.close()
@@ -700,9 +1106,46 @@ class StoresMigration:
         logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
-        # Truncate
-        print("\n[ETAPA 3] Limpando tabela store_brands...")
-        self.truncate_table('store_brands')
+        # Carregar filtros do contracts (se existir)
+        filter_data = self.load_filter_json()
+        id_bandeira_filter_list = []
+        
+        if filter_data and 'aggregated_ids' in filter_data:
+            id_bandeira_filter_list = filter_data['aggregated_ids'].get('IdBandeira', [])
+            logger.info(f"[ETAPA 3] Carregados {len(id_bandeira_filter_list)} IdBandeira do arquivo de filtros do contracts")
+            print(f"[ETAPA 3] Carregados {len(id_bandeira_filter_list)} IdBandeira do arquivo de filtros do contracts")
+        else:
+            # Se não há JSON, buscar diretamente da ViewOrcamentosLojas
+            print("[ETAPA 3] Arquivo de filtros do contracts não encontrado. Buscando IdBandeira da ViewOrcamentosLojas...")
+            logger.info("[ETAPA 3] Arquivo de filtros do contracts não encontrado. Buscando IdBandeira da ViewOrcamentosLojas...")
+            conn_sql_view = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql_view = conn_sql_view.cursor()
+            
+            # Se há filtro de IdOrcamento, aplicar na query
+            if self.id_orcamento_filter:
+                placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
+                query = f"SELECT DISTINCT IdBandeira FROM ViewOrcamentosLojas WHERE IdBandeira IS NOT NULL AND IdOrcamento IN ({placeholders})"
+                cursor_sql_view.execute(query, self.id_orcamento_filter)
+                print(f"[ETAPA 3] Aplicando filtro de IdOrcamento: {self.id_orcamento_filter}")
+                logger.info(f"[ETAPA 3] Aplicando filtro de IdOrcamento: {self.id_orcamento_filter}")
+            else:
+                cursor_sql_view.execute("SELECT DISTINCT IdBandeira FROM ViewOrcamentosLojas WHERE IdBandeira IS NOT NULL")
+            
+            id_bandeira_filter_list = [row[0] for row in cursor_sql_view.fetchall()]
+            cursor_sql_view.close()
+            conn_sql_view.close()
+            print(f"[ETAPA 3] Carregados {len(id_bandeira_filter_list)} IdBandeira da ViewOrcamentosLojas")
+            logger.info(f"[ETAPA 3] Carregados {len(id_bandeira_filter_list)} IdBandeira da ViewOrcamentosLojas")
+        
+        # Limpar tabela (TRUNCATE ou DELETE baseado em filtros)
+        if not id_bandeira_filter_list:
+            # Se não há filtros, usar TRUNCATE (caso raro)
+            print("\n[ETAPA 3] Limpando tabela store_brands (sem filtros)...")
+            self.truncate_table('store_brands')
+        else:
+            # Sempre há filtro (ViewOrcamentosLojas), então usar DELETE
+            print("\n[ETAPA 3] Limpando registros filtrados da tabela store_brands...")
+            self.delete_table_with_filter('store_brands', legacy_ids=id_bandeira_filter_list)
         
         # Carregar mapeamentos necessários
         print("[ETAPA 3] Carregando mapeamentos de retail_chains e store_segments...")
@@ -736,137 +1179,233 @@ class StoresMigration:
         
         print(f"[ETAPA 3] {len(retail_chain_map)} retail_chains e {len(store_segment_map)} store_segments carregados")
         
-        # Buscar dados do SQL Server
-        print("[ETAPA 3] Buscando dados do SQL Server...")
-        sql_query = """
-        SELECT 
-            b.Id,
-            b.NomeFantasia,
-            b.Codigo,
-            b.IdRede,
-            b.Ativo,
-            b.DataInclusao,
-            b.DataAlteracao,
-            (SELECT TOP 1 IdCanalEstabelecimento 
-             FROM Estabelecimento 
-             WHERE IdBandeira = b.Id AND IdCanalEstabelecimento IS NOT NULL) AS IdCanalEstabelecimento
-        FROM Bandeira b
-        ORDER BY b.Id
-        """
+        # Pré-carregar mapeamento de IdCanalEstabelecimento por Bandeira (evita queries durante processamento)
+        print("[ETAPA 3] Pré-carregando mapeamento de IdCanalEstabelecimento por Bandeira...")
+        conn_sql_temp = DatabaseConnection.get_sql_server_prd_connection()
+        cursor_sql_temp = conn_sql_temp.cursor()
         
-        # Adicionar LIMIT se especificado
-        if self.limit_rows > 0:
-            sql_query = sql_query.replace("ORDER BY b.Id", f"ORDER BY b.Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
+        # Aplicar filtro de IdBandeira na query de mapeamento também
+        if id_bandeira_filter_list:
+            placeholders = ','.join(['?' for _ in id_bandeira_filter_list])
+            cursor_sql_temp.execute(f"""
+                SELECT IdBandeira, IdCanalEstabelecimento
+                FROM Estabelecimento
+                WHERE IdBandeira IS NOT NULL AND IdCanalEstabelecimento IS NOT NULL
+                  AND IdBandeira IN ({placeholders})
+                GROUP BY IdBandeira, IdCanalEstabelecimento
+                ORDER BY IdBandeira
+            """, id_bandeira_filter_list)
+        else:
+            cursor_sql_temp.execute("""
+                SELECT IdBandeira, IdCanalEstabelecimento
+                FROM Estabelecimento
+                WHERE IdBandeira IS NOT NULL AND IdCanalEstabelecimento IS NOT NULL
+                GROUP BY IdBandeira, IdCanalEstabelecimento
+                ORDER BY IdBandeira
+            """)
+        bandeira_canal_map = {}
+        for temp_row in cursor_sql_temp.fetchall():
+            bandeira_id, canal_id = temp_row
+            if bandeira_id not in bandeira_canal_map:
+                bandeira_canal_map[bandeira_id] = canal_id
+        cursor_sql_temp.close()
+        conn_sql_temp.close()
+        print(f"[ETAPA 3] {len(bandeira_canal_map)} mapeamentos de Bandeira->Canal carregados")
+        
+        # Obter store_segment padrão uma vez
+        default_store_segment_id = list(store_segment_map.values())[0] if store_segment_map else None
+        
+        # Buscar dados do SQL Server aplicando filtro de IdBandeira
+        print("[ETAPA 3] Buscando dados do SQL Server...")
+        query_params = []
+        
+        if id_bandeira_filter_list:
+            # Aplicar filtro de IdBandeira do JSON ou ViewOrcamentosLojas
+            placeholders = ','.join(['?' for _ in id_bandeira_filter_list])
+            sql_query = f"""
+            SELECT 
+                b.Id,
+                b.NomeFantasia,
+                b.Codigo,
+                b.IdRede,
+                b.Ativo,
+                b.DataInclusao,
+                b.DataAlteracao
+            FROM Bandeira b
+            WHERE b.Id IN ({placeholders})
+            ORDER BY b.Id
+            """
+            query_params.extend(id_bandeira_filter_list)
+        elif self.limit_rows > 0:
+            sql_query = f"""
+            SELECT 
+                b.Id,
+                b.NomeFantasia,
+                b.Codigo,
+                b.IdRede,
+                b.Ativo,
+                b.DataInclusao,
+                b.DataAlteracao
+            FROM Bandeira b
+            ORDER BY b.Id
+            OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY
+            """
+        else:
+            # Sem filtros e sem limite: buscar apenas da ViewOrcamentosLojas (mesmo em full load)
+            sql_query = """
+            SELECT 
+                b.Id,
+                b.NomeFantasia,
+                b.Codigo,
+                b.IdRede,
+                b.Ativo,
+                b.DataInclusao,
+                b.DataAlteracao
+            FROM Bandeira b
+            WHERE b.Id IN (
+                SELECT DISTINCT IdBandeira 
+                FROM ViewOrcamentosLojas
+                WHERE IdBandeira IS NOT NULL
+            )
+            ORDER BY b.Id
+            """
         
         conn_sql = DatabaseConnection.get_sql_server_prd_connection()
         cursor_sql = conn_sql.cursor()
-        cursor_sql.execute(sql_query)
+        if query_params:
+            cursor_sql.execute(sql_query, query_params)
+        else:
+            cursor_sql.execute(sql_query)
         
-        # Processar em chunks
+        # Carregar TODOS os dados na memória de uma vez
+        print("[ETAPA 3] Carregando dados na memória...")
+        all_rows = cursor_sql.fetchall()
+        cursor_sql.close()
+        conn_sql.close()
+        
+        print(f"[ETAPA 3] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
+        
+        # Processar conversões em massa usando DataFrame (vetorizado)
+        # Criar DataFrame usando from_records que é mais adequado para dados de banco
+        df = pd.DataFrame.from_records(all_rows, columns=['Id', 'NomeFantasia', 'Codigo', 'IdRede', 'Ativo', 'DataInclusao', 'DataAlteracao'])
+        
+        # Aplicar transformações vetorizadas
+        df['legacy_id'] = df['Id']
+        df['nome'] = self.clean_string_vectorized(df['NomeFantasia'])
+        
+        # Lookup retail_chain_id (vetorizado)
+        df['retail_chain_id'] = df['IdRede'].map(retail_chain_map)
+        
+        # Lookup store_segment_id (vetorizado)
+        df['canal_id'] = df['Id'].map(bandeira_canal_map)
+        df['store_segment_id'] = df['canal_id'].map(store_segment_map)
+        
+        # Preencher store_segment_id padrão onde está None
+        if default_store_segment_id:
+            mask_missing = df['store_segment_id'].isna()
+            df.loc[mask_missing, 'store_segment_id'] = default_store_segment_id
+            warnings_count = mask_missing.sum()
+            if warnings_count > 0:
+                logger.warning(f"Store segment não encontrado para {warnings_count} Bandeiras. Usando padrão: {default_store_segment_id}")
+        
+        # Outras transformações
+        df['abras_code'] = df['Codigo'].astype(str).replace('nan', 'empty')
+        df['ativo'] = df['Ativo'].fillna(False).astype(bool)
+        df['data_inclusao'] = df['DataInclusao']
+        df['data_alteracao'] = df['DataAlteracao'].fillna(df['DataInclusao'])
+        
+        # Converter retail_chain_id e store_segment_id para string
+        df['retail_chain_id'] = df['retail_chain_id'].astype(str)
+        df['store_segment_id'] = df['store_segment_id'].astype(str).replace('nan', None)
+        
+        # Remover linhas com erros (nome None ou retail_chain_id None)
+        df = df[df['nome'].notna() & df['retail_chain_id'].notna()]
+        
+        # Converter DataFrame diretamente para lista de tuplas (otimizado)
+        if include_legacy:
+            processed_tuples = list(zip(
+                df['nome'].tolist(),
+                df['abras_code'].tolist(),
+                df['retail_chain_id'].tolist(),
+                df['store_segment_id'].tolist(),
+                df['ativo'].tolist(),
+                df['data_inclusao'].tolist(),
+                df['data_alteracao'].tolist(),
+                df['legacy_id'].tolist()
+            ))
+            legacy_ids_list = df['legacy_id'].tolist()
+        else:
+            processed_tuples = list(zip(
+                df['nome'].tolist(),
+                df['abras_code'].tolist(),
+                df['retail_chain_id'].tolist(),
+                df['store_segment_id'].tolist(),
+                df['ativo'].tolist(),
+                df['data_inclusao'].tolist(),
+                df['data_alteracao'].tolist()
+            ))
+        
+        print(f"[ETAPA 3] {len(processed_tuples)} registros processados. Inserindo no banco (otimizado com execute_values)...")
+        
+        # Conectar ao PostgreSQL (recriar conexão se foi fechada anteriormente)
         conn_pg = DatabaseConnection.get_postgresql_destino_connection()
         cursor_pg = conn_pg.cursor()
         
+        # Query de insert usando gen_random_uuid() - formato para execute_values
+        # execute_values usa %s como placeholder único que será substituído pelos valores
+        if include_legacy:
+            insert_query = f"""
+            INSERT INTO {schema}.store_brands (
+                id, description, abras_code, retail_chain_id, store_segment_id,
+                is_active, created_at, updated_at, legacy_id
+            ) VALUES %s
+            """
+            # Template para execute_values com gen_random_uuid()
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s)"
+        else:
+            insert_query = f"""
+            INSERT INTO {schema}.store_brands (
+                id, description, abras_code, retail_chain_id, store_segment_id,
+                is_active, created_at, updated_at
+            ) VALUES %s
+            """
+            # Template para execute_values com gen_random_uuid()
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s)"
+        
         chunk_num = 0
         total_processed = 0
+        all_legacy_ids_inserted = []  # Para buscar UUIDs depois
         
         try:
-            while True:
-                rows = cursor_sql.fetchmany(CHUNK_SIZE)
-                if not rows:
-                    break
-                
+            for i in range(0, len(processed_tuples), CHUNK_SIZE):
+                chunk = processed_tuples[i:i + CHUNK_SIZE]
                 chunk_num += 1
-                print(f"[ETAPA 3] Processando chunk {chunk_num} ({len(rows)} registros)...")
                 
-                chunk_errors = 0
-                for row in rows:
+                if chunk:
                     try:
-                        bandeira_id = row[0]
-                        store_brand_id = uuid.uuid4()
-                        self.store_brand_id_map[bandeira_id] = store_brand_id
+                        # Usar execute_values() para inserção otimizada em bulk (muito mais rápido que executemany)
+                        execute_values(
+                            cursor_pg,
+                            insert_query,
+                            chunk,
+                            template=insert_template,
+                            page_size=CHUNK_SIZE,
+                            fetch=False
+                        )
                         
-                        # Lookup retail_chain_id
-                        retail_chain_id = retail_chain_map.get(row[3])  # IdRede
-                        if not retail_chain_id:
-                            raise ValueError(f"Retail chain não encontrado para IdRede={row[3]}")
-                        
-                        # Lookup store_segment_id
-                        # Buscar o IdCanalEstabelecimento mais comum para esta bandeira
-                        store_segment_id = None
-                        if row[7]:  # IdCanalEstabelecimento da subquery
-                            store_segment_id = store_segment_map.get(row[7])
-                        
-                        # Se não encontrou, buscar diretamente do Estabelecimento
-                        if not store_segment_id:
-                            cursor_sql_temp = conn_sql.cursor()
-                            cursor_sql_temp.execute("""
-                                SELECT TOP 1 IdCanalEstabelecimento 
-                                FROM Estabelecimento 
-                                WHERE IdBandeira = ? AND IdCanalEstabelecimento IS NOT NULL
-                                ORDER BY Id
-                            """, (bandeira_id,))
-                            temp_row = cursor_sql_temp.fetchone()
-                            cursor_sql_temp.close()
-                            if temp_row and temp_row[0]:
-                                store_segment_id = store_segment_map.get(temp_row[0])
-                        
-                        # Se ainda não encontrou, usar o primeiro store_segment disponível como padrão
-                        # (isso pode não ser ideal, mas evita erro de NOT NULL)
-                        if not store_segment_id and store_segment_map:
-                            # Usar o primeiro segmento disponível como padrão
-                            store_segment_id = list(store_segment_map.values())[0]
-                            logger.warning(f"Store segment não encontrado para Bandeira Id={bandeira_id}, usando padrão: {store_segment_id}")
-                        
-                        # abras_code: usar Codigo se disponível, senão "empty"
-                        abras_code = str(row[2]) if row[2] is not None else "empty"
-                        
-                        # Construir INSERT condicionalmente (legacy_id apenas em HML)
-                        include_legacy = self.should_include_legacy_id()
+                        # Coletar legacy_ids para lookup depois (se necessário)
                         if include_legacy:
-                            insert_query = f"""
-                            INSERT INTO {schema}.store_brands (
-                                id, description, abras_code, retail_chain_id, store_segment_id,
-                                is_active, created_at, updated_at, legacy_id
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            """
-                            cursor_pg.execute(insert_query, (
-                                str(store_brand_id),
-                                self.clean_string(row[1]),  # NomeFantasia -> description
-                                abras_code,  # abras_code (não pode ser nulo)
-                                str(retail_chain_id),  # retail_chain_id (lookup)
-                                str(store_segment_id) if store_segment_id else None,  # store_segment_id (lookup)
-                                row[4] if row[4] is not None else False,  # Ativo -> is_active
-                                row[5],  # DataInclusao -> created_at
-                                row[6] if row[6] else row[5],  # DataAlteracao -> updated_at
-                                bandeira_id  # legacy_id
-                            ))
-                        else:
-                            insert_query = f"""
-                            INSERT INTO {schema}.store_brands (
-                                id, description, abras_code, retail_chain_id, store_segment_id,
-                                is_active, created_at, updated_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                            """
-                            cursor_pg.execute(insert_query, (
-                                str(store_brand_id),
-                                self.clean_string(row[1]),  # NomeFantasia -> description
-                                abras_code,  # abras_code (não pode ser nulo)
-                                str(retail_chain_id),  # retail_chain_id (lookup)
-                                str(store_segment_id) if store_segment_id else None,  # store_segment_id (lookup)
-                                row[4] if row[4] is not None else False,  # Ativo -> is_active
-                                row[5],  # DataInclusao -> created_at
-                                row[6] if row[6] else row[5]  # DataAlteracao -> updated_at
-                            ))
+                            chunk_legacy_ids = [row[-1] for row in chunk]  # último elemento é legacy_id
+                            all_legacy_ids_inserted.extend(chunk_legacy_ids)
                         
-                        self.stats['store_brands'] += 1
-                        total_processed += 1
+                        total_processed += len(chunk)
+                        self.stats['store_brands'] += len(chunk)
                         
-                    except Exception as e:
-                        error_msg = f"Erro ao inserir store_brand Id={row[0]}: {e}"
+                    except Exception as batch_error:
+                        error_msg = f"Erro ao inserir batch de store_brands: {batch_error}"
                         logger.error(error_msg)
                         print(f"ERRO - {error_msg}")
                         self.stats['errors'].append(error_msg)
-                        chunk_errors += 1
                         try:
                             conn_pg.rollback()
                             cursor_pg = conn_pg.cursor()
@@ -874,20 +1413,41 @@ class StoresMigration:
                             logger.error(f"Erro ao fazer rollback: {rollback_error}")
                         continue
                 
-                # Commit do chunk
                 try:
                     conn_pg.commit()
-                    print(f"[ETAPA 3] Chunk {chunk_num} processado: {total_processed} registros inseridos, {chunk_errors} erros")
-                    logger.info(f"[ETAPA 3] Chunk {chunk_num} processado: {total_processed} registros inseridos, {chunk_errors} erros")
+                    print(f"[ETAPA 3] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
+                    logger.info(f"[ETAPA 3] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
                 except Exception as commit_error:
                     logger.error(f"Erro no commit do chunk {chunk_num}: {commit_error}")
                     conn_pg.rollback()
                     cursor_pg = conn_pg.cursor()
             
+            # Buscar UUIDs gerados para mapeamento (uma única query após todas as inserções)
+            if include_legacy and all_legacy_ids_inserted:
+                print(f"[ETAPA 3] Buscando UUIDs gerados para {len(all_legacy_ids_inserted)} registros...")
+                cursor_pg.execute(f"""
+                    SELECT id, legacy_id 
+                    FROM {schema}.store_brands 
+                    WHERE legacy_id = ANY(%s)
+                """, (all_legacy_ids_inserted,))
+                for uuid_row, leg_id in cursor_pg.fetchall():
+                    self.store_brand_id_map[leg_id] = uuid_row
+                print(f"[ETAPA 3] {len(self.store_brand_id_map)} UUIDs mapeados")
+            
+            # Se não tem legacy_id, buscar UUIDs por ordem (não ideal, mas necessário)
+            if not include_legacy:
+                # Manter processed_data como dict para mapeamento por ordem
+                processed_data = df[['legacy_id', 'nome', 'abras_code', 'retail_chain_id', 'store_segment_id', 'ativo', 'data_inclusao', 'data_alteracao']].to_dict('records')
+                cursor_pg.execute(f"SELECT id, created_at FROM {schema}.store_brands ORDER BY created_at")
+                uuid_rows = cursor_pg.fetchall()
+                for idx, (uuid_row, created_at) in enumerate(uuid_rows):
+                    if idx < len(processed_data):
+                        leg_id = processed_data[idx]['legacy_id']
+                        self.store_brand_id_map[leg_id] = uuid_row
+            
             print(f"\n[ETAPA 3] CONCLUIDA! Total de store_brands migrados: {self.stats['store_brands']}")
             logger.info(f"ETAPA 3 concluida: {self.stats['store_brands']} registros")
             
-            # Validação e relatório de qualidade
             self.validate_step3_store_brands()
             
         except Exception as e:
@@ -895,10 +1455,27 @@ class StoresMigration:
             logger.error(f"Erro na ETAPA 3: {e}")
             raise
         finally:
-            cursor_sql.close()
-            conn_sql.close()
-            cursor_pg.close()
-            conn_pg.close()
+            # Garantir que tudo está fechado
+            try:
+                if 'cursor_sql' in locals() and cursor_sql:
+                    cursor_sql.close()
+            except:
+                pass
+            try:
+                if 'conn_sql' in locals() and conn_sql:
+                    conn_sql.close()
+            except:
+                pass
+            try:
+                if 'cursor_pg' in locals() and cursor_pg:
+                    cursor_pg.close()
+            except:
+                pass
+            try:
+                if 'conn_pg' in locals() and conn_pg:
+                    conn_pg.close()
+            except:
+                pass
     
     # ========================================================================
     # ETAPA 4: STORES
@@ -911,23 +1488,37 @@ class StoresMigration:
         print("-"*80)
         
         try:
-            # Contar origem (aplicando limite se especificado)
+            # Carregar filtros do contracts ou buscar da ViewOrcamentosLojas
+            filter_ids = self._get_filter_ids_for_validation()
+            id_estabelecimento_list = filter_ids.get('IdEstabelecimento', [])
+            
+            # Contar origem aplicando os mesmos filtros
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
-            if self.limit_rows > 0:
-                cursor_sql.execute(f"SELECT COUNT(*) FROM (SELECT TOP {self.limit_rows} Id FROM Estabelecimento ORDER BY Id) AS limited")
+            
+            if id_estabelecimento_list:
+                # Aplicar filtro de IdEstabelecimento do JSON
+                placeholders = ','.join(['?' for _ in id_estabelecimento_list])
+                cursor_sql.execute(f"SELECT COUNT(*) FROM Estabelecimento WHERE Id IN ({placeholders})", id_estabelecimento_list)
             else:
-                cursor_sql.execute("SELECT COUNT(*) FROM Estabelecimento")
+                # Buscar diretamente da ViewOrcamentosLojas (mesmo em full load)
+                cursor_sql.execute("SELECT COUNT(DISTINCT IdEstabelecimento) FROM ViewOrcamentosLojas WHERE IdEstabelecimento IS NOT NULL")
             origem_count = cursor_sql.fetchone()[0]
             cursor_sql.close()
             conn_sql.close()
             
-            # Contar destino
+            # Contar destino aplicando os mesmos filtros
             schema = get_schema_atual()
             destino_nome = DatabaseConnection.get_destino()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.stores")
+            
+            if id_estabelecimento_list:
+                # Contar apenas os stores migrados nesta execução
+                cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.stores WHERE legacy_id = ANY(%s)", (id_estabelecimento_list,))
+            else:
+                # Contar todos (fallback)
+                cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.stores")
             destino_count = cursor_pg.fetchone()[0]
             cursor_pg.close()
             conn_pg.close()
@@ -967,9 +1558,48 @@ class StoresMigration:
         logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
-        # Truncate
-        print("\n[ETAPA 4] Limpando tabela stores...")
-        self.truncate_table('stores')
+        # Carregar filtros do contracts (se existir)
+        filter_data = self.load_filter_json()
+        id_estabelecimento_filter_list = []
+        
+        if filter_data and 'aggregated_ids' in filter_data:
+            id_estabelecimento_filter_list = filter_data['aggregated_ids'].get('IdEstabelecimento', [])
+            logger.info(f"[ETAPA 4] Carregados {len(id_estabelecimento_filter_list)} IdEstabelecimento do arquivo de filtros do contracts")
+            print(f"[ETAPA 4] Carregados {len(id_estabelecimento_filter_list)} IdEstabelecimento do arquivo de filtros do contracts")
+        else:
+            # Se não há JSON, buscar diretamente da ViewOrcamentosLojas
+            print("[ETAPA 4] Arquivo de filtros do contracts não encontrado. Buscando IdEstabelecimento da ViewOrcamentosLojas...")
+            logger.info("[ETAPA 4] Arquivo de filtros do contracts não encontrado. Buscando IdEstabelecimento da ViewOrcamentosLojas...")
+            conn_sql_view = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql_view = conn_sql_view.cursor()
+            
+            # Se há filtro de IdOrcamento, aplicar na query
+            if self.id_orcamento_filter:
+                placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
+                query = f"SELECT DISTINCT IdEstabelecimento FROM ViewOrcamentosLojas WHERE IdEstabelecimento IS NOT NULL AND IdOrcamento IN ({placeholders})"
+                cursor_sql_view.execute(query, self.id_orcamento_filter)
+                print(f"[ETAPA 4] Aplicando filtro de IdOrcamento: {self.id_orcamento_filter}")
+                logger.info(f"[ETAPA 4] Aplicando filtro de IdOrcamento: {self.id_orcamento_filter}")
+            else:
+                cursor_sql_view.execute("SELECT DISTINCT IdEstabelecimento FROM ViewOrcamentosLojas WHERE IdEstabelecimento IS NOT NULL")
+            
+            id_estabelecimento_filter_list = [row[0] for row in cursor_sql_view.fetchall()]
+            cursor_sql_view.close()
+            conn_sql_view.close()
+            print(f"[ETAPA 4] Carregados {len(id_estabelecimento_filter_list)} IdEstabelecimento da ViewOrcamentosLojas")
+            logger.info(f"[ETAPA 4] Carregados {len(id_estabelecimento_filter_list)} IdEstabelecimento da ViewOrcamentosLojas")
+        
+        # Limpar tabela (TRUNCATE ou DELETE baseado em filtros)
+        # ⚠️ ATENÇÃO: Stores sempre filtra pela ViewOrcamentosLojas, então sempre há filtro aplicado (mesmo em full load)
+        # Por isso, sempre usa DELETE, a menos que --clear-data seja usado
+        if not id_estabelecimento_filter_list:
+            # Se não há filtros, usar TRUNCATE (caso raro)
+            print("\n[ETAPA 4] Limpando tabela stores (sem filtros)...")
+            self.truncate_table('stores')
+        else:
+            # Sempre há filtro (ViewOrcamentosLojas), então usar DELETE
+            print("\n[ETAPA 4] Limpando registros filtrados da tabela stores...")
+            self.delete_table_with_filter('stores', legacy_ids=id_estabelecimento_filter_list)
         
         # Carregar mapeamento de store_brands
         print("[ETAPA 4] Carregando mapeamento de store_brands...")
@@ -977,10 +1607,11 @@ class StoresMigration:
         if include_legacy:
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.store_brands")
+            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.store_brands WHERE legacy_id IS NOT NULL")
             store_brand_map = {}
             for row in cursor_pg.fetchall():
-                store_brand_map[row[1]] = row[0]
+                if row[1] is not None:  # Garantir que legacy_id não é NULL
+                    store_brand_map[row[1]] = row[0]
             cursor_pg.close()
             conn_pg.close()
         else:
@@ -1008,10 +1639,27 @@ class StoresMigration:
             print(f"AVISO: Nenhum store_brand encontrado no mapeamento. Usando store_brand padrão 'Teste store_brands'.")
             logger.warning("Nenhum store_brand encontrado no mapeamento. Usando padrão.")
         
-        # Buscar dados do SQL Server
-        # Se houver limite, filtrar apenas estabelecimentos cujas bandeiras foram migradas
+        # Buscar dados do SQL Server aplicando filtro de IdEstabelecimento
         print("[ETAPA 4] Buscando dados do SQL Server...")
-        if self.limit_rows > 0:
+        query_params = []
+        
+        if id_estabelecimento_filter_list:
+            # Aplicar filtro de IdEstabelecimento do JSON ou ViewOrcamentosLojas
+            placeholders = ','.join(['?' for _ in id_estabelecimento_filter_list])
+            sql_query = f"""
+            SELECT 
+                Id,
+                NomeFantasia,
+                IdBandeira,
+                Ativo,
+                DataInclusao,
+                DataAlteracao
+            FROM Estabelecimento
+            WHERE Id IN ({placeholders})
+            ORDER BY Id
+            """
+            query_params.extend(id_estabelecimento_filter_list)
+        elif self.limit_rows > 0:
             if store_brand_map:
                 # Buscar apenas estabelecimentos cujas bandeiras foram migradas
                 bandeiras_ids = tuple(store_brand_map.keys())
@@ -1042,93 +1690,146 @@ class StoresMigration:
                 ORDER BY Id
                 """
         else:
+            # Sem filtros e sem limite: buscar apenas da ViewOrcamentosLojas (mesmo em full load)
             sql_query = """
             SELECT 
-                Id,
-                NomeFantasia,
-                IdBandeira,
-                Ativo,
-                DataInclusao,
-                DataAlteracao
-            FROM Estabelecimento
-            ORDER BY Id
+                e.Id,
+                e.NomeFantasia,
+                e.IdBandeira,
+                e.Ativo,
+                e.DataInclusao,
+                e.DataAlteracao
+            FROM Estabelecimento e
+            WHERE e.Id IN (
+                SELECT DISTINCT IdEstabelecimento 
+                FROM ViewOrcamentosLojas
+                WHERE IdEstabelecimento IS NOT NULL
+            )
+            ORDER BY e.Id
             """
         
         conn_sql = DatabaseConnection.get_sql_server_prd_connection()
         cursor_sql = conn_sql.cursor()
-        cursor_sql.execute(sql_query)
+        if query_params:
+            cursor_sql.execute(sql_query, query_params)
+        else:
+            cursor_sql.execute(sql_query)
         
-        # Processar em chunks
+        # Carregar TODOS os dados na memória de uma vez
+        print("[ETAPA 4] Carregando dados na memória...")
+        all_rows = cursor_sql.fetchall()
+        cursor_sql.close()
+        conn_sql.close()
+        
+        print(f"[ETAPA 4] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
+        
+        # Processar conversões em massa usando DataFrame (vetorizado)
+        # Criar DataFrame usando from_records que é mais adequado para dados de banco
+        df = pd.DataFrame.from_records(all_rows, columns=['Id', 'NomeFantasia', 'IdBandeira', 'Ativo', 'DataInclusao', 'DataAlteracao'])
+        
+        # Aplicar transformações vetorizadas
+        df['legacy_id'] = df['Id']
+        df['nome'] = self.clean_string_vectorized(df['NomeFantasia'], max_length=255)
+        
+        # Lookup store_brand_id (vetorizado)
+        df['store_brand_id'] = df['IdBandeira'].map(store_brand_map)
+        
+        # Preencher store_brand_id padrão onde está None
+        mask_missing = df['store_brand_id'].isna()
+        df.loc[mask_missing, 'store_brand_id'] = default_store_brand_id
+        warnings_count = mask_missing.sum()
+        if warnings_count > 0:
+            logger.warning(f"Store brand não encontrado para {warnings_count} IdBandeiras. Usando store_brand padrão 'Teste store_brands'")
+        
+        # Outras transformações
+        df['ativo'] = df['Ativo'].fillna(False).astype(bool)
+        df['data_inclusao'] = df['DataInclusao']
+        df['data_alteracao'] = df['DataAlteracao'].fillna(df['DataInclusao'])
+        
+        # Converter store_brand_id para string
+        df['store_brand_id'] = df['store_brand_id'].astype(str)
+        
+        # Remover linhas com erros (nome None)
+        df = df[df['nome'].notna()]
+        
+        # Converter DataFrame diretamente para lista de tuplas (otimizado)
+        if include_legacy:
+            processed_tuples = list(zip(
+                df['nome'].tolist(),
+                df['store_brand_id'].tolist(),
+                df['ativo'].tolist(),
+                df['data_inclusao'].tolist(),
+                df['data_alteracao'].tolist(),
+                df['legacy_id'].tolist()
+            ))
+            legacy_ids_list = df['legacy_id'].tolist()
+        else:
+            processed_tuples = list(zip(
+                df['nome'].tolist(),
+                df['store_brand_id'].tolist(),
+                df['ativo'].tolist(),
+                df['data_inclusao'].tolist(),
+                df['data_alteracao'].tolist()
+            ))
+            # Manter processed_data como dict para mapeamento por ordem quando não há legacy_id
+            processed_data = df[['legacy_id', 'nome', 'store_brand_id', 'ativo', 'data_inclusao', 'data_alteracao']].to_dict('records')
+        
+        print(f"[ETAPA 4] {len(processed_tuples)} registros processados. Inserindo no banco (otimizado com execute_values)...")
+        
+        # Conectar ao PostgreSQL
         conn_pg = DatabaseConnection.get_postgresql_destino_connection()
         cursor_pg = conn_pg.cursor()
         
+        # Query de insert usando gen_random_uuid() - formato para execute_values
+        if include_legacy:
+            insert_query = f"""
+            INSERT INTO {schema}.stores (
+                id, name, store_brand_id, is_active, created_at, updated_at, legacy_id
+            ) VALUES %s
+            """
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s)"
+        else:
+            insert_query = f"""
+            INSERT INTO {schema}.stores (
+                id, name, store_brand_id, is_active, created_at, updated_at
+            ) VALUES %s
+            """
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s)"
+        
         chunk_num = 0
         total_processed = 0
+        all_legacy_ids_inserted = []  # Para buscar UUIDs depois
         
         try:
-            while True:
-                rows = cursor_sql.fetchmany(CHUNK_SIZE)
-                if not rows:
-                    break
-                
+            for i in range(0, len(processed_tuples), CHUNK_SIZE):
+                chunk = processed_tuples[i:i + CHUNK_SIZE]
                 chunk_num += 1
-                print(f"[ETAPA 4] Processando chunk {chunk_num} ({len(rows)} registros)...")
-                logger.info(f"[ETAPA 4] Processando chunk {chunk_num} ({len(rows)} registros)...")
+                print(f"[ETAPA 4] Processando chunk {chunk_num} ({len(chunk)} registros)...")
                 
-                chunk_errors = 0
-                for row in rows:
+                if chunk:
                     try:
-                        store_id = uuid.uuid4()
-                        legado_id = row[0]
-                        self.store_id_map[legado_id] = store_id
+                        # Usar execute_values() para inserção otimizada em bulk
+                        execute_values(
+                            cursor_pg,
+                            insert_query,
+                            chunk,
+                            template=insert_template,
+                            page_size=CHUNK_SIZE,
+                            fetch=False
+                        )
                         
-                        # Lookup store_brand_id
-                        store_brand_id = store_brand_map.get(row[2])  # IdBandeira
-                        if not store_brand_id:
-                            # Usar store_brand padrão quando não encontrado
-                            logger.warning(f"Store brand não encontrado para IdBandeira={row[2]}. Usando store_brand padrão 'Teste store_brands'")
-                            store_brand_id = default_store_brand_id
-                        
-                        # Construir INSERT condicionalmente (legacy_id apenas em HML)
+                        # Coletar legacy_ids para lookup depois (se necessário)
                         if include_legacy:
-                            insert_query = f"""
-                            INSERT INTO {schema}.stores (
-                                id, name, store_brand_id, is_active, created_at, updated_at, legacy_id
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            """
-                            cursor_pg.execute(insert_query, (
-                                str(store_id),
-                                self.clean_string(row[1], 255),  # NomeFantasia -> name
-                                str(store_brand_id),  # store_brand_id (lookup)
-                                row[3] if row[3] is not None else False,  # Ativo -> is_active
-                                row[4],  # DataInclusao -> created_at
-                                row[5] if row[5] else row[4],  # DataAlteracao -> updated_at
-                                legado_id  # legacy_id
-                            ))
-                        else:
-                            insert_query = f"""
-                            INSERT INTO {schema}.stores (
-                                id, name, store_brand_id, is_active, created_at, updated_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s)
-                            """
-                            cursor_pg.execute(insert_query, (
-                                str(store_id),
-                                self.clean_string(row[1], 255),  # NomeFantasia -> name
-                                str(store_brand_id),  # store_brand_id (lookup)
-                                row[3] if row[3] is not None else False,  # Ativo -> is_active
-                                row[4],  # DataInclusao -> created_at
-                                row[5] if row[5] else row[4]  # DataAlteracao -> updated_at
-                            ))
+                            chunk_legacy_ids = [row[-1] for row in chunk]  # último elemento é legacy_id
+                            all_legacy_ids_inserted.extend(chunk_legacy_ids)
                         
-                        self.stats['stores'] += 1
-                        total_processed += 1
-                        
-                    except Exception as e:
-                        error_msg = f"Erro ao inserir store Id={row[0]}: {e}"
+                        total_processed += len(chunk)
+                        self.stats['stores'] += len(chunk)
+                    except Exception as batch_error:
+                        error_msg = f"Erro ao inserir batch de stores: {batch_error}"
                         logger.error(error_msg)
                         print(f"ERRO - {error_msg}")
                         self.stats['errors'].append(error_msg)
-                        chunk_errors += 1
                         try:
                             conn_pg.rollback()
                             cursor_pg = conn_pg.cursor()
@@ -1136,20 +1837,39 @@ class StoresMigration:
                             logger.error(f"Erro ao fazer rollback: {rollback_error}")
                         continue
                 
-                # Commit do chunk
                 try:
                     conn_pg.commit()
-                    print(f"[ETAPA 4] Chunk {chunk_num} processado: {total_processed} registros inseridos, {chunk_errors} erros")
-                    logger.info(f"[ETAPA 4] Chunk {chunk_num} processado: {total_processed} registros inseridos, {chunk_errors} erros")
+                    print(f"[ETAPA 4] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
+                    logger.info(f"[ETAPA 4] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
                 except Exception as commit_error:
                     logger.error(f"Erro no commit do chunk {chunk_num}: {commit_error}")
                     conn_pg.rollback()
                     cursor_pg = conn_pg.cursor()
             
+            # Buscar UUIDs gerados para mapeamento (uma única query após todas as inserções)
+            if include_legacy and all_legacy_ids_inserted:
+                print(f"[ETAPA 4] Buscando UUIDs gerados para {len(all_legacy_ids_inserted)} registros...")
+                cursor_pg.execute(f"""
+                    SELECT id, legacy_id 
+                    FROM {schema}.stores 
+                    WHERE legacy_id = ANY(%s)
+                """, (all_legacy_ids_inserted,))
+                for uuid_row, leg_id in cursor_pg.fetchall():
+                    self.store_id_map[leg_id] = uuid_row
+                print(f"[ETAPA 4] {len(self.store_id_map)} UUIDs mapeados")
+            
+            # Se não tem legacy_id, buscar UUIDs por ordem
+            if not include_legacy:
+                cursor_pg.execute(f"SELECT id, created_at FROM {schema}.stores ORDER BY created_at")
+                uuid_rows = cursor_pg.fetchall()
+                for idx, (uuid_row, created_at) in enumerate(uuid_rows):
+                    if idx < len(processed_data):
+                        leg_id = processed_data[idx]['legacy_id']
+                        self.store_id_map[leg_id] = uuid_row
+            
             print(f"\n[ETAPA 4] CONCLUIDA! Total de stores migrados: {self.stats['stores']}")
             logger.info(f"ETAPA 4 concluida: {self.stats['stores']} registros")
             
-            # Validação e relatório de qualidade
             self.validate_step4_stores()
             
         except Exception as e:
@@ -1157,10 +1877,27 @@ class StoresMigration:
             logger.error(f"Erro na ETAPA 4: {e}")
             raise
         finally:
-            cursor_sql.close()
-            conn_sql.close()
-            cursor_pg.close()
-            conn_pg.close()
+            # Garantir que tudo está fechado
+            try:
+                if 'cursor_sql' in locals() and cursor_sql:
+                    cursor_sql.close()
+            except:
+                pass
+            try:
+                if 'conn_sql' in locals() and conn_sql:
+                    conn_sql.close()
+            except:
+                pass
+            try:
+                if 'cursor_pg' in locals() and cursor_pg:
+                    cursor_pg.close()
+            except:
+                pass
+            try:
+                if 'conn_pg' in locals() and conn_pg:
+                    conn_pg.close()
+            except:
+                pass
     
     # ========================================================================
     # ETAPA 5: STORE_CNPJS
@@ -1284,62 +2021,90 @@ class StoresMigration:
         cursor_sql = conn_sql.cursor()
         cursor_sql.execute(sql_query)
         
-        # Processar em chunks
+        # Carregar TODOS os dados na memória de uma vez
+        print("[ETAPA 5] Carregando dados na memória...")
+        all_rows = cursor_sql.fetchall()
+        cursor_sql.close()
+        conn_sql.close()
+        
+        print(f"[ETAPA 5] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
+        
+        # Processar conversões em massa usando DataFrame (vetorizado)
+        # Criar DataFrame usando from_records que é mais adequado para dados de banco
+        df = pd.DataFrame.from_records(all_rows, columns=['Id', 'Cnpj', 'Ativo', 'DataInclusao', 'DataAlteracao'])
+        
+        # Lookup store_id (vetorizado)
+        df['store_id'] = df['Id'].map(self.store_id_map)
+        
+        # Remover linhas onde store_id não foi encontrado
+        df = df[df['store_id'].notna()]
+        
+        # Limpar CNPJ (vetorizado)
+        df['cnpj'] = self.clean_cnpj_vectorized(df['Cnpj'])
+        
+        # Remover linhas onde CNPJ não é válido
+        df = df[df['cnpj'].notna()]
+        
+        # Outras transformações
+        df['ativo'] = df['Ativo'].fillna(False).astype(bool)
+        df['data_inclusao'] = df['DataInclusao']
+        df['data_alteracao'] = df['DataAlteracao'].fillna(df['DataInclusao'])
+        
+        # Converter store_id para string
+        df['store_id'] = df['store_id'].astype(str)
+        
+        # Converter DataFrame diretamente para lista de tuplas (otimizado)
+        processed_tuples = list(zip(
+            df['cnpj'].tolist(),
+            [True] * len(df),  # is_main (sempre true para CNPJ principal)
+            df['store_id'].tolist(),
+            df['ativo'].tolist(),
+            df['data_inclusao'].tolist(),
+            df['data_alteracao'].tolist()
+        ))
+        
+        print(f"[ETAPA 5] {len(processed_tuples)} registros processados. Inserindo no banco (otimizado com execute_values)...")
+        
+        # Conectar ao PostgreSQL
         conn_pg = DatabaseConnection.get_postgresql_destino_connection()
         cursor_pg = conn_pg.cursor()
+        
+        # Query de insert usando gen_random_uuid() - formato para execute_values
+        insert_query = f"""
+        INSERT INTO {schema}.store_cnpjs (
+            id, cnpj, is_main, store_id, is_active, created_at, updated_at
+        ) VALUES %s
+        """
+        insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s)"
         
         chunk_num = 0
         total_processed = 0
         
         try:
-            while True:
-                rows = cursor_sql.fetchmany(CHUNK_SIZE)
-                if not rows:
-                    break
-                
+            for i in range(0, len(processed_tuples), CHUNK_SIZE):
+                chunk = processed_tuples[i:i + CHUNK_SIZE]
                 chunk_num += 1
-                print(f"[ETAPA 5] Processando chunk {chunk_num} ({len(rows)} registros)...")
-                logger.info(f"[ETAPA 5] Processando chunk {chunk_num} ({len(rows)} registros)...")
+                print(f"[ETAPA 5] Processando chunk {chunk_num} ({len(chunk)} registros)...")
                 
-                chunk_errors = 0
-                for row in rows:
+                if chunk:
                     try:
-                        legado_id = row[0]
-                        store_id = self.store_id_map.get(legado_id)
+                        # Usar execute_values() para inserção otimizada em bulk
+                        execute_values(
+                            cursor_pg,
+                            insert_query,
+                            chunk,
+                            template=insert_template,
+                            page_size=CHUNK_SIZE,
+                            fetch=False
+                        )
                         
-                        if not store_id:
-                            continue
-                        
-                        # Limpar CNPJ
-                        cnpj = self.clean_cnpj(row[1])
-                        if not cnpj:
-                            continue  # Pular se não houver CNPJ válido
-                        
-                        insert_query = f"""
-                        INSERT INTO {schema}.store_cnpjs (
-                            id, cnpj, is_main, store_id, is_active, created_at, updated_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """
-                        
-                        cursor_pg.execute(insert_query, (
-                            str(uuid.uuid4()),  # id
-                            cnpj,  # cnpj (limpo)
-                            True,  # is_main (sempre true para CNPJ principal)
-                            str(store_id),  # store_id (lookup)
-                            row[2] if row[2] is not None else False,  # Ativo -> is_active
-                            row[3],  # DataInclusao -> created_at
-                            row[4] if row[4] else row[3]  # DataAlteracao -> updated_at
-                        ))
-                        
-                        self.stats['store_cnpjs'] += 1
-                        total_processed += 1
-                        
-                    except Exception as e:
-                        error_msg = f"Erro ao inserir store_cnpj para Estabelecimento Id={row[0]}: {e}"
+                        total_processed += len(chunk)
+                        self.stats['store_cnpjs'] += len(chunk)
+                    except Exception as batch_error:
+                        error_msg = f"Erro ao inserir batch de store_cnpjs: {batch_error}"
                         logger.error(error_msg)
                         print(f"ERRO - {error_msg}")
                         self.stats['errors'].append(error_msg)
-                        chunk_errors += 1
                         try:
                             conn_pg.rollback()
                             cursor_pg = conn_pg.cursor()
@@ -1347,11 +2112,10 @@ class StoresMigration:
                             logger.error(f"Erro ao fazer rollback: {rollback_error}")
                         continue
                 
-                # Commit do chunk
                 try:
                     conn_pg.commit()
-                    print(f"[ETAPA 5] Chunk {chunk_num} processado: {total_processed} registros inseridos, {chunk_errors} erros")
-                    logger.info(f"[ETAPA 5] Chunk {chunk_num} processado: {total_processed} registros inseridos, {chunk_errors} erros")
+                    print(f"[ETAPA 5] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
+                    logger.info(f"[ETAPA 5] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
                 except Exception as commit_error:
                     logger.error(f"Erro no commit do chunk {chunk_num}: {commit_error}")
                     conn_pg.rollback()
@@ -1360,7 +2124,6 @@ class StoresMigration:
             print(f"\n[ETAPA 5] CONCLUIDA! Total de store_cnpjs migrados: {self.stats['store_cnpjs']}")
             logger.info(f"ETAPA 5 concluida: {self.stats['store_cnpjs']} registros")
             
-            # Validação e relatório de qualidade
             self.validate_step5_store_cnpjs()
             
         except Exception as e:
@@ -1368,10 +2131,16 @@ class StoresMigration:
             logger.error(f"Erro na ETAPA 5: {e}")
             raise
         finally:
-            cursor_sql.close()
-            conn_sql.close()
-            cursor_pg.close()
-            conn_pg.close()
+            try:
+                if 'cursor_pg' in locals() and cursor_pg:
+                    cursor_pg.close()
+            except:
+                pass
+            try:
+                if 'conn_pg' in locals() and conn_pg:
+                    conn_pg.close()
+            except:
+                pass
     
     # ========================================================================
     # ETAPA 6: ADDRESSES (polimórfica para stores)
@@ -1384,24 +2153,29 @@ class StoresMigration:
         print("-"*80)
         
         try:
-            # Aplicar limite se especificado
-            limit_clause = ""
-            if self.limit_rows > 0:
-                limit_clause = f" OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY"
-            
             # Contar origem - endereços de estabelecimentos (aplicando mesmo filtro e limite da migração)
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
-            query_main = f"""
-                SELECT COUNT(*) 
-                FROM (
-                    SELECT Id, Endereco
+            
+            # Se houver limite, usar subquery com TOP para aplicar o limite
+            if self.limit_rows > 0:
+                query_main = f"""
+                    SELECT COUNT(*) 
+                    FROM (
+                        SELECT TOP {self.limit_rows} Id, Endereco
+                        FROM Estabelecimento
+                        WHERE Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != ''
+                        ORDER BY Id
+                    ) AS limited
+                """
+            else:
+                # Sem limite, não precisa de subquery nem ORDER BY
+                query_main = """
+                    SELECT COUNT(*) 
                     FROM Estabelecimento
                     WHERE Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != ''
-                    ORDER BY Id
-                    {limit_clause}
-                ) AS limited
-            """
+                """
+            
             cursor_sql.execute(query_main)
             origem_count = cursor_sql.fetchone()[0]
             cursor_sql.close()
@@ -1508,144 +2282,171 @@ class StoresMigration:
         cursor_sql = conn_sql.cursor()
         cursor_sql.execute(sql_query)
         
-        # Processar em chunks
+        # Carregar TODOS os dados na memória de uma vez
+        print("[ETAPA 6] Carregando dados na memória...")
+        all_rows = cursor_sql.fetchall()
+        cursor_sql.close()
+        conn_sql.close()
+        
+        print(f"[ETAPA 6] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
+        
+        # Processar conversões em massa usando DataFrame (vetorizado)
+        include_legacy = self.should_include_legacy_id()
+        
+        # Criar DataFrame usando from_records que é mais adequado para dados de banco
+        df = pd.DataFrame.from_records(all_rows, columns=['Id', 'Endereco', 'Numero', 'Complemento', 'Bairro', 'CEP', 'Cidade', 'UF', 'Latitude', 'Longitude', 'DataInclusao', 'DataAlteracao'])
+        
+        # Lookup store_id (vetorizado)
+        df['store_id'] = df['Id'].map(self.store_id_map)
+        
+        # Remover linhas onde store_id não foi encontrado ou Endereco está vazio
+        df = df[df['store_id'].notna() & df['Endereco'].notna()]
+        df = df[df['Endereco'].astype(str).str.strip() != '']
+        
+        # Aplicar transformações vetorizadas
+        df['legacy_id'] = df['Id']
+        
+        # CEP: remover formatação e substituir zeros por padrão
+        df['cep'] = df['CEP'].astype(str).str.replace(r'[^\d]', '', regex=True)
+        df['cep'] = df['cep'].replace('nan', '')
+        df['cep'] = df['cep'].apply(lambda x: '00000000' if not x or x == '0' * len(x) else x)
+        
+        # Limpar strings
+        df['street'] = self.clean_string_vectorized(df['Endereco'], max_length=500).fillna('')
+        df['number'] = self.clean_string_vectorized(df['Numero'], max_length=20)
+        df['number'] = df['number'].fillna('S/N')
+        df['address_line_2'] = self.clean_string_vectorized(df['Complemento'], max_length=200)
+        df['neighborhood'] = self.clean_string_vectorized(df['Bairro'], max_length=100).fillna('')
+        df['city'] = self.clean_string_vectorized(df['Cidade'], max_length=100).fillna('')
+        df['state'] = self.clean_string_vectorized(df['UF'], max_length=2).fillna('')
+        df['zone'] = self.clean_string_vectorized(df['Bairro'], max_length=100).fillna('')
+        df['region'] = ''
+        
+        # Converter latitude/longitude (vetorizado)
+        df['lat'] = pd.to_numeric(df['Latitude'].astype(str).str.replace(',', '.'), errors='coerce')
+        df['lon'] = pd.to_numeric(df['Longitude'].astype(str).str.replace(',', '.'), errors='coerce')
+        
+        # Datas
+        df['data_inclusao'] = df['DataInclusao']
+        df['data_alteracao'] = df['DataAlteracao'].fillna(df['DataInclusao'])
+        
+        # Converter store_id para string
+        df['store_id'] = df['store_id'].astype(str)
+        
+        # Converter DataFrame diretamente para lista de tuplas (otimizado)
+        municipal_code_default = [0] * len(df)  # municipal_code padrão 0
+        addressable_type_default = ['stores'] * len(df)
+        type_default = ['main'] * len(df)
+        
+        if include_legacy:
+            processed_tuples = list(zip(
+                df['legacy_id'].tolist(),
+                df['store_id'].tolist(),
+                addressable_type_default,
+                type_default,
+                df['cep'].tolist(),
+                df['street'].tolist(),
+                df['number'].tolist(),
+                df['address_line_2'].tolist(),
+                df['neighborhood'].tolist(),
+                df['city'].tolist(),
+                df['state'].tolist(),
+                municipal_code_default,
+                df['lat'].tolist(),
+                df['lon'].tolist(),
+                df['zone'].tolist(),
+                df['region'].tolist(),
+                df['data_inclusao'].tolist(),
+                df['data_alteracao'].tolist()
+            ))
+        else:
+            processed_tuples = list(zip(
+                df['store_id'].tolist(),
+                addressable_type_default,
+                type_default,
+                df['cep'].tolist(),
+                df['street'].tolist(),
+                df['number'].tolist(),
+                df['address_line_2'].tolist(),
+                df['neighborhood'].tolist(),
+                df['city'].tolist(),
+                df['state'].tolist(),
+                municipal_code_default,
+                df['lat'].tolist(),
+                df['lon'].tolist(),
+                df['zone'].tolist(),
+                df['region'].tolist(),
+                df['data_inclusao'].tolist(),
+                df['data_alteracao'].tolist()
+            ))
+        
+        print(f"[ETAPA 6] {len(processed_tuples)} registros processados. Inserindo no banco (otimizado com execute_values)...")
+        
+        # Conectar ao PostgreSQL
         conn_pg = DatabaseConnection.get_postgresql_destino_connection()
         cursor_pg = conn_pg.cursor()
+        
+        # Query de insert usando gen_random_uuid() - formato para execute_values
+        if include_legacy:
+            insert_query = f"""
+            INSERT INTO {schema}.addresses (
+                id, legacy_id, addressable_id, addressable_type, type,
+                postal_code, street, number, address_line_2, neighborhood,
+                city, state, municipal_code, latitude, longitude, zone, region,
+                created_at, updated_at
+            ) VALUES %s
+            """
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        else:
+            insert_query = f"""
+            INSERT INTO {schema}.addresses (
+                id, addressable_id, addressable_type, type,
+                postal_code, street, number, address_line_2, neighborhood,
+                city, state, municipal_code, latitude, longitude, zone, region,
+                created_at, updated_at
+            ) VALUES %s
+            """
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
         
         chunk_num = 0
         total_processed = 0
         
         try:
-            while True:
-                rows = cursor_sql.fetchmany(CHUNK_SIZE)
-                if not rows:
-                    break
-                
+            for i in range(0, len(processed_tuples), CHUNK_SIZE):
+                chunk = processed_tuples[i:i + CHUNK_SIZE]
                 chunk_num += 1
-                print(f"[ETAPA 6] Processando chunk {chunk_num} ({len(rows)} registros)...")
-                logger.info(f"[ETAPA 6] Processando chunk {chunk_num} ({len(rows)} registros)...")
+                print(f"[ETAPA 6] Processando chunk {chunk_num} ({len(chunk)} registros)...")
                 
-                chunk_errors = 0
-                for row in rows:
-                    legado_id = row[0]
-                    store_id = self.store_id_map.get(legado_id)
-                    
-                    if not store_id:
-                        continue
-                    
-                    # Endereço Principal
-                    if row[1] and str(row[1]).strip():  # Endereco
+                if chunk:
+                    try:
+                        # Usar execute_values() para inserção otimizada em bulk
+                        execute_values(
+                            cursor_pg,
+                            insert_query,
+                            chunk,
+                            template=insert_template,
+                            page_size=CHUNK_SIZE,
+                            fetch=False
+                        )
+                        
+                        total_processed += len(chunk)
+                        self.stats['addresses'] += len(chunk)
+                    except Exception as batch_error:
+                        error_msg = f"Erro ao inserir batch de addresses: {batch_error}"
+                        logger.error(error_msg)
+                        print(f"ERRO - {error_msg}")
+                        self.stats['errors'].append(error_msg)
                         try:
-                            cep = re.sub(r'[^\d]', '', str(row[5])) if row[5] else None
-                            if not cep or cep == '0' * len(cep):
-                                cep = '00000000'
-                            
-                            # Converter latitude/longitude se possível
-                            lat = None
-                            lon = None
-                            if row[8]:  # Latitude
-                                try:
-                                    lat = float(str(row[8]).replace(',', '.'))
-                                except:
-                                    pass
-                            if row[9]:  # Longitude
-                                try:
-                                    lon = float(str(row[9]).replace(',', '.'))
-                                except:
-                                    pass
-                            
-                            # Valores obrigatórios com defaults
-                            zone_value = self.clean_string(row[4], 100) or ''
-                            region_value = ''
-                            number_value = self.clean_string(row[2], 20) if row[2] and str(row[2]).strip() else 'S/N'
-                            city_value = self.clean_string(row[6], 100) if row[6] and str(row[6]).strip() else ''
-                            state_value = self.clean_string(row[7], 2) if row[7] and str(row[7]).strip() else ''
-                            street_value = self.clean_string(row[1], 500) or ''
-                            neighborhood_value = self.clean_string(row[4], 100) or ''
-                            
-                            # Construir INSERT condicionalmente (legacy_id apenas em HML)
-                            include_legacy = self.should_include_legacy_id()
-                            if include_legacy:
-                                insert_query = f"""
-                                INSERT INTO {schema}.addresses (
-                                    id, legacy_id, addressable_id, addressable_type, type,
-                                    postal_code, street, number, address_line_2, neighborhood,
-                                    city, state, municipal_code, latitude, longitude, zone, region,
-                                    created_at, updated_at
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                """
-                                cursor_pg.execute(insert_query, (
-                                    str(uuid.uuid4()),
-                                    legado_id,
-                                    str(store_id),
-                                    'stores',
-                                    'main',
-                                    cep,
-                                    street_value,
-                                    number_value,
-                                    self.clean_string(row[3], 200),
-                                    neighborhood_value,
-                                    city_value,
-                                    state_value,
-                                    0,  # municipal_code (padrão 0)
-                                    lat,
-                                    lon,
-                                    zone_value,
-                                    region_value,
-                                    row[10],
-                                    row[11] if row[11] else row[10]
-                                ))
-                            else:
-                                insert_query = f"""
-                                INSERT INTO {schema}.addresses (
-                                    id, addressable_id, addressable_type, type,
-                                    postal_code, street, number, address_line_2, neighborhood,
-                                    city, state, municipal_code, latitude, longitude, zone, region,
-                                    created_at, updated_at
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                """
-                                cursor_pg.execute(insert_query, (
-                                    str(uuid.uuid4()),
-                                    str(store_id),
-                                    'stores',
-                                    'main',
-                                    cep,
-                                    street_value,
-                                    number_value,
-                                    self.clean_string(row[3], 200),
-                                    neighborhood_value,
-                                    city_value,
-                                    state_value,
-                                    0,  # municipal_code (padrão 0)
-                                    lat,
-                                    lon,
-                                    zone_value,
-                                    region_value,
-                                    row[10],
-                                    row[11] if row[11] else row[10]
-                                ))
-                            
-                            self.stats['addresses'] += 1
-                            
-                        except Exception as e:
-                            error_msg = f"Erro ao inserir endereco para Estabelecimento Id={legado_id}: {e}"
-                            logger.error(error_msg)
-                            print(f"ERRO - {error_msg}")
-                            self.stats['errors'].append(error_msg)
-                            chunk_errors += 1
-                            try:
-                                conn_pg.rollback()
-                                cursor_pg = conn_pg.cursor()
-                            except Exception as rollback_error:
-                                logger.error(f"Erro ao fazer rollback: {rollback_error}")
-                            continue
+                            conn_pg.rollback()
+                            cursor_pg = conn_pg.cursor()
+                        except Exception as rollback_error:
+                            logger.error(f"Erro ao fazer rollback: {rollback_error}")
+                        continue
                 
-                # Commit do chunk
                 try:
                     conn_pg.commit()
-                    total_processed = self.stats['addresses']
-                    print(f"[ETAPA 6] Chunk {chunk_num} processado: {total_processed} enderecos inseridos, {chunk_errors} erros")
-                    logger.info(f"[ETAPA 6] Chunk {chunk_num} processado: {total_processed} enderecos inseridos, {chunk_errors} erros")
+                    print(f"[ETAPA 6] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} enderecos inseridos")
+                    logger.info(f"[ETAPA 6] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} enderecos inseridos")
                 except Exception as commit_error:
                     logger.error(f"Erro no commit do chunk {chunk_num}: {commit_error}")
                     conn_pg.rollback()
@@ -1654,7 +2455,6 @@ class StoresMigration:
             print(f"\n[ETAPA 6] CONCLUIDA! Total de addresses migrados: {self.stats['addresses']}")
             logger.info(f"ETAPA 6 concluida: {self.stats['addresses']} registros")
             
-            # Validação e relatório de qualidade
             self.validate_step6_addresses()
             
         except Exception as e:
@@ -1662,10 +2462,16 @@ class StoresMigration:
             logger.error(f"Erro na ETAPA 6: {e}")
             raise
         finally:
-            cursor_sql.close()
-            conn_sql.close()
-            cursor_pg.close()
-            conn_pg.close()
+            try:
+                if 'cursor_pg' in locals() and cursor_pg:
+                    cursor_pg.close()
+            except:
+                pass
+            try:
+                if 'conn_pg' in locals() and conn_pg:
+                    conn_pg.close()
+            except:
+                pass
     
     # ========================================================================
     # ETAPA 7: CONTACTS (polimórfica para stores)
@@ -1704,49 +2510,62 @@ class StoresMigration:
                       AND CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != ''
                 """
             else:
-                limit_clause = ""
+                # Sem limite, não precisa de subquery nem ORDER BY
                 if self.limit_rows > 0:
-                    limit_clause = f" OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY"
-                
-                query_email = f"""
-                    SELECT COUNT(*) 
-                    FROM (
-                        SELECT Id, Email, Telefone, CelularGerente
+                    # Com limite, usar TOP para aplicar o limite
+                    query_email = f"""
+                        SELECT COUNT(*) 
+                        FROM (
+                            SELECT TOP {self.limit_rows} Id, Email, Telefone, CelularGerente
+                            FROM Estabelecimento
+                            WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
+                               OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
+                               OR (CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != '')
+                            ORDER BY Id
+                        ) AS limited
+                        WHERE Email IS NOT NULL AND LTRIM(RTRIM(Email)) != ''
+                    """
+                    query_phone = f"""
+                        SELECT COUNT(*) 
+                        FROM (
+                            SELECT TOP {self.limit_rows} Id, Email, Telefone, CelularGerente
+                            FROM Estabelecimento
+                            WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
+                               OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
+                               OR (CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != '')
+                            ORDER BY Id
+                        ) AS limited
+                        WHERE Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != ''
+                    """
+                    query_cellphone = f"""
+                        SELECT COUNT(*) 
+                        FROM (
+                            SELECT TOP {self.limit_rows} Id, Email, Telefone, CelularGerente
+                            FROM Estabelecimento
+                            WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
+                               OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
+                               OR (CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != '')
+                            ORDER BY Id
+                        ) AS limited
+                        WHERE CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != ''
+                    """
+                else:
+                    # Sem limite, query direta sem subquery
+                    query_email = """
+                        SELECT COUNT(*) 
                         FROM Estabelecimento
-                        WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
-                           OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
-                           OR (CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != '')
-                        ORDER BY Id
-                        {limit_clause}
-                    ) AS limited
-                    WHERE Email IS NOT NULL AND LTRIM(RTRIM(Email)) != ''
-                """
-                query_phone = f"""
-                    SELECT COUNT(*) 
-                    FROM (
-                        SELECT Id, Email, Telefone, CelularGerente
+                        WHERE Email IS NOT NULL AND LTRIM(RTRIM(Email)) != ''
+                    """
+                    query_phone = """
+                        SELECT COUNT(*) 
                         FROM Estabelecimento
-                        WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
-                           OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
-                           OR (CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != '')
-                        ORDER BY Id
-                        {limit_clause}
-                    ) AS limited
-                    WHERE Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != ''
-                """
-                query_cellphone = f"""
-                    SELECT COUNT(*) 
-                    FROM (
-                        SELECT Id, Email, Telefone, CelularGerente
+                        WHERE Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != ''
+                    """
+                    query_cellphone = """
+                        SELECT COUNT(*) 
                         FROM Estabelecimento
-                        WHERE (Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
-                           OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
-                           OR (CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != '')
-                        ORDER BY Id
-                        {limit_clause}
-                    ) AS limited
-                    WHERE CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != ''
-                """
+                        WHERE CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != ''
+                    """
             
             cursor_sql.execute(query_email)
             origem_email = cursor_sql.fetchone()[0]
@@ -1871,153 +2690,138 @@ class StoresMigration:
         cursor_sql = conn_sql.cursor()
         cursor_sql.execute(sql_query)
         
-        # Processar em chunks
+        # Carregar TODOS os dados na memória de uma vez
+        print("[ETAPA 7] Carregando dados na memória...")
+        all_rows = cursor_sql.fetchall()
+        cursor_sql.close()
+        conn_sql.close()
+        
+        print(f"[ETAPA 7] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
+        
+        # Processar conversões em massa usando DataFrame (vetorizado)
+        # Criar DataFrame usando from_records que é mais adequado para dados de banco
+        df = pd.DataFrame.from_records(all_rows, columns=['Id', 'Email', 'Telefone', 'CelularGerente', 'DataInclusao', 'DataAlteracao'])
+        
+        # Lookup store_id (vetorizado)
+        df['store_id'] = df['Id'].map(self.store_id_map)
+        
+        # Remover linhas onde store_id não foi encontrado
+        df = df[df['store_id'].notna()]
+        
+        # Preparar datas
+        df['data_inclusao'] = df['DataInclusao']
+        df['data_alteracao'] = df['DataAlteracao'].fillna(df['DataInclusao'])
+        
+        # Converter store_id para string
+        df['store_id'] = df['store_id'].astype(str)
+        
+        # Criar listas de registros para cada tipo de contato e converter para tuplas diretamente
+        processed_tuples = []
+        addressable_type_default = 'stores'
+        
+        # Email (vetorizado)
+        email_mask = df['Email'].notna() & (df['Email'].astype(str).str.strip() != '')
+        email_df = df[email_mask].copy()
+        if len(email_df) > 0:
+            email_values = email_df['Email'].astype(str).str.strip().str.lower().tolist()
+            processed_tuples.extend(list(zip(
+                email_df['store_id'].tolist(),
+                [addressable_type_default] * len(email_df),
+                ['email'] * len(email_df),
+                email_values,
+                email_df['data_inclusao'].tolist(),
+                email_df['data_alteracao'].tolist()
+            )))
+        
+        # Telefone (vetorizado)
+        phone_mask = df['Telefone'].notna() & (df['Telefone'].astype(str).str.strip() != '')
+        phone_df = df[phone_mask].copy()
+        if len(phone_df) > 0:
+            phone_values = phone_df['Telefone'].astype(str).str.replace(r'[^\d]', '', regex=True)
+            phone_df = phone_df[phone_values != '']
+            if len(phone_df) > 0:
+                phone_values_clean = phone_values[phone_values != ''].tolist()
+                processed_tuples.extend(list(zip(
+                    phone_df['store_id'].tolist(),
+                    [addressable_type_default] * len(phone_df),
+                    ['phone'] * len(phone_df),
+                    phone_values_clean,
+                    phone_df['data_inclusao'].tolist(),
+                    phone_df['data_alteracao'].tolist()
+                )))
+        
+        # Celular Gerente (vetorizado)
+        cellphone_mask = df['CelularGerente'].notna() & (df['CelularGerente'].astype(str).str.strip() != '')
+        cellphone_df = df[cellphone_mask].copy()
+        if len(cellphone_df) > 0:
+            cellphone_values = cellphone_df['CelularGerente'].astype(str).str.replace(r'[^\d]', '', regex=True)
+            cellphone_df = cellphone_df[cellphone_values != '']
+            if len(cellphone_df) > 0:
+                cellphone_values_clean = cellphone_values[cellphone_values != ''].tolist()
+                processed_tuples.extend(list(zip(
+                    cellphone_df['store_id'].tolist(),
+                    [addressable_type_default] * len(cellphone_df),
+                    ['cellphone'] * len(cellphone_df),
+                    cellphone_values_clean,
+                    cellphone_df['data_inclusao'].tolist(),
+                    cellphone_df['data_alteracao'].tolist()
+                )))
+        
+        print(f"[ETAPA 7] {len(processed_tuples)} registros processados. Inserindo no banco (otimizado com execute_values)...")
+        
+        # Conectar ao PostgreSQL
         schema = get_schema_atual()
         conn_pg = DatabaseConnection.get_postgresql_destino_connection()
         cursor_pg = conn_pg.cursor()
+        
+        # Query de insert usando gen_random_uuid() - formato para execute_values
+        insert_query = f"""
+        INSERT INTO {schema}.contacts (
+            id, contactable_id, contactable_type, type, value,
+            created_at, updated_at
+        ) VALUES %s
+        """
+        insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s)"
         
         chunk_num = 0
         total_processed = 0
         
         try:
-            while True:
-                rows = cursor_sql.fetchmany(CHUNK_SIZE)
-                if not rows:
-                    break
-                
+            for i in range(0, len(processed_tuples), CHUNK_SIZE):
+                chunk = processed_tuples[i:i + CHUNK_SIZE]
                 chunk_num += 1
-                print(f"[ETAPA 7] Processando chunk {chunk_num} ({len(rows)} registros)...")
-                logger.info(f"[ETAPA 7] Processando chunk {chunk_num} ({len(rows)} registros)...")
+                print(f"[ETAPA 7] Processando chunk {chunk_num} ({len(chunk)} registros)...")
                 
-                chunk_errors = 0
-                for row in rows:
-                    legado_id = row[0]
-                    store_id = self.store_id_map.get(legado_id)
-                    
-                    if not store_id:
+                if chunk:
+                    try:
+                        # Usar execute_values() para inserção otimizada em bulk
+                        execute_values(
+                            cursor_pg,
+                            insert_query,
+                            chunk,
+                            template=insert_template,
+                            page_size=CHUNK_SIZE,
+                            fetch=False
+                        )
+                        
+                        total_processed += len(chunk)
+                        self.stats['contacts'] += len(chunk)
+                    except Exception as batch_error:
+                        error_msg = f"Erro ao inserir batch de contacts: {batch_error}"
+                        logger.error(error_msg)
+                        print(f"ERRO - {error_msg}")
+                        self.stats['errors'].append(error_msg)
+                        try:
+                            conn_pg.rollback()
+                            cursor_pg = conn_pg.cursor()
+                        except Exception as rollback_error:
+                            logger.error(f"Erro ao fazer rollback: {rollback_error}")
                         continue
-                    
-                    data_inclusao = row[4]
-                    data_alteracao = row[5] if row[5] else row[4]
-                    
-                    # REGISTRO 1 - Email
-                    if row[1] and str(row[1]).strip():
-                        try:
-                            email_value = str(row[1]).strip().lower()
-                            
-                            insert_query = f"""
-                            INSERT INTO {schema}.contacts (
-                                id, contactable_id, contactable_type, type, value,
-                                created_at, updated_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            """
-                            
-                            cursor_pg.execute(insert_query, (
-                                str(uuid.uuid4()),
-                                str(store_id),
-                                'stores',
-                                'email',
-                                email_value,
-                                data_inclusao,
-                                data_alteracao
-                            ))
-                            
-                            self.stats['contacts'] += 1
-                            total_processed += 1
-                            
-                        except Exception as e:
-                            error_msg = f"Erro ao inserir email para Estabelecimento Id={legado_id}: {e}"
-                            logger.error(error_msg)
-                            print(f"ERRO - {error_msg}")
-                            self.stats['errors'].append(error_msg)
-                            chunk_errors += 1
-                            try:
-                                conn_pg.rollback()
-                                cursor_pg = conn_pg.cursor()
-                            except Exception as rollback_error:
-                                logger.error(f"Erro ao fazer rollback: {rollback_error}")
-                    
-                    # REGISTRO 2 - Telefone
-                    if row[2] and str(row[2]).strip():
-                        try:
-                            telefone_value = re.sub(r'[^\d]', '', str(row[2]))
-                            
-                            if telefone_value:
-                                insert_query = f"""
-                                INSERT INTO {schema}.contacts (
-                                    id, contactable_id, contactable_type, type, value,
-                                    created_at, updated_at
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                """
-                                
-                                cursor_pg.execute(insert_query, (
-                                    str(uuid.uuid4()),
-                                    str(store_id),
-                                    'stores',
-                                    'phone',
-                                    telefone_value,
-                                    data_inclusao,
-                                    data_alteracao
-                                ))
-                                
-                                self.stats['contacts'] += 1
-                                total_processed += 1
-                            
-                        except Exception as e:
-                            error_msg = f"Erro ao inserir telefone para Estabelecimento Id={legado_id}: {e}"
-                            logger.error(error_msg)
-                            print(f"ERRO - {error_msg}")
-                            self.stats['errors'].append(error_msg)
-                            chunk_errors += 1
-                            try:
-                                conn_pg.rollback()
-                                cursor_pg = conn_pg.cursor()
-                            except Exception as rollback_error:
-                                logger.error(f"Erro ao fazer rollback: {rollback_error}")
-                    
-                    # REGISTRO 3 - Celular Gerente
-                    if row[3] and str(row[3]).strip():
-                        try:
-                            celular_value = re.sub(r'[^\d]', '', str(row[3]))
-                            
-                            if celular_value:
-                                insert_query = f"""
-                                INSERT INTO {schema}.contacts (
-                                    id, contactable_id, contactable_type, type, value,
-                                    created_at, updated_at
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                """
-                                
-                                cursor_pg.execute(insert_query, (
-                                    str(uuid.uuid4()),
-                                    str(store_id),
-                                    'stores',
-                                    'cellphone',
-                                    celular_value,
-                                    data_inclusao,
-                                    data_alteracao
-                                ))
-                                
-                                self.stats['contacts'] += 1
-                                total_processed += 1
-                            
-                        except Exception as e:
-                            error_msg = f"Erro ao inserir celular para Estabelecimento Id={legado_id}: {e}"
-                            logger.error(error_msg)
-                            print(f"ERRO - {error_msg}")
-                            self.stats['errors'].append(error_msg)
-                            chunk_errors += 1
-                            try:
-                                conn_pg.rollback()
-                                cursor_pg = conn_pg.cursor()
-                            except Exception as rollback_error:
-                                logger.error(f"Erro ao fazer rollback: {rollback_error}")
                 
-                # Commit do chunk
                 try:
                     conn_pg.commit()
-                    print(f"[ETAPA 7] Chunk {chunk_num} processado: {total_processed} contacts inseridos, {chunk_errors} erros")
-                    logger.info(f"[ETAPA 7] Chunk {chunk_num} processado: {total_processed} contacts inseridos, {chunk_errors} erros")
+                    print(f"[ETAPA 7] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} contacts inseridos")
+                    logger.info(f"[ETAPA 7] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} contacts inseridos")
                 except Exception as commit_error:
                     logger.error(f"Erro no commit do chunk {chunk_num}: {commit_error}")
                     conn_pg.rollback()
@@ -2026,7 +2830,6 @@ class StoresMigration:
             print(f"\n[ETAPA 7] CONCLUIDA! Total de contacts migrados: {self.stats['contacts']}")
             logger.info(f"ETAPA 7 concluida: {self.stats['contacts']} registros")
             
-            # Validação e relatório de qualidade
             self.validate_step7_contacts()
             
         except Exception as e:
@@ -2034,10 +2837,16 @@ class StoresMigration:
             logger.error(f"Erro na ETAPA 7: {e}")
             raise
         finally:
-            cursor_sql.close()
-            conn_sql.close()
-            cursor_pg.close()
-            conn_pg.close()
+            try:
+                if 'cursor_pg' in locals() and cursor_pg:
+                    cursor_pg.close()
+            except:
+                pass
+            try:
+                if 'conn_pg' in locals() and conn_pg:
+                    conn_pg.close()
+            except:
+                pass
     
     def run(self):
         """Executa a migração completa"""

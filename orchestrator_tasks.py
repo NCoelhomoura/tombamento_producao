@@ -37,6 +37,7 @@ def clear_log_file():
 # Adicionar diretorios ao path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'utils'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'customers'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'users'))
 
 
 def run_customers_task(step=None, limit_rows=0):
@@ -111,13 +112,14 @@ def run_customers_task(step=None, limit_rows=0):
         migration.run()
 
 
-def run_stores_task(step=None, limit_rows=0):
+def run_stores_task(step=None, limit_rows=0, id_orcamento_filter=None):
     """
     Executa a task de migracao de stores
     
     Args:
         step: None para todas as etapas, ou '1', '2', '3', etc. para etapa especifica
         limit_rows: 0 para todos os dados, > 0 para limitar quantidade
+        id_orcamento_filter: Lista de IdOrcamento para filtrar (ex: [6192, 6193])
     """
     from utils.database_connection import DatabaseConnection
     destino_atual = DatabaseConnection.get_destino()
@@ -128,6 +130,8 @@ def run_stores_task(step=None, limit_rows=0):
     print(f"Data/Hora: {datetime.now()}")
     print(f"Destino: {destino_atual}")
     print(f"Limite de linhas: {'TODOS' if limit_rows == 0 else limit_rows}")
+    if id_orcamento_filter:
+        print(f"Filtro IdOrcamento: {id_orcamento_filter}")
     if step:
         print(f"Etapa: {step}")
     print("="*80)
@@ -136,7 +140,7 @@ def run_stores_task(step=None, limit_rows=0):
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'stores'))
     from stores.stores_to_core import StoresMigration
     
-    migration = StoresMigration(limit_rows=limit_rows)
+    migration = StoresMigration(limit_rows=limit_rows, id_orcamento_filter=id_orcamento_filter)
     
     if step:
         # Executar apenas uma etapa específica
@@ -220,6 +224,204 @@ def run_stores_task(step=None, limit_rows=0):
         migration.run()
 
 
+def run_contracts_task(step=None, limit_rows=0, id_orcamento_filter=None, 
+                       data_aviso_previo_min=None, data_inicio_operacao_max=None, clear_data=False):
+    """
+    Executa a task de migracao de contracts
+    
+    Args:
+        step: None para todas as etapas, ou '1', '2', '3', etc. para etapa especifica
+        limit_rows: 0 para todos os dados, > 0 para limitar quantidade
+        id_orcamento_filter: Lista de IdOrcamento para filtrar (ex: [6192, 6193])
+        data_aviso_previo_min: Data mínima para DataAvisoPrevio (string 'YYYY-MM-DD')
+        data_inicio_operacao_max: Data máxima para DataInicioOperacao (string 'YYYY-MM-DD')
+        clear_data: Se True, força TRUNCATE mesmo com filtros aplicados
+    """
+    from utils.database_connection import DatabaseConnection
+    destino_atual = DatabaseConnection.get_destino()
+    
+    print("\n" + "="*80)
+    print("TASK 3: CONTRACTS")
+    print("="*80)
+    print(f"Data/Hora: {datetime.now()}")
+    print(f"Destino: {destino_atual}")
+    print(f"Limite de linhas: {'TODOS' if limit_rows == 0 else limit_rows}")
+    if id_orcamento_filter:
+        print(f"Filtro IdOrcamento: {id_orcamento_filter}")
+    if data_aviso_previo_min:
+        print(f"Filtro DataAvisoPrevio (min): {data_aviso_previo_min}")
+    if data_inicio_operacao_max:
+        print(f"Filtro DataInicioOperacao (max): {data_inicio_operacao_max}")
+    if clear_data:
+        print("⚠️ FLAG --clear-data ATIVO: TRUNCATE será usado mesmo com filtros")
+    if step:
+        print(f"Etapa: {step}")
+    print("="*80)
+    
+    # Adicionar diretório contracts ao path
+    contracts_path = os.path.join(os.path.dirname(__file__), 'contracts')
+    if contracts_path not in sys.path:
+        sys.path.insert(0, contracts_path)
+    from contracts_to_core import ContractsMigration, get_schema_atual
+    
+    migration = ContractsMigration(
+        limit_rows=limit_rows,
+        id_orcamento_filter=id_orcamento_filter,
+        data_aviso_previo_min=data_aviso_previo_min,
+        data_inicio_operacao_max=data_inicio_operacao_max,
+        clear_data=clear_data
+    )
+    
+    if step:
+        # Executar apenas uma etapa específica
+        if step == '1':
+            migration.step1_migrate_contracts()
+        elif step == '2':
+            # Carregar mapeamento de contracts
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            if migration.should_include_legacy_id():
+                cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.contracts WHERE legacy_id IS NOT NULL")
+            else:
+                # Em PRD, não há legacy_id, então precisamos de outra estratégia
+                # Por enquanto, vamos assumir que os dados já existem e precisamos buscar de outra forma
+                cursor_pg.execute(f"SELECT id FROM {schema}.contracts LIMIT 1")
+            for row in cursor_pg.fetchall():
+                if len(row) == 2 and row[1] is not None:
+                    migration.contract_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step2_migrate_contract_scenarios()
+        elif step == '3':
+            # Carregar mapeamentos de contracts e scenarios
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            if migration.should_include_legacy_id():
+                cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.contracts WHERE legacy_id IS NOT NULL")
+                for row in cursor_pg.fetchall():
+                    if row[1] is not None:
+                        migration.contract_id_map[row[1]] = row[0]
+                cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.contract_scenarios WHERE legacy_id IS NOT NULL")
+                for row in cursor_pg.fetchall():
+                    if row[1] is not None:
+                        migration.scenario_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step3_migrate_contract_scenario_stores()
+        elif step == '4':
+            # Carregar mapeamento de contracts
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            if migration.should_include_legacy_id():
+                cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.contracts WHERE legacy_id IS NOT NULL")
+                for row in cursor_pg.fetchall():
+                    if row[1] is not None:
+                        migration.contract_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step4_migrate_contract_sellers()
+        elif step == '5':
+            # Carregar mapeamento de contracts
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            if migration.should_include_legacy_id():
+                cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.contracts WHERE legacy_id IS NOT NULL")
+                for row in cursor_pg.fetchall():
+                    if row[1] is not None:
+                        migration.contract_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step5_migrate_contract_team_members()
+        elif step == '6':
+            # Carregar mapeamento de contracts
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            if migration.should_include_legacy_id():
+                cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.contracts WHERE legacy_id IS NOT NULL")
+                for row in cursor_pg.fetchall():
+                    if row[1] is not None:
+                        migration.contract_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step6_migrate_contract_contacts()
+        elif step == '7':
+            # Carregar mapeamento de contracts
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            if migration.should_include_legacy_id():
+                cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.contracts WHERE legacy_id IS NOT NULL")
+                for row in cursor_pg.fetchall():
+                    if row[1] is not None:
+                        migration.contract_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step7_migrate_contract_partners()
+        elif step == '8':
+            # Carregar mapeamento de contracts
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            if migration.should_include_legacy_id():
+                cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.contracts WHERE legacy_id IS NOT NULL")
+                for row in cursor_pg.fetchall():
+                    if row[1] is not None:
+                        migration.contract_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step8_migrate_contract_additional_charges()
+        else:
+            print(f"ERRO: Etapa '{step}' invalida para contracts")
+            print("Etapas disponiveis: 1, 2, 3, 4, 5, 6, 7, 8")
+            return
+    else:
+        # Executar migração completa
+        migration.run()
+
+
+def run_users_task(step=None, limit_rows=0):
+    """
+    Executa a task de migracao de users
+    
+    Args:
+        step: None para todas as etapas, ou '1' para etapa especifica
+        limit_rows: 0 para todos os dados, > 0 para limitar quantidade
+    """
+    print("\n" + "="*80)
+    print("TASK 4: USERS")
+    print("="*80)
+    print(f"Data/Hora: {datetime.now()}")
+    print(f"Limite de linhas: {'TODOS' if limit_rows == 0 else limit_rows}")
+    if step:
+        print(f"Etapa: {step}")
+    print("="*80)
+    
+    # Adicionar diretório users ao path
+    users_path = os.path.join(os.path.dirname(__file__), 'users')
+    if users_path not in sys.path:
+        sys.path.insert(0, users_path)
+    from users_to_core import UsersMigration
+    
+    migration = UsersMigration(limit_rows=limit_rows)
+    
+    if step:
+        # Executar apenas etapa específica
+        if step == '1':
+            migration.step1_migrate_users()
+        else:
+            print(f"ERRO: Etapa '{step}' invalida para users")
+            print("Etapas disponiveis: 1")
+            return
+    else:
+        # Executar todas as etapas em sequência
+        migration.step1_migrate_users()
+
+
 def main():
     """Funcao principal do orchestrator"""
     # Limpar arquivo de log no inicio
@@ -251,6 +453,12 @@ def main():
     step = None
     limit = 0
     
+    # Variáveis para filtros
+    clear_data = False
+    id_orcamento_filter = None
+    data_aviso_previo_min = None
+    data_inicio_operacao_max = None
+    
     # Processar argumentos
     i = 1
     while i < len(sys.argv):
@@ -266,7 +474,21 @@ def main():
             else:
                 print(f"AVISO: Destino invalido '{sys.argv[i + 1]}'. Usando padrao: {destino}")
             i += 2
-        elif arg.lower() in ['customers', 'stores']:
+        elif arg == '--clear-data':
+            clear_data = True
+            i += 1
+        elif arg == '--id-orcamento' and i + 1 < len(sys.argv):
+            # Aceitar lista separada por vírgula: --id-orcamento 6192,6193
+            id_orcamento_str = sys.argv[i + 1]
+            id_orcamento_filter = [int(x.strip()) for x in id_orcamento_str.split(',')]
+            i += 2
+        elif arg == '--data-aviso-previo' and i + 1 < len(sys.argv):
+            data_aviso_previo_min = sys.argv[i + 1]
+            i += 2
+        elif arg == '--data-inicio-operacao' and i + 1 < len(sys.argv):
+            data_inicio_operacao_max = sys.argv[i + 1]
+            i += 2
+        elif arg.lower() in ['customers', 'stores', 'contracts', 'users']:
             task = arg.lower()
             i += 1
         elif arg.isdigit():
@@ -317,19 +539,123 @@ def main():
         print("="*80)
         run_stores_task(step=None, limit_rows=limit)
         
+        # Task 4: Users (DEVE SER EXECUTADO ANTES DE CONTRACTS)
+        print("\n" + "="*80)
+        print("INICIANDO TASK: USERS")
+        print("="*80)
+        print("[INFO] Users deve ser executado antes de Contracts (dependencia)")
+        run_users_task(step=None, limit_rows=limit)
+        
+        # Task 3: Contracts (DEPENDE DE USERS)
+        print("\n" + "="*80)
+        print("INICIANDO TASK: CONTRACTS")
+        print("="*80)
+        print("[INFO] Contracts depende de Users (ja executado)")
+        run_contracts_task(step=step, limit_rows=limit, 
+                          id_orcamento_filter=id_orcamento_filter,
+                          data_aviso_previo_min=data_aviso_previo_min,
+                          data_inicio_operacao_max=data_inicio_operacao_max,
+                          clear_data=clear_data)
+        
     elif task == 'customers':
         run_customers_task(step=step, limit_rows=limit)
     elif task == 'stores':
         run_stores_task(step=step, limit_rows=limit)
+    elif task == 'users':
+        run_users_task(step=step, limit_rows=limit)
+    elif task == 'contracts':
+        # Executar dependências automaticamente ANTES de contracts
+        print("\n" + "="*80)
+        print("⚠️  VERIFICANDO E EXECUTANDO DEPENDÊNCIAS AUTOMATICAMENTE")
+        print("="*80)
+        print("[INFO] Contracts requer Customers e Stores antes da execução")
+        print("[INFO] Executando dependências automaticamente com os mesmos filtros...")
+        print("="*80)
+        
+        # 1. Executar Customers steps 1 e 2 (se necessário)
+        print("\n[1/2] Executando Customers (dependência de Contracts)...")
+        try:
+            # Step 1 de customers (customer_segments) - necessário antes do step 2
+            print("  → Executando Customers step 1 (customer_segments)...")
+            run_customers_task(step='1', limit_rows=limit)
+            print("  [OK] Customers step 1 concluído")
+            
+            # Step 2 de customers (customers)
+            print("  → Executando Customers step 2 (customers)...")
+            run_customers_task(step='2', limit_rows=limit)
+            print("  [OK] Customers step 2 concluído")
+            
+            print("[OK] Customers concluído")
+        except Exception as e:
+            print(f"[AVISO] Erro ao executar Customers: {e}")
+            print("[AVISO] Continuando mesmo assim...")
+        
+        # 2. Executar Stores steps 2, 3, 4 (se necessário)
+        print("\n[2/2] Executando Stores steps 2, 3, 4 (dependência de Contracts)...")
+        try:
+            # Step 1 de stores (store_segments) - necessário antes dos outros
+            print("  → Executando Stores step 1 (store_segments)...")
+            run_stores_task(step='1', limit_rows=limit, id_orcamento_filter=id_orcamento_filter)
+            print("  [OK] Stores step 1 concluído")
+            
+            # Step 2 de stores (retail_chains)
+            print("  → Executando Stores step 2 (retail_chains)...")
+            run_stores_task(step='2', limit_rows=limit, id_orcamento_filter=id_orcamento_filter)
+            print("  [OK] Stores step 2 concluído")
+            
+            # Step 3 de stores (store_brands)
+            print("  → Executando Stores step 3 (store_brands)...")
+            run_stores_task(step='3', limit_rows=limit, id_orcamento_filter=id_orcamento_filter)
+            print("  [OK] Stores step 3 concluído")
+            
+            # Step 4 de stores (stores)
+            print("  → Executando Stores step 4 (stores)...")
+            run_stores_task(step='4', limit_rows=limit, id_orcamento_filter=id_orcamento_filter)
+            print("  [OK] Stores step 4 concluído")
+            
+            print("[OK] Todos os Stores steps concluídos")
+        except Exception as e:
+            print(f"[AVISO] Erro ao executar Stores: {e}")
+            print("[AVISO] Continuando mesmo assim...")
+        
+        # 3. Verificar se users foi executado antes (dependencia)
+        print("\n[INFO] Verificando dependencia: Contracts requer Users...")
+        from utils.database_connection import DatabaseConnection
+        schema_users = 'gmcore' if DatabaseConnection.get_destino() == 'HML' else 'core'
+        conn_check = DatabaseConnection.get_postgresql_destino_connection()
+        cursor_check = conn_check.cursor()
+        cursor_check.execute(f"SELECT COUNT(*) FROM {schema_users}.users")
+        users_count = cursor_check.fetchone()[0]
+        cursor_check.close()
+        conn_check.close()
+        
+        if users_count == 0:
+            print(f"[AVISO] Tabela {schema_users}.users esta vazia!")
+            print("[AVISO] Contracts depende de Users. Executando Users primeiro...")
+            print("\n" + "="*80)
+            print("EXECUTANDO TASK: USERS (DEPENDENCIA DE CONTRACTS)")
+            print("="*80)
+            run_users_task(step=None, limit_rows=limit)
+            print("\n[INFO] Users executado. Continuando com Contracts...")
+        
+        run_contracts_task(step=step, limit_rows=limit,
+                          id_orcamento_filter=id_orcamento_filter,
+                          data_aviso_previo_min=data_aviso_previo_min,
+                          data_inicio_operacao_max=data_inicio_operacao_max,
+                          clear_data=clear_data)
     else:
         print(f"ERRO: Task '{task}' invalida")
-        print("Tasks disponiveis: customers, stores")
+        print("Tasks disponiveis: customers, stores, contracts, users")
         print("\nUso:")
         print("  python orchestrator_tasks.py                    # Executa todas as tasks")
         print("  python orchestrator_tasks.py --limit 100         # Executa todas com limite")
         print("  python orchestrator_tasks.py customers           # Executa apenas customers")
         print("  python orchestrator_tasks.py stores              # Executa apenas stores")
+        print("  python orchestrator_tasks.py contracts              # Executa apenas contracts")
+        print("  python orchestrator_tasks.py users              # Executa apenas users")
         print("  python orchestrator_tasks.py customers 1          # Executa etapa 1 de customers")
+        print("  python orchestrator_tasks.py contracts 1          # Executa etapa 1 de contracts")
+        print("  python orchestrator_tasks.py users 1              # Executa etapa 1 de users")
         print("  python orchestrator_tasks.py --limit 100 --destino PRD  # Todas as tasks com limite e destino")
         return
     

@@ -1,0 +1,979 @@
+====================================================================================================
+ROTEIRO DE PADRONIZAÇÃO PARA MIGRAÇÃO DE DADOS
+====================================================================================================
+Este documento serve como guia completo para criação e validação de módulos de migração.
+Baseado nas implementações de customers, stores e contracts.
+
+====================================================================================================
+1. ESTRUTURA BÁSICA DO ARQUIVO DE MIGRAÇÃO
+====================================================================================================
+
+1.1 IMPORTS OBRIGATÓRIOS
+----------------------------------------------------------------------------------------------------
+import sys
+import os
+import uuid
+import logging
+import pandas as pd
+from datetime import datetime
+from typing import List, Dict, Optional, Tuple
+from psycopg2.extras import execute_values
+
+# Adicionar diretório utils ao path
+utils_path = os.path.join(os.path.dirname(__file__), '..', 'utils')
+if utils_path not in sys.path:
+    sys.path.insert(0, utils_path)
+from database_connection import DatabaseConnection
+
+1.2 CONFIGURAÇÃO DE SCHEMAS
+----------------------------------------------------------------------------------------------------
+# Definir schemas por ambiente
+SCHEMA_HML = 'gmcore'  # ou 'gmcommercial' conforme o módulo
+SCHEMA_PRD = 'core'    # ou 'commercial' conforme o módulo
+
+def get_schema_atual():
+    """Retorna o schema atual baseado no destino configurado"""
+    destino = DatabaseConnection.get_destino()
+    if destino == 'PRD':
+        return SCHEMA_PRD
+    else:
+        return SCHEMA_HML
+
+1.3 CONFIGURAÇÃO DE LOGGING
+----------------------------------------------------------------------------------------------------
+# Criar logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Remover handlers existentes para evitar duplicação
+if logger.handlers:
+    logger.handlers.clear()
+
+# Handler para arquivo (modo 'a' para append)
+try:
+    log_file_path = os.path.join(os.path.dirname(__file__), '..', 'log_execution.txt')
+    log_file_path = os.path.abspath(log_file_path)
+    file_handler = logging.FileHandler(log_file_path, mode='a', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+except Exception as e:
+    pass
+
+# Handler para console (terminal)
+try:
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+except Exception:
+    pass
+
+1.4 TAMANHO DO CHUNK
+----------------------------------------------------------------------------------------------------
+CHUNK_SIZE = 1000  # Padrão: 1000. Pode ser aumentado para 20000 em módulos grandes
+# Nota: Em módulos com muitos dados (ex: contracts), usar CHUNK_SIZE = 20000 para melhor performance
+
+====================================================================================================
+2. ESTRUTURA DA CLASSE DE MIGRAÇÃO
+====================================================================================================
+
+2.1 INICIALIZAÇÃO (__init__)
+----------------------------------------------------------------------------------------------------
+class NomeModuleMigration:
+    """Classe para executar a migração de dados"""
+    
+    def __init__(self, limit_rows=0):
+        # Stats: contadores por etapa e lista de erros
+        self.stats = {
+            'tabela1': 0,
+            'tabela2': 0,
+            'errors': []
+        }
+        
+        # Dicionários de mapeamento: legado_id -> uuid
+        self.tabela1_id_map = {}  # Map: legado_id -> uuid
+        self.tabela2_id_map = {}  # Map: legado_id -> uuid
+        
+        # Limite de linhas (0 = todos, > 0 = limitar quantidade)
+        self.limit_rows = limit_rows
+
+2.2 MÉTODO should_include_legacy_id() - OBRIGATÓRIO
+----------------------------------------------------------------------------------------------------
+def should_include_legacy_id(self):
+    """Retorna True se deve incluir legacy_id (apenas em HML)"""
+    destino = DatabaseConnection.get_destino()
+    return destino == 'HML'
+
+2.3 MÉTODOS DE LIMPEZA DE DADOS
+----------------------------------------------------------------------------------------------------
+def clean_string(self, value: Optional[str], max_length: Optional[int] = None) -> Optional[str]:
+    """Limpa e trunca string"""
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    if not cleaned or cleaned.lower() in ['null', 'none', '']:
+        return None
+    if max_length and len(cleaned) > max_length:
+        cleaned = cleaned[:max_length]
+    return cleaned
+
+def clean_string_vectorized(self, series: pd.Series, max_length: Optional[int] = None) -> pd.Series:
+    """Limpa e trunca strings de forma vetorizada (usar com Pandas)"""
+    cleaned = series.astype(str)
+    cleaned = cleaned.replace(['nan', 'None', 'NULL', 'NONE'], '')
+    cleaned = cleaned.str.strip()
+    cleaned = cleaned.replace(['', 'null', 'none'], None)
+    if max_length:
+        cleaned = cleaned.str[:max_length]
+    return cleaned
+
+# Métodos específicos conforme necessário:
+# - clean_cpf_cnpj() / clean_cpf_cnpj_vectorized()
+# - clean_cnpj() / clean_cnpj_vectorized()
+# - Outros métodos de limpeza específicos do módulo
+
+2.4 MÉTODOS DE TRUNCATE/DELETE
+----------------------------------------------------------------------------------------------------
+def truncate_table(self, table_name: str, schema: str = None):
+    """Faz TRUNCATE em uma tabela"""
+    if schema is None:
+        schema = get_schema_atual()
+    
+    conn = None
+    try:
+        conn = DatabaseConnection.get_postgresql_destino_connection()
+        cursor = conn.cursor()
+        query = f"TRUNCATE TABLE {schema}.{table_name} CASCADE"
+        cursor.execute(query)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        logger.info(f"Tabela {schema}.{table_name} truncada com sucesso")
+        print(f"OK - Tabela {schema}.{table_name} truncada")
+    except Exception as e:
+        logger.error(f"Erro ao truncar tabela {schema}.{table_name}: {e}")
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise
+
+def delete_polymorphic_table(self, table_name: str, entity_type: str, type_column: str, schema: str = None):
+    """Faz DELETE em tabela polimórfica filtrando por tipo de entidade"""
+    if schema is None:
+        schema = get_schema_atual()
+    
+    conn = None
+    try:
+        conn = DatabaseConnection.get_postgresql_destino_connection()
+        cursor = conn.cursor()
+        query = f"DELETE FROM {schema}.{table_name} WHERE {type_column} = %s"
+        cursor.execute(query, (entity_type,))
+        deleted_count = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        conn.close()
+        logger.info(f"Tabela {schema}.{table_name}: {deleted_count} registros deletados (tipo: {entity_type})")
+        print(f"OK - Tabela {schema}.{table_name}: {deleted_count} registros deletados (tipo: {entity_type})")
+    except Exception as e:
+        logger.error(f"Erro ao deletar registros de {schema}.{table_name}: {e}")
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise
+
+====================================================================================================
+3. PADRÃO DE CADA ETAPA DE MIGRAÇÃO (stepN_migrate_*)
+====================================================================================================
+
+3.1 ESTRUTURA BÁSICA DE UMA ETAPA
+----------------------------------------------------------------------------------------------------
+def stepN_migrate_tabela(self):
+    """ETAPA N: Migrar tabela"""
+    destino = DatabaseConnection.get_destino()
+    schema = get_schema_atual()
+    
+    # Cabeçalho de log
+    print("\n" + "="*80)
+    print("ETAPA N: MIGRANDO TABELA")
+    print("="*80)
+    logger.info("="*80)
+    logger.info("ETAPA N: Migrando tabela")
+    logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
+    logger.info("="*80)
+    
+    try:
+        # 1. Limpeza da tabela destino
+        print("\n[ETAPA N] Limpando tabela...")
+        self.truncate_table('tabela')  # ou delete_polymorphic_table() se for polimórfica
+        
+        # 2. Verificar/criar coluna legacy_id (apenas em HML, apenas na primeira etapa)
+        include_legacy = False
+        if self.should_include_legacy_id():
+            try:
+                conn_check = DatabaseConnection.get_postgresql_destino_connection()
+                cursor_check = conn_check.cursor()
+                cursor_check.execute(f"""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_schema = '{schema}' 
+                    AND table_name = 'tabela' 
+                    AND column_name = 'legacy_id'
+                """)
+                if cursor_check.fetchone():
+                    include_legacy = True
+                    print("[ETAPA N] Coluna legacy_id já existe na tabela")
+                else:
+                    print("[ETAPA N] Criando coluna legacy_id...")
+                    cursor_check.execute(f"ALTER TABLE {schema}.tabela ADD COLUMN legacy_id INTEGER")
+                    conn_check.commit()
+                    include_legacy = True
+                    print("OK - Coluna legacy_id criada")
+                cursor_check.close()
+                conn_check.close()
+            except Exception as e:
+                logger.warning(f"Nao foi possivel criar/verificar coluna legacy_id: {e}")
+                include_legacy = False
+        
+        # 3. Buscar dados do SQL Server
+        print("[ETAPA N] Buscando dados do SQL Server...")
+        sql_query = """
+        SELECT 
+            Campo1,
+            Campo2,
+            Campo3
+        FROM TabelaOrigem
+        ORDER BY Id
+        """
+        
+        # Adicionar LIMIT se especificado
+        if self.limit_rows > 0:
+            sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
+        
+        conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+        cursor_sql = conn_sql.cursor()
+        cursor_sql.execute(sql_query)
+        
+        # 4. Carregar TODOS os dados na memória (OTIMIZADO)
+        print("[ETAPA N] Carregando dados na memória...")
+        all_rows = cursor_sql.fetchall()  # SEMPRE usar fetchall(), NUNCA fetchmany()
+        cursor_sql.close()
+        conn_sql.close()
+        
+        print(f"[ETAPA N] {len(all_rows)} registros carregados. Processando conversões...")
+        
+        # 5. Processar conversões em massa usando DataFrame (VETORIZADO)
+        schema = get_schema_atual()
+        df = pd.DataFrame.from_records(all_rows, columns=['Campo1', 'Campo2', 'Campo3'])
+        
+        # Aplicar transformações vetorizadas
+        df['legacy_id'] = df['Campo1']  # ID original da origem
+        df['campo_processado'] = self.clean_string_vectorized(df['Campo2'], max_length=255)
+        # ... outras transformações
+        
+        # Remover linhas com erros
+        df = df[df['campo_obrigatorio'].notna()]
+        
+        # 6. Preparar dados para inserção baseado em include_legacy
+        if include_legacy:
+            processed_tuples = list(zip(
+                df['campo1'].tolist(),
+                df['campo2'].tolist(),
+                df['legacy_id'].tolist()  # Incluir legacy_id
+            ))
+        else:
+            processed_tuples = list(zip(
+                df['campo1'].tolist(),
+                df['campo2'].tolist()
+                # Sem legacy_id
+            ))
+        
+        print(f"[ETAPA N] {len(processed_tuples)} registros processados. Inserindo no banco (otimizado com execute_values)...")
+        
+        # 7. Conectar ao PostgreSQL
+        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+        cursor_pg = conn_pg.cursor()
+        
+        # 8. Preparar query de insert baseado em include_legacy
+        if include_legacy:
+            insert_query = f"""
+            INSERT INTO {schema}.tabela (
+                id, campo1, campo2, legacy_id
+            ) VALUES %s
+            """
+            insert_template = f"(gen_random_uuid(), %s, %s, %s)"
+        else:
+            insert_query = f"""
+            INSERT INTO {schema}.tabela (
+                id, campo1, campo2
+            ) VALUES %s
+            """
+            insert_template = f"(gen_random_uuid(), %s, %s)"
+        
+        chunk_num = 0
+        total_processed = 0
+        all_legacy_ids_inserted = []
+        
+        # 9. Processar em chunks usando execute_values (OTIMIZADO)
+        for i in range(0, len(processed_tuples), CHUNK_SIZE):
+            chunk = processed_tuples[i:i + CHUNK_SIZE]
+            chunk_num += 1
+            
+            if chunk:
+                try:
+                    # Usar execute_values() para inserção otimizada em bulk
+                    execute_values(
+                        cursor_pg,
+                        insert_query,
+                        chunk,
+                        template=insert_template,
+                        page_size=CHUNK_SIZE,
+                        fetch=False
+                    )
+                    
+                    # Coletar legacy_ids para lookup depois (se include_legacy)
+                    if include_legacy:
+                        chunk_legacy_ids = [row[-1] for row in chunk]  # último elemento é legacy_id
+                        all_legacy_ids_inserted.extend(chunk_legacy_ids)
+                    
+                    total_processed += len(chunk)
+                    self.stats['tabela'] += len(chunk)
+                    
+                except Exception as batch_error:
+                    error_msg = f"Erro ao inserir batch de tabela: {batch_error}"
+                    logger.error(error_msg)
+                    print(f"ERRO - {error_msg}")
+                    self.stats['errors'].append(error_msg)
+                    try:
+                        conn_pg.rollback()
+                        cursor_pg = conn_pg.cursor()
+                    except Exception as rollback_error:
+                        logger.error(f"Erro ao fazer rollback: {rollback_error}")
+                    continue
+            
+            # Commit do chunk
+            try:
+                conn_pg.commit()
+                print(f"[ETAPA N] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
+                logger.info(f"[ETAPA N] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
+            except Exception as commit_error:
+                logger.error(f"Erro no commit do chunk {chunk_num}: {commit_error}")
+                conn_pg.rollback()
+                cursor_pg = conn_pg.cursor()
+        
+        # 10. Buscar UUIDs gerados para mapeamento (OTIMIZADO)
+        if include_legacy and all_legacy_ids_inserted:
+            print(f"[ETAPA N] Buscando UUIDs gerados para {len(all_legacy_ids_inserted)} registros...")
+            cursor_pg.execute(f"""
+                SELECT id, legacy_id 
+                FROM {schema}.tabela 
+                WHERE legacy_id = ANY(%s)
+            """, (all_legacy_ids_inserted,))
+            for uuid_row, leg_id in cursor_pg.fetchall():
+                self.tabela_id_map[leg_id] = uuid_row
+            print(f"[ETAPA N] {len(self.tabela_id_map)} UUIDs mapeados")
+        elif not include_legacy:
+            # Se não há legacy_id, mapear por ordem de inserção (menos confiável)
+            print(f"[ETAPA N] Buscando UUIDs gerados para mapeamento...")
+            cursor_pg.execute(f"""
+                SELECT id, created_at 
+                FROM {schema}.tabela 
+                ORDER BY created_at
+                LIMIT %s
+            """, (len(processed_tuples),))
+            legacy_ids_list = df['legacy_id'].tolist()
+            for idx, (uuid_row, _) in enumerate(cursor_pg.fetchall()):
+                if idx < len(legacy_ids_list):
+                    self.tabela_id_map[legacy_ids_list[idx]] = uuid_row
+            print(f"[ETAPA N] {len(self.tabela_id_map)} UUIDs mapeados")
+        
+        # 11. Fechar conexões
+        cursor_pg.close()
+        conn_pg.close()
+        
+        print(f"\n[ETAPA N] CONCLUIDA! Total de registros migrados: {self.stats['tabela']}")
+        logger.info(f"ETAPA N concluida: {self.stats['tabela']} registros")
+        
+        # 12. Validação e relatório de qualidade
+        self.validate_stepN_tabela()
+        
+    except Exception as e:
+        logger.error(f"Erro na ETAPA N: {e}")
+        if 'conn_pg' in locals():
+            try:
+                conn_pg.rollback()
+                if 'cursor_pg' in locals():
+                    cursor_pg.close()
+                conn_pg.close()
+            except:
+                pass
+        raise
+
+====================================================================================================
+4. OTIMIZAÇÕES OBRIGATÓRIAS
+====================================================================================================
+
+4.1 CARREGAMENTO DE DADOS
+----------------------------------------------------------------------------------------------------
+✅ SEMPRE usar: cursor_sql.fetchall()  # Carrega tudo na memória
+❌ NUNCA usar: cursor_sql.fetchmany(CHUNK_SIZE)  # Processa linha por linha (lento)
+
+4.2 GERAÇÃO DE UUIDs
+----------------------------------------------------------------------------------------------------
+✅ SEMPRE usar: gen_random_uuid()  # Geração no banco (rápido)
+❌ NUNCA usar: uuid.uuid4()  # Geração em Python (lento)
+
+4.3 INSERÇÃO DE DADOS
+----------------------------------------------------------------------------------------------------
+✅ SEMPRE usar: execute_values()  # Inserção em bulk (muito rápido)
+❌ NUNCA usar: cursor.execute() ou executemany()  # Inserção linha por linha (muito lento)
+
+Exemplo:
+execute_values(
+    cursor_pg,
+    insert_query,
+    chunk,
+    template=insert_template,
+    page_size=CHUNK_SIZE,
+    fetch=False
+)
+
+4.4 PROCESSAMENTO DE DADOS
+----------------------------------------------------------------------------------------------------
+✅ SEMPRE usar: Pandas DataFrames para transformações vetorizadas
+✅ SEMPRE usar: Métodos clean_*_vectorized() para limpeza em massa
+✅ SEMPRE processar tudo em memória antes de inserir
+✅ SEMPRE coletar warnings em batch (não logar linha por linha)
+❌ NUNCA usar: loops linha por linha com logger.warning() dentro do loop
+
+Exemplo:
+df = pd.DataFrame.from_records(all_rows, columns=['Campo1', 'Campo2'])
+df['campo_limpo'] = self.clean_string_vectorized(df['Campo1'], max_length=255)
+df['campo_convertido'] = df['Campo2'].astype(int)
+
+# Coletar warnings em batch (CORRETO):
+mask_invalid = df['campo_obrigatorio'].isna()
+invalid_count = mask_invalid.sum()
+if invalid_count > 0:
+    invalid_ids = df[mask_invalid]['id'].unique()[:10].tolist()
+    logger.warning(f"Campo obrigatorio ausente para {invalid_count} registros: {invalid_ids}{'...' if invalid_count > 10 else ''}")
+
+# NUNCA fazer isso (ERRADO):
+# for row in all_rows:
+#     if not row[0]:
+#         logger.warning(f"Campo ausente: {row[0]}")  # ❌ Log linha por linha
+
+4.5 MAPEAMENTO DE IDs (legacy_id -> UUID)
+----------------------------------------------------------------------------------------------------
+✅ COM legacy_id: SEMPRE usar SELECT WHERE legacy_id = ANY(%s) - MUITO MAIS CONFIÁVEL
+❌ SEM legacy_id: Usar ORDER BY created_at (NÃO CONFIÁVEL, pode causar mapeamentos incorretos)
+⚠️  IMPORTANTE: Se uma tabela será referenciada por outras, SEMPRE criar legacy_id nela
+
+Exemplo com legacy_id (RECOMENDADO):
+cursor_pg.execute(f"""
+    SELECT id, legacy_id 
+    FROM {schema}.tabela 
+    WHERE legacy_id = ANY(%s)
+""", (all_legacy_ids_inserted,))
+for uuid_row, leg_id in cursor_pg.fetchall():
+    self.tabela_id_map[leg_id] = uuid_row
+
+⚠️  PROBLEMA COM ORDER BY created_at:
+- Falha quando alguns registros são filtrados antes da inserção
+- Falha quando alguns chunks falham na inserção
+- A ordem de created_at pode não corresponder à ordem de inserção
+- Pode causar mapeamentos incorretos entre legacy_id e UUID
+
+====================================================================================================
+5. LÓGICA DE legacy_id
+====================================================================================================
+
+5.1 VERIFICAÇÃO E CRIAÇÃO AUTOMÁTICA
+----------------------------------------------------------------------------------------------------
+- A coluna legacy_id deve ser criada automaticamente em HML se não existir
+- Isso deve acontecer ANTES de inserir dados na tabela
+- IMPORTANTE: legacy_id deve ser criada em TODAS as tabelas que serão referenciadas por outras
+  tabelas (não apenas na primeira etapa). Isso é crítico para mapeamento confiável entre tabelas.
+- Exemplo: Se contract_scenarios será referenciado por contract_scenario_stores, então
+  contract_scenarios DEVE ter legacy_id para permitir mapeamento confiável.
+- Usar include_legacy para controlar se deve incluir legacy_id nas queries
+
+5.2 PADRÃO DE IMPLEMENTAÇÃO
+----------------------------------------------------------------------------------------------------
+include_legacy = False
+if self.should_include_legacy_id():
+    try:
+        conn_check = DatabaseConnection.get_postgresql_destino_connection()
+        cursor_check = conn_check.cursor()
+        cursor_check.execute(f"""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_schema = '{schema}' 
+            AND table_name = 'tabela' 
+            AND column_name = 'legacy_id'
+        """)
+        if cursor_check.fetchone():
+            include_legacy = True
+            print("[ETAPA N] Coluna legacy_id já existe na tabela")
+        else:
+            print("[ETAPA N] Criando coluna legacy_id...")
+            cursor_check.execute(f"ALTER TABLE {schema}.tabela ADD COLUMN legacy_id INTEGER")
+            conn_check.commit()
+            include_legacy = True
+            print("OK - Coluna legacy_id criada")
+        cursor_check.close()
+        conn_check.close()
+    except Exception as e:
+        logger.warning(f"Nao foi possivel criar/verificar coluna legacy_id: {e}")
+        include_legacy = False
+
+5.3 USO EM QUERIES
+----------------------------------------------------------------------------------------------------
+- Se include_legacy = True: incluir legacy_id na lista de colunas e nos dados
+- Se include_legacy = False: não incluir legacy_id na query
+
+5.4 DOCUMENTAÇÃO
+----------------------------------------------------------------------------------------------------
+- Todas as colunas legacy_id criadas devem ser documentadas em colunas_novas_tabelas.txt
+- Formato: schema.tabela.legacy_id (TIPO, Nullable: SIM, Origem: TabelaOrigem.CampoOrigem)
+
+====================================================================================================
+6. MAPEAMENTO DE IDs ENTRE TABELAS
+====================================================================================================
+
+6.1 PRINCÍPIO FUNDAMENTAL
+----------------------------------------------------------------------------------------------------
+- IDs originais (INTEGER) da origem são armazenados como legacy_id
+- IDs novos (UUID) são gerados pelo PostgreSQL
+- Mapeamento: legacy_id (origem) -> UUID (destino)
+- Armazenado em dicionários: self.tabela_id_map[legacy_id] = uuid
+
+6.2 QUANDO USAR legacy_id PARA MAPEAMENTO
+----------------------------------------------------------------------------------------------------
+- Tabela A tem legacy_id = IdOrigem
+- Tabela B precisa referenciar Tabela A
+- Buscar UUID de A usando: self.tabela_a_id_map.get(IdOrigem)
+
+Exemplo:
+customer_id = self.customer_id_map.get(legado_id)
+if not customer_id:
+    continue  # Pular se não encontrou
+
+6.3 CARREGAMENTO DE MAPEAMENTOS DE OUTROS MÓDULOS
+----------------------------------------------------------------------------------------------------
+- Antes de usar mapeamento de outro módulo, carregar do banco
+- Verificar se include_legacy para decidir como buscar
+
+Exemplo:
+# Carregar mapeamento de customers
+if self.should_include_legacy_id():
+    cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.customers WHERE legacy_id IS NOT NULL")
+else:
+    # Em PRD, buscar de outra forma ou usar outra estratégia
+    cursor_pg.execute(f"SELECT id FROM {schema}.customers LIMIT 1")
+for row in cursor_pg.fetchall():
+    if len(row) == 2 and row[1] is not None:
+        self.customer_id_map[row[1]] = row[0]
+
+====================================================================================================
+7. VALIDAÇÃO E RELATÓRIOS DE QUALIDADE
+====================================================================================================
+
+7.1 ESTRUTURA DO MÉTODO DE VALIDAÇÃO
+----------------------------------------------------------------------------------------------------
+def validate_stepN_tabela(self):
+    """Validação e relatório de qualidade - ETAPA N"""
+    print("\n" + "-"*80)
+    print("RELATORIO DE QUALIDADE - ETAPA N: TABELA")
+    print("-"*80)
+    
+    try:
+        # Contar origem (SQL Server)
+        conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+        cursor_sql = conn_sql.cursor()
+        
+        # Query de contagem (CUIDADO: não usar ORDER BY em subqueries sem TOP/OFFSET)
+        if self.limit_rows > 0:
+            query_origem = f"""
+                SELECT COUNT(*) 
+                FROM (
+                    SELECT TOP {self.limit_rows} Id
+                    FROM TabelaOrigem
+                    ORDER BY Id
+                ) AS limited
+            """
+        else:
+            query_origem = """
+                SELECT COUNT(*) 
+                FROM TabelaOrigem
+            """
+        
+        cursor_sql.execute(query_origem)
+        origem_count = cursor_sql.fetchone()[0]
+        cursor_sql.close()
+        conn_sql.close()
+        
+        # Contar destino (PostgreSQL)
+        schema = get_schema_atual()
+        destino_nome = DatabaseConnection.get_destino()
+        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+        cursor_pg = conn_pg.cursor()
+        cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.tabela")
+        destino_count = cursor_pg.fetchone()[0]
+        cursor_pg.close()
+        conn_pg.close()
+        
+        # Comparar e reportar
+        print(f"\nORIGEM (SQL Server PRD - TabelaOrigem):")
+        print(f"  Total de registros: {origem_count}")
+        
+        print(f"\nDESTINO (PostgreSQL {destino_nome} - {schema}.tabela):")
+        print(f"  Total inserido: {destino_count}")
+        
+        diferenca = origem_count - destino_count
+        
+        if diferenca == 0:
+            print(f"\nOK - Todos os registros foram migrados com sucesso!")
+            logger.info(f"VALIDACAO ETAPA N: OK - Origem: {origem_count}, Destino: {destino_count}")
+        else:
+            print(f"\nAVISO - Diferenca encontrada: {diferenca} registros")
+            print(f"  {abs(diferenca)} registros {'faltando' if diferenca > 0 else 'extras'} no destino")
+            logger.warning(f"VALIDACAO ETAPA N: Diferenca - Origem: {origem_count}, Destino: {destino_count}, Diferenca: {diferenca}")
+        
+        return diferenca == 0
+        
+    except Exception as e:
+        logger.error(f"Erro na validacao ETAPA N: {e}")
+        print(f"ERRO na validacao: {e}")
+        return False
+
+7.2 REGRAS PARA QUERIES DE VALIDAÇÃO NO SQL SERVER
+----------------------------------------------------------------------------------------------------
+❌ NUNCA usar ORDER BY em subqueries sem TOP ou OFFSET
+✅ SEM limite: query direta sem subquery
+✅ COM limite: usar TOP {limit_rows} na subquery
+
+Exemplo ERRADO:
+SELECT COUNT(*) FROM (
+    SELECT Id FROM Tabela ORDER BY Id  -- ERRO: ORDER BY sem TOP
+) AS limited
+
+Exemplo CORRETO sem limite:
+SELECT COUNT(*) FROM Tabela
+
+Exemplo CORRETO com limite:
+SELECT COUNT(*) FROM (
+    SELECT TOP {limit_rows} Id FROM Tabela ORDER BY Id
+) AS limited
+
+====================================================================================================
+8. TRATAMENTO DE ERROS
+====================================================================================================
+
+8.1 ESTRUTURA DE TRY/EXCEPT
+----------------------------------------------------------------------------------------------------
+try:
+    # Código principal da etapa
+    ...
+except Exception as e:
+    logger.error(f"Erro na ETAPA N: {e}")
+    if 'conn_pg' in locals():
+        try:
+            conn_pg.rollback()
+            if 'cursor_pg' in locals():
+                cursor_pg.close()
+            conn_pg.close()
+        except:
+            pass
+    raise
+
+8.2 TRATAMENTO DE ERROS EM BATCHES
+----------------------------------------------------------------------------------------------------
+- Em caso de erro em um batch, fazer rollback e continuar com próximo batch
+- Registrar erro em self.stats['errors']
+- Não interromper toda a migração por um batch com erro
+
+8.3 FECHAMENTO DE CONEXÕES
+----------------------------------------------------------------------------------------------------
+- Sempre fechar conexões SQL Server ANTES de validar
+- Sempre fechar conexões PostgreSQL após inserção
+- Usar try/except ao fechar para evitar erros em caso de conexão já fechada
+
+====================================================================================================
+9. MÉTODO run() - EXECUÇÃO COMPLETA
+====================================================================================================
+
+9.1 ESTRUTURA DO MÉTODO run()
+----------------------------------------------------------------------------------------------------
+def run(self):
+    """Executa a migração completa"""
+    destino = DatabaseConnection.get_destino()
+    schema = get_schema_atual()
+    
+    print("\n" + "="*80)
+    print(f"INICIANDO MIGRACAO: SQL Server PRD -> PostgreSQL {destino} ({schema})")
+    print("="*80)
+    print(f"Data/Hora: {datetime.now()}")
+    print("="*80)
+    
+    logger.info("="*80)
+    logger.info("INICIANDO MIGRACAO COMPLETA")
+    logger.info("="*80)
+    logger.info(f"Data/Hora: {datetime.now()}")
+    logger.info(f"Ambiente Destino: {destino}")
+    logger.info(f"Schema Destino: {schema}")
+    logger.info(f"Limite de Linhas: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
+    logger.info(f"Tamanho do Chunk: {CHUNK_SIZE}")
+    logger.info(f"Origem: SQL Server PRD (Database: FINANCEIRO)")
+    logger.info(f"Destino: PostgreSQL {destino} (Schema: {schema})")
+    logger.info("="*80)
+    
+    start_time = datetime.now()
+    
+    try:
+        # Executar etapas em sequência
+        self.step1_migrate_tabela1()
+        self.step2_migrate_tabela2()
+        # ... outras etapas
+        
+        end_time = datetime.now()
+        duration = end_time - start_time
+        
+        # Relatório final
+        print("\n" + "="*80)
+        print("MIGRACAO CONCLUIDA COM SUCESSO!")
+        print("="*80)
+        print(f"\nDuracao total: {duration}")
+        print("\nESTATISTICAS FINAIS:")
+        for key, value in self.stats.items():
+            if key != 'errors':
+                print(f"  {key.capitalize()}: {value}")
+        print(f"  Erros: {len(self.stats['errors'])}")
+        
+        if self.stats['errors']:
+            print(f"\nAVISO - Total de erros: {len(self.stats['errors'])}")
+            print("Verifique o arquivo de log para detalhes")
+        else:
+            print("\nNenhum erro encontrado!")
+        
+        logger.info(f"Duracao: {duration}")
+        for key, value in self.stats.items():
+            if key != 'errors':
+                logger.info(f"{key.capitalize()}: {value}")
+        logger.info(f"Erros: {len(self.stats['errors'])}")
+        
+    except Exception as e:
+        logger.error(f"Erro critico na migracao: {e}")
+        raise
+
+====================================================================================================
+10. ORQUESTRAÇÃO NO orchestrator_tasks.py
+====================================================================================================
+
+10.1 ESTRUTURA DA FUNÇÃO DE ORQUESTRAÇÃO
+----------------------------------------------------------------------------------------------------
+def run_modulo_task(step=None, limit_rows=0):
+    """
+    Executa migração do módulo
+    
+    Args:
+        step: Etapa específica a executar (None = todas)
+        limit_rows: Limite de linhas (0 = todas)
+    """
+    from modulo.modulo_to_core import ModuloMigration
+    
+    migration = ModuloMigration(limit_rows=limit_rows)
+    
+    if step:
+        # Executar apenas uma etapa específica
+        if step == '1':
+            migration.step1_migrate_tabela1()
+        elif step == '2':
+            # Carregar mapeamentos necessários antes
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            if migration.should_include_legacy_id():
+                cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.tabela1 WHERE legacy_id IS NOT NULL")
+            else:
+                # Estratégia alternativa para PRD
+                cursor_pg.execute(f"SELECT id FROM {schema}.tabela1 LIMIT 1")
+            for row in cursor_pg.fetchall():
+                if len(row) == 2 and row[1] is not None:
+                    migration.tabela1_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step2_migrate_tabela2()
+        # ... outras etapas
+    else:
+        # Executar migração completa
+        migration.run()
+
+10.2 INTEGRAÇÃO COM ARGUMENTOS DE LINHA DE COMANDO
+----------------------------------------------------------------------------------------------------
+# No main() do orchestrator_tasks.py
+if '--task' in sys.argv:
+    task = sys.argv[sys.argv.index('--task') + 1]
+    step = None
+    limit = 0
+    
+    if '--step' in sys.argv:
+        step = sys.argv[sys.argv.index('--step') + 1]
+    if '--limit' in sys.argv:
+        limit = int(sys.argv[sys.argv.index('--limit') + 1])
+    
+    if task == 'modulo':
+        run_modulo_task(step=step, limit_rows=limit)
+
+====================================================================================================
+11. DICIONÁRIO DE MAPEAMENTO (dictionary.txt)
+====================================================================================================
+
+11.1 ESTRUTURA DO ARQUIVO DE DICIONÁRIO
+----------------------------------------------------------------------------------------------------
+- Criar arquivo: modulo/modulo_dictionary.txt
+- Documentar TODAS as tabelas do módulo
+- Para cada tabela, documentar:
+  * Nome da tabela origem (SQL Server)
+  * Nome da tabela destino (PostgreSQL)
+  * Mapeamento campo a campo
+  * Transformações aplicadas
+  * Campos não mapeados (origem e destino)
+  * Observações importantes
+
+11.2 FORMATO DO DICIONÁRIO
+----------------------------------------------------------------------------------------------------
+====================================================================================================
+MODULO: NOME_DO_MODULO
+====================================================================================================
+
+TABELA 1: TABELA_DESTINO
+----------------------------------------------------------------------------------------------------
+ORIGEM: SchemaOrigem.TabelaOrigem
+DESTINO: SchemaDestino.tabela_destino
+
+CAMPOS MAPEADOS:
+- CampoOrigem1 -> campo_destino1 (tipo, transformação)
+- CampoOrigem2 -> campo_destino2 (tipo, transformação)
+- legacy_id -> legacy_id (INTEGER, IdOrigem - apenas HML)
+
+CAMPOS ORIGEM NÃO MAPEADOS:
+- CampoOrigemX (motivo)
+
+CAMPOS DESTINO NÃO MAPEADOS:
+- campo_destinoY (valor padrão ou NULL)
+
+OBSERVAÇÕES:
+- Observação importante sobre mapeamento ou transformação
+
+====================================================================================================
+12. CHECKLIST DE VALIDAÇÃO
+====================================================================================================
+
+Antes de considerar um módulo completo, verificar:
+
+□ Estrutura da classe está correta (__init__, stats, dicionários de mapeamento)
+□ Método should_include_legacy_id() implementado
+□ Métodos de limpeza implementados (clean_string, clean_string_vectorized, etc.)
+□ Métodos truncate_table() e delete_polymorphic_table() implementados
+□ Todas as etapas seguem o padrão definido
+□ Uso de fetchall() para carregar dados (NUNCA fetchmany em loops)
+□ Uso de gen_random_uuid() para UUIDs
+□ Uso de execute_values() para inserções
+□ Processamento vetorizado com Pandas DataFrames (TODAS as transformações)
+□ Warnings coletados em batch, não linha por linha
+□ Lógica de legacy_id implementada (criação automática em HML)
+□ legacy_id criada em TODAS as tabelas que serão referenciadas por outras
+□ Mapeamento de IDs usando WHERE legacy_id = ANY(%s) quando disponível
+□ NUNCA usar ORDER BY created_at para mapeamento (apenas fallback quando legacy_id não existe)
+□ Validação implementada para cada etapa
+□ Queries de validação não usam ORDER BY em subqueries sem TOP/OFFSET
+□ Tratamento de erros implementado
+□ Método run() implementado
+□ Função de orquestração criada no orchestrator_tasks.py
+□ Dicionário de mapeamento criado e completo
+□ Documentação de colunas legacy_id em colunas_novas_tabelas.txt
+□ Logging configurado corretamente
+□ CHUNK_SIZE definido adequadamente (1000 padrão, 20000 para módulos grandes)
+□ Schemas configurados corretamente
+
+====================================================================================================
+13. EXEMPLOS DE CÓDIGO COMPLETO
+====================================================================================================
+
+13.1 EXEMPLO DE ETAPA SIMPLES (SEM DEPENDÊNCIAS)
+----------------------------------------------------------------------------------------------------
+Ver arquivos:
+- customers/customers_to_core.py (step1_migrate_customer_segments)
+- stores/stores_to_core.py (step1_migrate_store_segments)
+
+13.2 EXEMPLO DE ETAPA COM DEPENDÊNCIAS
+----------------------------------------------------------------------------------------------------
+Ver arquivos:
+- customers/customers_to_core.py (step3_migrate_addresses)
+- stores/stores_to_core.py (step4_migrate_stores)
+- contracts/contracts_to_core.py (step2_migrate_contract_scenarios)
+
+13.3 EXEMPLO DE ETAPA COM TABELA POLIMÓRFICA
+----------------------------------------------------------------------------------------------------
+Ver arquivos:
+- customers/customers_to_core.py (step3_migrate_addresses, step4_migrate_contacts)
+- stores/stores_to_core.py (step6_migrate_addresses, step7_migrate_contacts)
+
+====================================================================================================
+14. NOTAS IMPORTANTES
+====================================================================================================
+
+14.1 PERFORMANCE
+----------------------------------------------------------------------------------------------------
+- Processamento em memória é MUITO mais rápido que linha por linha
+- execute_values() é MUITO mais rápido que executemany()
+- gen_random_uuid() é mais rápido que uuid.uuid4()
+- Evitar commits frequentes (fazer por chunk, não por linha)
+- Evitar prints dentro de loops críticos
+- Evitar logs linha por linha (coletar warnings em batch e logar uma vez)
+- Usar DataFrames e operações vetorizadas para TODAS as transformações
+- CHUNK_SIZE pode ser aumentado para 20000 em módulos grandes para melhor throughput
+
+14.2 CONEXÕES DE BANCO
+----------------------------------------------------------------------------------------------------
+- Fechar conexões SQL Server ANTES de validar
+- Fechar conexões PostgreSQL após inserção
+- Não reutilizar conexões entre etapas diferentes
+- Em loops internos, usar conexões separadas se necessário
+
+14.3 MAPEAMENTO DE IDs
+----------------------------------------------------------------------------------------------------
+- Sempre verificar se o ID foi encontrado antes de usar
+- Usar .get() com valor padrão quando apropriado
+- Documentar dependências entre etapas claramente
+
+14.4 VALIDAÇÃO
+----------------------------------------------------------------------------------------------------
+- Validação deve ser executada após cada etapa
+- Comparar contagens origem vs destino
+- Reportar diferenças claramente
+- Não falhar a migração por diferenças pequenas (apenas avisar)
+
+====================================================================================================
+FIM DO ROTEIRO
+====================================================================================================
+
+Este documento deve ser consultado sempre que:
+- Criar um novo módulo de migração
+- Validar um módulo existente
+- Corrigir problemas de padronização
+- Onboardar novos desenvolvedores
+
+Última atualização: 2025-12-16
+Baseado em: customers, stores, contracts
+
+ATUALIZAÇÕES RECENTES (2025-12-16):
+- Enfatizado que legacy_id deve ser criada em TODAS as tabelas referenciadas (não apenas primeira etapa)
+- Documentado problema com ORDER BY created_at para mapeamento (não confiável)
+- Adicionado padrão de coleta de warnings em batch (não linha por linha)
+- Atualizado CHUNK_SIZE padrão para mencionar 20000 em módulos grandes
+- Enfatizado uso de DataFrames e operações vetorizadas para TODAS as transformações
+
