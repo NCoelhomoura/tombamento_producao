@@ -765,6 +765,152 @@ class ContractsMigration:
         
         print(f"[ETAPA 1] {len(all_rows)} registros carregados. Processando conversões...")
         
+        # Coletar TODOS os IDs únicos da ViewOrcamentosLojas
+        # Quando há LIMIT, primeiro identificar quais IdOrcamento serão migrados,
+        # depois coletar TODOS os IDs únicos relacionados a esses contratos (sem LIMIT na coleta)
+        print("[ETAPA 1] Coletando IDs únicos da ViewOrcamentosLojas...")
+        
+        if self.limit_rows > 0:
+            # Primeiro, identificar quais IdOrcamento serão migrados (aplicando LIMIT)
+            id_orcamento_migrados = [row[0] for row in all_rows]  # IdOrcamento da query principal (já com LIMIT aplicado)
+            
+            if id_orcamento_migrados:
+                # Agora coletar TODOS os IDs únicos relacionados a esses contratos (SEM LIMIT)
+                placeholders = ','.join(['?' for _ in id_orcamento_migrados])
+                sql_query_ids = f"""
+                SELECT DISTINCT
+                    v.IdOrcamento,
+                    v.IdCliente,
+                    v.IdEstabelecimento,
+                    v.IdBandeira,
+                    v.IdRede
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                WHERE v.IdOrcamento IN ({placeholders})
+                """
+                
+                # Aplicar os mesmos filtros adicionais (DataAvisoPrevio, DataInicioOperacao) se existirem
+                where_conditions_ids = []
+                query_params_ids = list(id_orcamento_migrados)
+                
+                if self.data_aviso_previo_min is not None:
+                    if isinstance(self.data_aviso_previo_min, str):
+                        data_aviso_previo_str = self.data_aviso_previo_min
+                    else:
+                        data_aviso_previo_str = self.data_aviso_previo_min.strftime('%Y-%m-%d')
+                    where_conditions_ids.append("(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)")
+                    query_params_ids.append(data_aviso_previo_str)
+                
+                if self.data_inicio_operacao_max is not None:
+                    if isinstance(self.data_inicio_operacao_max, str):
+                        data_inicio_str = self.data_inicio_operacao_max
+                    else:
+                        data_inicio_str = self.data_inicio_operacao_max.strftime('%Y-%m-%d')
+                    where_conditions_ids.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
+                    query_params_ids.append(data_inicio_str)
+                
+                if where_conditions_ids:
+                    sql_query_ids += " AND " + " AND ".join(where_conditions_ids)
+                
+                print(f"[ETAPA 1] Coletando TODOS os IDs únicos para {len(id_orcamento_migrados)} contratos: {id_orcamento_migrados[:5]}{'...' if len(id_orcamento_migrados) > 5 else ''}")
+            else:
+                sql_query_ids = "SELECT DISTINCT v.IdOrcamento, v.IdCliente, v.IdEstabelecimento, v.IdBandeira, v.IdRede FROM ViewOrcamentosLojas v WHERE 1=0"
+                query_params_ids = []
+        else:
+            # Sem LIMIT, usar os mesmos filtros da query principal
+            sql_query_ids = """
+            SELECT DISTINCT
+                v.IdOrcamento,
+                v.IdCliente,
+                v.IdEstabelecimento,
+                v.IdBandeira,
+                v.IdRede
+            FROM ViewOrcamentosLojas v
+            INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+            """
+            
+            if where_conditions:
+                sql_query_ids += " WHERE " + " AND ".join(where_conditions)
+            
+            query_params_ids = query_params
+            print(f"[ETAPA 1] Coletando IDs únicos sem LIMIT (aplicando filtros: {where_conditions})")
+            logger.info(f"[ETAPA 1] Query completa (sem LIMIT): {sql_query_ids}")
+            logger.info(f"[ETAPA 1] Parâmetros (sem LIMIT): {query_params_ids}")
+        
+        conn_sql_ids = DatabaseConnection.get_sql_server_prd_connection()
+        cursor_sql_ids = conn_sql_ids.cursor()
+        
+        # Log da query para debug
+        logger.info(f"[ETAPA 1] Query de coleta de IDs: {sql_query_ids[:200]}...")
+        logger.info(f"[ETAPA 1] Parâmetros da query: {query_params_ids}")
+        
+        if query_params_ids:
+            cursor_sql_ids.execute(sql_query_ids, query_params_ids)
+        else:
+            cursor_sql_ids.execute(sql_query_ids)
+        
+        ids_rows = cursor_sql_ids.fetchall()
+        cursor_sql_ids.close()
+        conn_sql_ids.close()
+        
+        print(f"[ETAPA 1] Query retornou {len(ids_rows)} linhas da ViewOrcamentosLojas")
+        logger.info(f"[ETAPA 1] Query retornou {len(ids_rows)} linhas da ViewOrcamentosLojas")
+        
+        # Log das primeiras linhas para debug
+        if ids_rows:
+            print(f"[ETAPA 1] Primeiras 3 linhas retornadas: {ids_rows[:3]}")
+            logger.info(f"[ETAPA 1] Primeiras 3 linhas: {ids_rows[:3]}")
+        
+        # Coletar dados agregados para o JSON (TODOS os IDs únicos)
+        aggregated_ids = {
+            'IdOrcamento': [],
+            'IdCliente': [],
+            'IdEstabelecimento': [],
+            'IdBandeira': [],
+            'IdRede': []
+        }
+        
+        for id_row in ids_rows:
+            id_orcamento = id_row[0]
+            id_cliente = id_row[1]
+            id_estabelecimento = id_row[2]
+            id_bandeira = id_row[3]
+            id_rede = id_row[4]
+            
+            if id_orcamento and id_orcamento not in aggregated_ids['IdOrcamento']:
+                aggregated_ids['IdOrcamento'].append(id_orcamento)
+            if id_cliente and id_cliente not in aggregated_ids['IdCliente']:
+                aggregated_ids['IdCliente'].append(id_cliente)
+            if id_estabelecimento and id_estabelecimento not in aggregated_ids['IdEstabelecimento']:
+                aggregated_ids['IdEstabelecimento'].append(id_estabelecimento)
+            if id_bandeira and id_bandeira not in aggregated_ids['IdBandeira']:
+                aggregated_ids['IdBandeira'].append(id_bandeira)
+            if id_rede and id_rede not in aggregated_ids['IdRede']:
+                aggregated_ids['IdRede'].append(id_rede)
+        
+        print(f"[ETAPA 1] IDs únicos coletados: {len(aggregated_ids['IdOrcamento'])} contratos, "
+              f"{len(aggregated_ids['IdEstabelecimento'])} estabelecimentos, "
+              f"{len(aggregated_ids['IdBandeira'])} bandeiras, "
+              f"{len(aggregated_ids['IdRede'])} redes")
+        logger.info(f"[ETAPA 1] IDs únicos coletados - Contratos: {len(aggregated_ids['IdOrcamento'])}, "
+                   f"Estabelecimentos: {len(aggregated_ids['IdEstabelecimento'])}, "
+                   f"Bandeiras: {len(aggregated_ids['IdBandeira'])}, "
+                   f"Redes: {len(aggregated_ids['IdRede'])}")
+        
+        # Log detalhado dos IDs coletados
+        if aggregated_ids['IdEstabelecimento']:
+            print(f"[ETAPA 1] IdEstabelecimento coletados: {aggregated_ids['IdEstabelecimento'][:10]}{'...' if len(aggregated_ids['IdEstabelecimento']) > 10 else ''}")
+        if aggregated_ids['IdBandeira']:
+            print(f"[ETAPA 1] IdBandeira coletados: {aggregated_ids['IdBandeira'][:10]}{'...' if len(aggregated_ids['IdBandeira']) > 10 else ''}")
+        if aggregated_ids['IdRede']:
+            print(f"[ETAPA 1] IdRede coletados: {aggregated_ids['IdRede']}")
+        
+        # ⚠️ IMPORTANTE: Gerar JSON ANTES de migrar os dados
+        # Isso garante que outros módulos (stores, customers) possam ler o JSON correto
+        print("[ETAPA 1] Gerando arquivo JSON com filtros e IDs agregados (ANTES da migração)...")
+        self.save_filter_json(aggregated_ids)
+        print("[ETAPA 1] Arquivo JSON gerado com sucesso. Outros módulos podem ler os filtros corretos.")
+        
         # Se há filtros e não é clear_data: fazer DELETE antes de inserir
         if self.has_filters() and not self.clear_data:
             legacy_ids_to_delete = [row[0] for row in all_rows]  # IdOrcamento
@@ -776,34 +922,10 @@ class ContractsMigration:
         batch_values = []
         legacy_ids_list = []
         
-        # Coletar dados agregados para o JSON
-        aggregated_ids = {
-            'IdOrcamento': [],
-            'IdCliente': [],
-            'IdEstabelecimento': [],
-            'IdBandeira': [],
-            'IdRede': []
-        }
-        
         for row in all_rows:
             try:
                 legado_id = row[0]  # IdOrcamento
                 customer_legacy_id = row[1]  # IdCliente
-                estabelecimento_id = row[12] if len(row) > 12 else None  # IdEstabelecimento
-                bandeira_id = row[13] if len(row) > 13 else None  # IdBandeira
-                rede_id = row[14] if len(row) > 14 else None  # IdRede
-                
-                # Coletar IDs agregados para o JSON (antes de qualquer validação)
-                if legado_id not in aggregated_ids['IdOrcamento']:
-                    aggregated_ids['IdOrcamento'].append(legado_id)
-                if customer_legacy_id and customer_legacy_id not in aggregated_ids['IdCliente']:
-                    aggregated_ids['IdCliente'].append(customer_legacy_id)
-                if estabelecimento_id and estabelecimento_id not in aggregated_ids['IdEstabelecimento']:
-                    aggregated_ids['IdEstabelecimento'].append(estabelecimento_id)
-                if bandeira_id and bandeira_id not in aggregated_ids['IdBandeira']:
-                    aggregated_ids['IdBandeira'].append(bandeira_id)
-                if rede_id and rede_id not in aggregated_ids['IdRede']:
-                    aggregated_ids['IdRede'].append(rede_id)
                 
                 # Mapear customer_id
                 customer_uuid = self.customer_id_map.get(customer_legacy_id)
@@ -812,17 +934,6 @@ class ContractsMigration:
                     # Apenas contar o erro e continuar
                     self.stats['errors'].append(f"Customer nao encontrado: IdCliente={customer_legacy_id} para Orcamento Id={legado_id}")
                     continue
-                
-                if legado_id not in aggregated_ids['IdOrcamento']:
-                    aggregated_ids['IdOrcamento'].append(legado_id)
-                if customer_legacy_id and customer_legacy_id not in aggregated_ids['IdCliente']:
-                    aggregated_ids['IdCliente'].append(customer_legacy_id)
-                if estabelecimento_id and estabelecimento_id not in aggregated_ids['IdEstabelecimento']:
-                    aggregated_ids['IdEstabelecimento'].append(estabelecimento_id)
-                if bandeira_id and bandeira_id not in aggregated_ids['IdBandeira']:
-                    aggregated_ids['IdBandeira'].append(bandeira_id)
-                if rede_id and rede_id not in aggregated_ids['IdRede']:
-                    aggregated_ids['IdRede'].append(rede_id)
                 
                 # Preparar valores
                 billing_day = row[2] if row[2] is not None else 1
@@ -986,8 +1097,8 @@ class ContractsMigration:
             
             logger.info(f"[ETAPA 1] CONCLUIDA! Total inseridos: {total_inseridos}, Processados: {total_processados}, Erros: {total_erros}")
             
-            # Gerar arquivo JSON com filtros e IDs agregados
-            self.save_filter_json(aggregated_ids)
+            # ⚠️ NOTA: O JSON já foi gerado ANTES da migração (linha ~898)
+            # Não é necessário gerar novamente aqui
             
             # Validação
             self.validate_step1_contracts()

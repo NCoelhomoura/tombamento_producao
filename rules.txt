@@ -86,13 +86,13 @@ Exemplo de uso: IdOrcamento IN (valores definidos via parâmetros de linha de co
 - DataAvisoPrevio: Não é obrigatório, mas filtrar caso tiver definido uma data mínima
 Exemplo de uso: 
 AND (
-    CONVERT(DATE, DataAvisoPrevio) >= '2025-01-01'
-    OR DataAvisoPrevio IS NULL
-)
+		CONVERT(DATE, DataAvisoPrevio) >= '2025-01-01'
+		OR DataAvisoPrevio IS NULL
+	)
 
 - DataInicioOperacao: Não é obrigatório, mas filtrar caso tiver definido uma data máxima
 Exemplo de uso: 
-AND CONVERT(DATE, DataInicioOperacao) <= '2026-01-13'
+	AND CONVERT(DATE, DataInicioOperacao) <= '2026-01-13'
 
 
 * USE CASE *
@@ -518,7 +518,8 @@ CAMPOS ESPECIAIS:
 - abras_code: Sempre preencher com "empty" (campo obrigatório, não mapeado da origem)
 - store_segment_id: Buscar via IdCanalEstabelecimento da ViewOrcamentosLojas (agrupado por IdBandeira)
 
-⚠️ CRÍTICO: Mesmo em full load, store_brands DEVE filtrar apenas bandeiras que estão relacionadas a estabelecimentos na ViewOrcamentosLojas.
+⚠️ CRÍTICO: Mesmo em full load ou com --limit, store_brands DEVE filtrar apenas bandeiras que estão relacionadas a estabelecimentos na ViewOrcamentosLojas.
+⚠️ IMPORTANTE: Se --limit for especificado, primeiro buscar IdBandeira da ViewOrcamentosLojas, depois aplicar o limite na query final. NUNCA buscar diretamente da tabela Bandeira sem filtrar pela ViewOrcamentosLojas.
 
 CENÁRIO 1: Se contracts/contracts_filter_main.json existe (contracts step1 foi executado):
 - Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdBandeira
@@ -569,7 +570,8 @@ LIMPEZA DE DADOS:
 
 FILTRO OBRIGATÓRIO: Aplicar filtro WHERE Id IN (lista de IdRede da ViewOrcamentosLojas)
 
-⚠️ CRÍTICO: Mesmo em full load, retail_chains DEVE filtrar apenas redes que estão relacionadas a estabelecimentos na ViewOrcamentosLojas.
+⚠️ CRÍTICO: Mesmo em full load ou com --limit, retail_chains DEVE filtrar apenas redes que estão relacionadas a estabelecimentos na ViewOrcamentosLojas.
+⚠️ IMPORTANTE: Se --limit for especificado, primeiro buscar IdRede da ViewOrcamentosLojas, depois aplicar o limite na query final. NUNCA buscar diretamente da tabela Rede sem filtrar pela ViewOrcamentosLojas.
 
 CENÁRIO 1: Se contracts/contracts_filter_main.json existe (contracts step1 foi executado):
 - Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdRede
@@ -978,4 +980,256 @@ REGRAS DE SINCRONIZAÇÃO:
    - Addresses e Contacts são tabelas polimórficas
    - Sempre usar delete_polymorphic_table() ao invés de truncate_table()
    - Filtrar por contactable_type = 'customers' ou addressable_type = 'customers'
+
+
+================================================================================
+LÓGICAS DE EXECUÇÃO E ORQUESTRAÇÃO
+================================================================================
+
+-- ARQUIVO JSON DE FILTROS (contracts_filter_main.json) --
+
+⚠️ CRÍTICO: O arquivo JSON é gerado ANTES da migração, não depois.
+
+REGRAS DE GERAÇÃO DO JSON:
+1. Quando executado: O JSON é gerado ANTES de migrar os dados (logo após coletar IDs únicos)
+2. Onde é gerado: No step1_migrate_contracts, logo após coletar IDs da ViewOrcamentosLojas
+3. Por que ANTES: Para que stores e customers possam ler os filtros corretos antes de executar
+4. Conteúdo do JSON:
+   - filters_applied: Filtros aplicados (IdOrcamento, datas, limit_rows, clear_data)
+   - aggregated_ids: IDs únicos coletados (IdOrcamento, IdCliente, IdEstabelecimento, IdBandeira, IdRede)
+   - execution_info: Informações da execução (timestamp, source, total migrado)
+
+COMPORTAMENTO:
+- Se contracts é executado primeiro: Gera JSON → stores e customers leem o JSON
+- Se stores/customers executam primeiro: Buscam diretamente da ViewOrcamentosLojas e atualizam o JSON
+- O JSON sempre reflete os dados que SERÃO migrados, não os que JÁ FORAM migrados
+
+ATUALIZAÇÃO DO JSON:
+- Contracts: Atualiza após coletar IDs únicos (ANTES da migração)
+- Stores: Atualiza quando busca diretamente da ViewOrcamentosLojas (com ou sem LIMIT)
+- Customers: Atualiza quando busca diretamente da ViewOrcamentosLojas (com ou sem LIMIT)
+- Flag json_updated_this_run: Garante que o JSON seja atualizado apenas uma vez por execução
+
+
+-- LÓGICA DE LIMIT EM CUSTOMERS --
+
+⚠️ IMPORTANTE: Quando há --limit em customers, o limite é aplicado APENAS aos IdCliente.
+
+COMPORTAMENTO COM --limit:
+1. Primeiro: Identificar quais IdCliente serão migrados (com TOP/LIMIT)
+2. Depois: Coletar TODOS os IdEstabelecimento, IdBandeira e IdRede relacionados a esses clientes (SEM LIMIT)
+
+EXEMPLO:
+- Comando: python orchestrator_tasks.py customers --id-orcamento 6192 --limit 10
+- Resultado:
+  * 10 IdCliente migrados (limit aplicado)
+  * TODOS os IdEstabelecimento relacionados aos 10 clientes (sem limit)
+  * TODOS os IdBandeira relacionados aos 10 clientes (sem limit)
+  * TODOS os IdRede relacionados aos 10 clientes (sem limit)
+
+QUERY BASE PARA IdCliente (com LIMIT):
+```sql
+SELECT DISTINCT TOP 10 v.IdCliente
+FROM ViewOrcamentosLojas v
+INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+WHERE v.IdOrcamento IN (6192)
+```
+
+QUERY PARA OUTROS IDs (SEM LIMIT):
+```sql
+SELECT DISTINCT v.IdEstabelecimento
+FROM ViewOrcamentosLojas v
+INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+WHERE v.IdCliente IN (clientes_selecionados)  -- IDs dos 10 clientes selecionados
+```
+
+MOTIVAÇÃO:
+- O limite deve ser aplicado apenas aos clientes (entidade principal)
+- Outros IDs são coletados completamente para garantir integridade referencial
+
+
+-- LÓGICA DE USERS (SEMPRE FULL QUANDO AUTOMÁTICO) --
+
+⚠️ CRÍTICO: Users sempre executa FULL quando executado automaticamente.
+
+REGRAS DE EXECUÇÃO:
+1. Quando executado automaticamente (como dependência de contracts):
+   - SEMPRE executa FULL (limit_rows=0)
+   - NÃO aceita --limit mesmo se especificado
+   - Motivo: Contracts depende de TODOS os users para funcionar corretamente
+
+2. Quando executado diretamente:
+   - PODE usar --limit se especificado
+   - Exemplo: python orchestrator_tasks.py users --limit 10 → migra 10 linhas
+   - Exemplo: python orchestrator_tasks.py users → migra todas as linhas
+
+3. Quando executado como parte de "todas as tasks":
+   - SEMPRE executa FULL (limit_rows=0)
+   - NÃO usa o --limit global mesmo se especificado
+
+CENÁRIOS:
+✅ python orchestrator_tasks.py users --limit 10
+   → Migra 10 linhas (execução direta, limit aplicado)
+
+✅ python orchestrator_tasks.py users
+   → Migra todas as linhas (execução direta, sem limit)
+
+✅ python orchestrator_tasks.py contracts --id-orcamento 6192
+   → Se users estiver vazio, executa users FULL automaticamente (limit_rows=0)
+
+✅ python orchestrator_tasks.py --limit 100
+   → Executa todas as tasks, mas users sempre FULL (limit_rows=0)
+
+MOTIVAÇÃO:
+- Contracts referencia users via foreign keys
+- Se users estiver parcial, contracts pode falhar ao referenciar users inexistentes
+- Garantir que todos os users estejam disponíveis quando contracts precisar
+
+
+-- FLAG --clear-data E USERS --
+
+⚠️ IMPORTANTE: O flag --clear-data NÃO afeta users.
+
+REGRAS:
+1. Quando --clear-data é usado em contracts:
+   - Limpa apenas tabelas de contracts
+   - NÃO limpa tabela users
+   - Users não é afetado
+
+2. Quando --clear-data é usado em customers:
+   - Limpa apenas tabelas de customers
+   - NÃO limpa tabela users
+   - Users não é afetado
+
+3. Quando --clear-data é usado em stores:
+   - Limpa apenas tabelas de stores
+   - NÃO limpa tabela users
+   - Users não é afetado
+
+4. Quando --clear-data é usado em users:
+   - Limpa apenas tabela users
+   - Comportamento normal do módulo
+
+MOTIVAÇÃO:
+- Users é uma dependência crítica de contracts
+- Não podemos perder users parcialmente quando limpamos outros módulos
+- Users deve ser gerenciado independentemente
+
+
+-- LÓGICA DE STORES E CUSTOMERS SEMPRE USAREM ViewOrcamentosLojas --
+
+⚠️ CRÍTICO: Stores e customers SEMPRE filtram pela ViewOrcamentosLojas, mesmo sem filtros.
+
+REGRAS:
+1. STORES:
+   - Step 2 (retail_chains): SEMPRE busca IdRede da ViewOrcamentosLojas
+   - Step 3 (store_brands): SEMPRE busca IdBandeira da ViewOrcamentosLojas
+   - Step 4 (stores): SEMPRE busca IdEstabelecimento da ViewOrcamentosLojas
+   - Mesmo em full load (sem filtros): filtra pela ViewOrcamentosLojas
+   - Mesmo com --limit: primeiro busca IDs da ViewOrcamentosLojas, depois aplica limite
+
+2. CUSTOMERS:
+   - Step 2 (customers): SEMPRE busca IdCliente da ViewOrcamentosLojas
+   - Mesmo em full load (sem filtros): filtra pela ViewOrcamentosLojas
+   - Mesmo com --limit: primeiro busca IdCliente da ViewOrcamentosLojas, depois aplica limite
+
+COMPORTAMENTO COM --limit:
+- Com --limit 10: Busca os primeiros 10 IdCliente/IdEstabelecimento da ViewOrcamentosLojas
+- Sem --limit: Busca TODOS os IdCliente/IdEstabelecimento da ViewOrcamentosLojas
+- Mas SEMPRE filtra pela ViewOrcamentosLojas (nunca busca diretamente da tabela origem)
+
+MOTIVAÇÃO:
+- Apenas lojas/clientes ativos relacionados a contratos devem ser migrados
+- ViewOrcamentosLojas já aplica os filtros de negócio necessários
+- Garantir consistência entre contracts, stores e customers
+
+
+-- AGRUPAMENTO DE WARNINGS EM CONTRACTS --
+
+⚠️ IMPORTANTE: Warnings de "Contract não encontrado" são agrupados em uma única mensagem.
+
+COMPORTAMENTO ANTES:
+```
+2026-01-13 16:47:56,530 - WARNING - Contract nao encontrado: IdOrcamento=13834
+2026-01-13 16:47:56,531 - WARNING - Contract nao encontrado: IdOrcamento=13835
+2026-01-13 16:47:56,532 - WARNING - Contract nao encontrado: IdOrcamento=13836
+```
+
+COMPORTAMENTO AGORA:
+```
+2026-01-13 16:47:56,530 - WARNING - Contracts nao encontrados: IdOrcamento: [13834, 13835, 13836]
+```
+
+APLICADO EM:
+- Step 4 (contract_sellers): Agrupa contracts não encontrados de Orcamento e Comissao
+- Step 5 (contract_team_members): Agrupa contracts não encontrados
+- Step 6 (contract_contacts): Agrupa contracts não encontrados
+- Step 7 (contract_partners): Agrupa contracts não encontrados
+- Step 8 (contract_additional_charges): Agrupa contracts não encontrados
+
+MOTIVAÇÃO:
+- Reduzir ruído nos logs
+- Facilitar identificação de problemas
+- Melhorar legibilidade dos logs
+
+
+-- ORDEM DE EXECUÇÃO E DEPENDÊNCIAS --
+
+ORDEM RECOMENDADA:
+1. Users (se necessário) → SEMPRE FULL quando automático
+2. Customers steps 1, 2 → Depende de customer_segments
+3. Stores steps 1, 2, 3, 4 → Depende de store_segments, retail_chains, store_brands
+4. Contracts → Depende de users, customers, stores
+
+EXECUÇÃO AUTOMÁTICA:
+- Quando contracts é executado:
+  1. Verifica se customers foi executado → Se não, executa customers steps 1, 2 automaticamente
+  2. Verifica se stores foi executado → Se não, executa stores steps 1, 2, 3, 4 automaticamente
+  3. Verifica se users foi executado → Se não, executa users FULL automaticamente
+  4. Executa contracts com os filtros especificados
+
+FILTROS APLICADOS NAS DEPENDÊNCIAS:
+- Customers: Usa os mesmos filtros de IdOrcamento do contracts (se houver)
+- Stores: Usa os mesmos filtros de IdOrcamento do contracts (se houver)
+- Users: SEMPRE FULL (não usa filtros, mesmo se contracts tiver filtros)
+
+JSON COMO FONTE DE VERDADE:
+- O JSON (contracts_filter_main.json) é a fonte de verdade para filtros
+- Stores e customers leem o JSON para saber quais IDs migrar
+- O JSON é atualizado sempre que há busca na ViewOrcamentosLojas
+- O JSON é gerado ANTES da migração para que outros módulos possam ler
+
+
+-- RESUMO DE COMPORTAMENTOS POR COMANDO --
+
+1. python orchestrator_tasks.py contracts --id-orcamento 6192
+   → Gera JSON ANTES da migração
+   → Executa customers e stores automaticamente (com filtros)
+   → Executa users FULL automaticamente (se necessário)
+   → Migra contracts com filtro
+
+2. python orchestrator_tasks.py contracts --id-orcamento 6192 --limit 10
+   → Gera JSON ANTES da migração (com 10 contratos)
+   → Executa customers e stores automaticamente (com filtros e limit)
+   → Executa users FULL automaticamente (SEM limit)
+   → Migra 10 contracts
+
+3. python orchestrator_tasks.py customers --id-orcamento 6192 --limit 10
+   → Busca 10 IdCliente da ViewOrcamentosLojas
+   → Coleta TODOS os IdEstabelecimento, IdBandeira, IdRede relacionados
+   → Atualiza JSON com os IDs coletados
+   → Migra 10 customers
+
+4. python orchestrator_tasks.py stores --limit 10
+   → Busca 10 IdEstabelecimento da ViewOrcamentosLojas
+   → Coleta TODOS os IdRede e IdBandeira relacionados
+   → Atualiza JSON com os IDs coletados
+   → Migra 10 stores
+
+5. python orchestrator_tasks.py users --limit 10
+   → Migra 10 users (execução direta, limit aplicado)
+
+6. python orchestrator_tasks.py --limit 100
+   → Executa todas as tasks com limit 100
+   → MAS users sempre FULL (limit_rows=0)
 

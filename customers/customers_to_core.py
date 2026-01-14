@@ -80,7 +80,8 @@ CHUNK_SIZE = 1000
 class CustomersMigration:
     """Classe para executar a migração de dados"""
     
-    def __init__(self, limit_rows=0):
+    def __init__(self, limit_rows=0, id_orcamento_filter=None, 
+                 data_aviso_previo_min=None, data_inicio_operacao_max=None, clear_data=False):
         self.stats = {
             'customers': 0,
             'customer_segments': 0,
@@ -91,6 +92,11 @@ class CustomersMigration:
         self.customer_id_map = {}  # Map: legado_id -> uuid
         self.segment_id_map = {}   # Map: legado_id -> uuid
         self.limit_rows = limit_rows  # 0 = todos, > 0 = limitar quantidade
+        self.id_orcamento_filter = id_orcamento_filter  # Lista de IdOrcamento para filtrar
+        self.data_aviso_previo_min = data_aviso_previo_min  # Data mínima para DataAvisoPrevio
+        self.data_inicio_operacao_max = data_inicio_operacao_max  # Data máxima para DataInicioOperacao
+        self.clear_data = clear_data  # Se True, força TRUNCATE mesmo com filtros aplicados
+        self.json_updated_this_run = False  # Flag para evitar múltiplas atualizações do JSON na mesma execução
         
         # Caminho do arquivo JSON de filtros do contracts
         contracts_dir = os.path.join(os.path.dirname(__file__), '..', 'contracts')
@@ -265,6 +271,415 @@ class CustomersMigration:
         except Exception as e:
             logger.error(f"Erro ao carregar arquivo de filtros: {e}")
             return None
+    
+    def save_filter_json_from_view(self, id_orcamento_list=None):
+        """
+        Atualiza o JSON de filtros do contracts com IDs coletados da ViewOrcamentosLojas
+        Chamado quando customers busca diretamente da ViewOrcamentosLojas (com ou sem LIMIT)
+        Aplica os mesmos filtros do JSON existente (DataAvisoPrevio, DataInicioOperacao)
+        Usa queries separadas para cada tipo de ID para garantir resultados corretos
+        
+        Args:
+            id_orcamento_list: Lista opcional de IdOrcamento para filtrar (se None, usa self.id_orcamento_filter)
+        """
+        try:
+            print("[CUSTOMERS] Coletando IDs únicos da ViewOrcamentosLojas para atualizar JSON...")
+            
+            # Usar id_orcamento_list fornecido ou self.id_orcamento_filter
+            id_orcamento_to_use = id_orcamento_list if id_orcamento_list is not None else self.id_orcamento_filter
+            
+            # Carregar JSON existente para pegar filtros de data (se não foram fornecidos no objeto)
+            existing_data = self.load_filter_json()
+            data_aviso_previo_min = self.data_aviso_previo_min
+            data_inicio_operacao_max = self.data_inicio_operacao_max
+            
+            # Se não foram fornecidos no objeto, tentar pegar do JSON existente
+            if not data_aviso_previo_min and existing_data and 'filters_applied' in existing_data:
+                filters = existing_data['filters_applied']
+                data_aviso_previo_min = filters.get('data_aviso_previo_min')
+            
+            if not data_inicio_operacao_max and existing_data and 'filters_applied' in existing_data:
+                filters = existing_data['filters_applied']
+                data_inicio_operacao_max = filters.get('data_inicio_operacao_max')
+            
+            conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql = conn_sql.cursor()
+            
+            # Construir WHERE clause comum
+            where_conditions = []
+            query_params = []
+            
+            # Filtro IdOrcamento (usar id_orcamento_to_use)
+            if id_orcamento_to_use:
+                placeholders = ','.join(['?' for _ in id_orcamento_to_use])
+                where_conditions.append(f"v.IdOrcamento IN ({placeholders})")
+                query_params.extend(id_orcamento_to_use)
+            
+            # Filtro DataAvisoPrevio (data mínima)
+            if data_aviso_previo_min:
+                where_conditions.append("(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)")
+                query_params.append(data_aviso_previo_min)
+            
+            # Filtro DataInicioOperacao (data máxima)
+            if data_inicio_operacao_max:
+                where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
+                query_params.append(data_inicio_operacao_max)
+            
+            where_clause = ""
+            if where_conditions:
+                where_clause = " WHERE " + " AND ".join(where_conditions)
+            
+            # ⚠️ IMPORTANTE: Para customers, a query base seleciona APENAS IdCliente
+            # Query base com TOP se houver LIMIT (apenas IdCliente para customers)
+            if self.limit_rows > 0:
+                base_query_cliente = f"""
+                SELECT DISTINCT TOP {self.limit_rows}
+                    v.IdCliente
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                {where_clause}
+                """
+            else:
+                base_query_cliente = f"""
+                SELECT DISTINCT
+                    v.IdCliente
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                {where_clause}
+                """
+            
+            # Query para IdCliente (usando a base_query_cliente específica)
+            query_cliente = f"""
+            SELECT DISTINCT base.IdCliente
+            FROM ({base_query_cliente}) base
+            WHERE base.IdCliente IS NOT NULL
+            """
+            
+            # Para os outros IDs, usar a query base completa (caso necessário para preservar o JSON)
+            # ⚠️ IMPORTANTE: Quando há LIMIT, ele deve ser aplicado apenas aos IdCliente
+            # Para IdEstabelecimento, IdBandeira e IdRede, coletar TODOS os valores únicos
+            # relacionados aos clientes selecionados (sem TOP)
+            # 
+            # Quando há limit_rows > 0:
+            # 1. Primeiro identificar quais IdCliente serão migrados (com TOP)
+            # 2. Depois coletar TODOS os IdEstabelecimento, IdBandeira e IdRede relacionados
+            #    a esses clientes (sem TOP)
+            
+            if self.limit_rows > 0:
+                # Quando há LIMIT, primeiro identificar os IdCliente que serão migrados
+                # Depois coletar TODOS os outros IDs relacionados a esses clientes
+                # Usar WHERE IN com a subquery para filtrar apenas os clientes selecionados
+                # (evita duplicação de filtros no where_clause)
+                base_query_full = f"""
+                SELECT DISTINCT
+                    v.IdOrcamento,
+                    v.IdCliente,
+                    v.IdEstabelecimento,
+                    v.IdBandeira,
+                    v.IdRede
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                WHERE v.IdCliente IN ({base_query_cliente})
+                """
+            else:
+                base_query_full = f"""
+                SELECT DISTINCT
+                    v.IdOrcamento,
+                    v.IdCliente,
+                    v.IdEstabelecimento,
+                    v.IdBandeira,
+                    v.IdRede
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                {where_clause}
+                """
+            
+            # Query para IdOrcamento (usando base_query_full)
+            query_orcamento = f"""
+            SELECT DISTINCT base.IdOrcamento
+            FROM ({base_query_full}) base
+            WHERE base.IdOrcamento IS NOT NULL
+            """
+            
+            # Query para IdEstabelecimento (usando base_query_full)
+            query_estabelecimento = f"""
+            SELECT DISTINCT base.IdEstabelecimento
+            FROM ({base_query_full}) base
+            WHERE base.IdEstabelecimento IS NOT NULL
+            """
+            
+            # Query para IdBandeira (usando base_query_full)
+            query_bandeira = f"""
+            SELECT DISTINCT base.IdBandeira
+            FROM ({base_query_full}) base
+            WHERE base.IdBandeira IS NOT NULL
+            """
+            
+            # Query para IdRede (usando base_query_full)
+            query_rede = f"""
+            SELECT DISTINCT base.IdRede
+            FROM ({base_query_full}) base
+            WHERE base.IdRede IS NOT NULL
+            """
+            
+            # Executar queries separadas para cada tipo de ID
+            aggregated_ids = {
+                'IdOrcamento': [],
+                'IdCliente': [],
+                'IdEstabelecimento': [],
+                'IdBandeira': [],
+                'IdRede': []
+            }
+            
+            # Função auxiliar para substituir parâmetros nas queries (para debug no SSMS)
+            def format_query_for_ssms(query, params):
+                """Substitui placeholders (?) pelos valores reais para execução no SSMS"""
+                if not params:
+                    return query
+                formatted = query
+                param_idx = 0
+                while '?' in formatted and param_idx < len(params):
+                    param = params[param_idx]
+                    if isinstance(param, str):
+                        escaped_param = param.replace("'", "''")
+                        formatted = formatted.replace('?', f"'{escaped_param}'", 1)
+                    elif isinstance(param, (int, float)):
+                        formatted = formatted.replace('?', str(param), 1)
+                    elif param is None:
+                        formatted = formatted.replace('?', 'NULL', 1)
+                    else:
+                        formatted = formatted.replace('?', str(param), 1)
+                    param_idx += 1
+                return formatted
+            
+            # Log completo de todas as queries para debug
+            logger.info("="*80)
+            logger.info("[CUSTOMERS] DEBUG - QUERIES COMPLETAS PARA COLETA DE IDs")
+            logger.info("="*80)
+            logger.info(f"[CUSTOMERS] Query base para IdCliente (base_query_cliente):\n{base_query_cliente}")
+            logger.info(f"[CUSTOMERS] Query base completa para outros IDs (base_query_full):\n{base_query_full}")
+            logger.info(f"[CUSTOMERS] Query IdOrcamento:\n{query_orcamento}")
+            logger.info(f"[CUSTOMERS] Query IdCliente:\n{query_cliente}")
+            logger.info(f"[CUSTOMERS] Query IdEstabelecimento:\n{query_estabelecimento}")
+            logger.info(f"[CUSTOMERS] Query IdBandeira:\n{query_bandeira}")
+            logger.info(f"[CUSTOMERS] Query IdRede:\n{query_rede}")
+            logger.info(f"[CUSTOMERS] Parâmetros da query: {query_params}")
+            logger.info("="*80)
+            
+            # Log das queries formatadas para SSMS (com valores substituídos)
+            logger.info("="*80)
+            logger.info("[CUSTOMERS] QUERIES PRONTAS PARA COPIAR E COLAR NO SSMS")
+            logger.info("="*80)
+            if query_params:
+                logger.info("\n-- Query base para IdCliente (base_query_cliente) para SSMS:")
+                logger.info(format_query_for_ssms(base_query_cliente, query_params))
+                
+                logger.info("\n-- Query IdCliente para SSMS:")
+                logger.info(format_query_for_ssms(query_cliente, query_params))
+            else:
+                logger.info("\n-- Query base para IdCliente (base_query_cliente) para SSMS:")
+                logger.info(base_query_cliente)
+                
+                logger.info("\n-- Query IdCliente para SSMS:")
+                logger.info(query_cliente)
+            logger.info("="*80)
+            
+            # Executar cada query separadamente (garantindo resultados corretos)
+            # ⚠️ IMPORTANTE: Quando há limit_rows > 0, primeiro executar query_cliente para obter os IdCliente selecionados
+            # Depois usar esses IdCliente na query principal para coletar TODOS os outros IDs relacionados
+            if self.limit_rows > 0 and query_params:
+                # Primeiro executar query_cliente para obter os IdCliente selecionados
+                cursor_sql.execute(query_cliente, query_params)
+                id_cliente_selecionados = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                aggregated_ids['IdCliente'] = id_cliente_selecionados
+                preview = aggregated_ids['IdCliente'][:10] if aggregated_ids['IdCliente'] else []
+                logger.info(f"[CUSTOMERS] Resultado IdCliente: {len(aggregated_ids['IdCliente'])} registros - {preview}")
+                
+                # Se não há clientes selecionados, não há o que coletar
+                if not id_cliente_selecionados:
+                    aggregated_ids['IdOrcamento'] = []
+                    aggregated_ids['IdEstabelecimento'] = []
+                    aggregated_ids['IdBandeira'] = []
+                    aggregated_ids['IdRede'] = []
+                else:
+                    # Usar os IdCliente selecionados para coletar TODOS os outros IDs relacionados
+                    # Construir nova query que filtra por IdCliente selecionados
+                    placeholders_cliente = ','.join(['?' for _ in id_cliente_selecionados])
+                    where_clause_with_cliente = where_clause
+                    if where_clause_with_cliente:
+                        where_clause_with_cliente += f" AND v.IdCliente IN ({placeholders_cliente})"
+                    else:
+                        where_clause_with_cliente = f" WHERE v.IdCliente IN ({placeholders_cliente})"
+                    
+                    # Query completa para outros IDs (sem TOP, coletando TODOS relacionados aos clientes selecionados)
+                    base_query_full_limited = f"""
+                    SELECT DISTINCT
+                        v.IdOrcamento,
+                        v.IdCliente,
+                        v.IdEstabelecimento,
+                        v.IdBandeira,
+                        v.IdRede
+                    FROM ViewOrcamentosLojas v
+                    INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                    {where_clause_with_cliente}
+                    """
+                    
+                    # Construir queries para outros IDs usando a nova base_query_full_limited
+                    query_orcamento_limited = f"""
+                    SELECT DISTINCT base.IdOrcamento
+                    FROM ({base_query_full_limited}) base
+                    WHERE base.IdOrcamento IS NOT NULL
+                    """
+                    
+                    query_estabelecimento_limited = f"""
+                    SELECT DISTINCT base.IdEstabelecimento
+                    FROM ({base_query_full_limited}) base
+                    WHERE base.IdEstabelecimento IS NOT NULL
+                    """
+                    
+                    query_bandeira_limited = f"""
+                    SELECT DISTINCT base.IdBandeira
+                    FROM ({base_query_full_limited}) base
+                    WHERE base.IdBandeira IS NOT NULL
+                    """
+                    
+                    query_rede_limited = f"""
+                    SELECT DISTINCT base.IdRede
+                    FROM ({base_query_full_limited}) base
+                    WHERE base.IdRede IS NOT NULL
+                    """
+                    
+                    # Parâmetros para as queries limitadas: filtros originais + IdCliente selecionados
+                    query_params_limited = list(query_params) + id_cliente_selecionados
+                    
+                    # Executar queries para outros IDs
+                    cursor_sql.execute(query_orcamento_limited, query_params_limited)
+                    aggregated_ids['IdOrcamento'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                    preview = aggregated_ids['IdOrcamento'][:10] if aggregated_ids['IdOrcamento'] else []
+                    logger.info(f"[CUSTOMERS] Resultado IdOrcamento: {len(aggregated_ids['IdOrcamento'])} registros - {preview}")
+                    
+                    cursor_sql.execute(query_estabelecimento_limited, query_params_limited)
+                    aggregated_ids['IdEstabelecimento'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                    preview = aggregated_ids['IdEstabelecimento'][:10] if aggregated_ids['IdEstabelecimento'] else []
+                    logger.info(f"[CUSTOMERS] Resultado IdEstabelecimento: {len(aggregated_ids['IdEstabelecimento'])} registros - {preview}")
+                    
+                    cursor_sql.execute(query_bandeira_limited, query_params_limited)
+                    aggregated_ids['IdBandeira'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                    preview = aggregated_ids['IdBandeira'][:10] if aggregated_ids['IdBandeira'] else []
+                    logger.info(f"[CUSTOMERS] Resultado IdBandeira: {len(aggregated_ids['IdBandeira'])} registros - {preview}")
+                    
+                    cursor_sql.execute(query_rede_limited, query_params_limited)
+                    aggregated_ids['IdRede'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                    preview = aggregated_ids['IdRede'][:10] if aggregated_ids['IdRede'] else []
+                    logger.info(f"[CUSTOMERS] Resultado IdRede: {len(aggregated_ids['IdRede'])} registros - {preview}")
+            elif query_params:
+                # Quando não há limit_rows, executar queries normalmente
+                cursor_sql.execute(query_orcamento, query_params)
+                aggregated_ids['IdOrcamento'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                preview = aggregated_ids['IdOrcamento'][:10] if aggregated_ids['IdOrcamento'] else []
+                logger.info(f"[CUSTOMERS] Resultado IdOrcamento: {len(aggregated_ids['IdOrcamento'])} registros - {preview}")
+                
+                cursor_sql.execute(query_cliente, query_params)
+                aggregated_ids['IdCliente'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                preview = aggregated_ids['IdCliente'][:10] if aggregated_ids['IdCliente'] else []
+                logger.info(f"[CUSTOMERS] Resultado IdCliente: {len(aggregated_ids['IdCliente'])} registros - {preview}")
+                
+                cursor_sql.execute(query_estabelecimento, query_params)
+                aggregated_ids['IdEstabelecimento'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                preview = aggregated_ids['IdEstabelecimento'][:10] if aggregated_ids['IdEstabelecimento'] else []
+                logger.info(f"[CUSTOMERS] Resultado IdEstabelecimento: {len(aggregated_ids['IdEstabelecimento'])} registros - {preview}")
+                
+                cursor_sql.execute(query_bandeira, query_params)
+                aggregated_ids['IdBandeira'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                preview = aggregated_ids['IdBandeira'][:10] if aggregated_ids['IdBandeira'] else []
+                logger.info(f"[CUSTOMERS] Resultado IdBandeira: {len(aggregated_ids['IdBandeira'])} registros - {preview}")
+                
+                cursor_sql.execute(query_rede, query_params)
+                aggregated_ids['IdRede'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                preview = aggregated_ids['IdRede'][:10] if aggregated_ids['IdRede'] else []
+                logger.info(f"[CUSTOMERS] Resultado IdRede: {len(aggregated_ids['IdRede'])} registros - {preview}")
+            else:
+                cursor_sql.execute(query_orcamento)
+                aggregated_ids['IdOrcamento'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                preview = aggregated_ids['IdOrcamento'][:10] if aggregated_ids['IdOrcamento'] else []
+                logger.info(f"[CUSTOMERS] Resultado IdOrcamento: {len(aggregated_ids['IdOrcamento'])} registros - {preview}")
+                
+                cursor_sql.execute(query_cliente)
+                aggregated_ids['IdCliente'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                preview = aggregated_ids['IdCliente'][:10] if aggregated_ids['IdCliente'] else []
+                logger.info(f"[CUSTOMERS] Resultado IdCliente: {len(aggregated_ids['IdCliente'])} registros - {preview}")
+                
+                cursor_sql.execute(query_estabelecimento)
+                aggregated_ids['IdEstabelecimento'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                preview = aggregated_ids['IdEstabelecimento'][:10] if aggregated_ids['IdEstabelecimento'] else []
+                logger.info(f"[CUSTOMERS] Resultado IdEstabelecimento: {len(aggregated_ids['IdEstabelecimento'])} registros - {preview}")
+                
+                cursor_sql.execute(query_bandeira)
+                aggregated_ids['IdBandeira'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                preview = aggregated_ids['IdBandeira'][:10] if aggregated_ids['IdBandeira'] else []
+                logger.info(f"[CUSTOMERS] Resultado IdBandeira: {len(aggregated_ids['IdBandeira'])} registros - {preview}")
+                
+                cursor_sql.execute(query_rede)
+                aggregated_ids['IdRede'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
+                preview = aggregated_ids['IdRede'][:10] if aggregated_ids['IdRede'] else []
+                logger.info(f"[CUSTOMERS] Resultado IdRede: {len(aggregated_ids['IdRede'])} registros - {preview}")
+            
+            cursor_sql.close()
+            conn_sql.close()
+            
+            print(f"[CUSTOMERS] IDs coletados: {len(aggregated_ids['IdOrcamento'])} contratos, "
+                  f"{len(aggregated_ids['IdCliente'])} clientes, "
+                  f"{len(aggregated_ids['IdEstabelecimento'])} estabelecimentos, "
+                  f"{len(aggregated_ids['IdBandeira'])} bandeiras, "
+                  f"{len(aggregated_ids['IdRede'])} redes")
+            
+            # Preparar estrutura do JSON (preservar filtros existentes)
+            # Se há filtro de IdOrcamento aplicado, usar o mesmo valor em aggregated_ids (evitar duplicação)
+            id_orcamento_for_filters = id_orcamento_to_use if id_orcamento_to_use else (existing_data.get('filters_applied', {}).get('id_orcamento', []) if existing_data else [])
+            id_orcamento_for_aggregated = sorted(id_orcamento_for_filters) if id_orcamento_for_filters else sorted(aggregated_ids['IdOrcamento'])
+            
+            filter_data = {
+                'filters_applied': {
+                    'id_orcamento': id_orcamento_for_filters if id_orcamento_for_filters else [],
+                    'data_aviso_previo_min': data_aviso_previo_min,
+                    'data_inicio_operacao_max': data_inicio_operacao_max,
+                    'limit_rows': self.limit_rows,
+                    'clear_data': existing_data.get('filters_applied', {}).get('clear_data', False) if existing_data else False
+                },
+                'aggregated_ids': {
+                    # Se há filtro de IdOrcamento, usar o mesmo valor (evitar duplicação)
+                    'IdOrcamento': id_orcamento_for_aggregated,
+                    'IdCliente': sorted([x for x in aggregated_ids['IdCliente'] if x is not None]),
+                    'IdEstabelecimento': sorted([x for x in aggregated_ids['IdEstabelecimento'] if x is not None]),
+                    'IdBandeira': sorted([x for x in aggregated_ids['IdBandeira'] if x is not None]),
+                    'IdRede': sorted([x for x in aggregated_ids['IdRede'] if x is not None])
+                },
+                'execution_info': {
+                    'timestamp': datetime.now().isoformat(),
+                    'source': 'customers',
+                    'total_customers_migrated': self.stats.get('customers', 0)
+                }
+            }
+            
+            # Salvar JSON
+            with open(self.filter_json_path, 'w', encoding='utf-8') as f:
+                json.dump(filter_data, f, indent=2, ensure_ascii=False)
+            
+            print(f"[CUSTOMERS] JSON atualizado: {len(aggregated_ids['IdOrcamento'])} contratos, "
+                  f"{len(aggregated_ids['IdCliente'])} clientes, "
+                  f"{len(aggregated_ids['IdEstabelecimento'])} estabelecimentos, "
+                  f"{len(aggregated_ids['IdBandeira'])} bandeiras, "
+                  f"{len(aggregated_ids['IdRede'])} redes")
+            logger.info(f"[CUSTOMERS] JSON atualizado: {self.filter_json_path}")
+            logger.info(f"[CUSTOMERS] IDs coletados - Contratos: {len(aggregated_ids['IdOrcamento'])}, "
+                       f"Clientes: {len(aggregated_ids['IdCliente'])}, "
+                       f"Estabelecimentos: {len(aggregated_ids['IdEstabelecimento'])}, "
+                       f"Bandeiras: {len(aggregated_ids['IdBandeira'])}, "
+                       f"Redes: {len(aggregated_ids['IdRede'])}")
+            
+        except Exception as e:
+            logger.error(f"Erro ao atualizar arquivo de filtros: {e}")
+            print(f"AVISO - Erro ao atualizar arquivo de filtros: {e}")
     
     def validate_step1_customer_segments(self):
         """Validação e relatório de qualidade - ETAPA 1"""
@@ -638,7 +1053,11 @@ class CustomersMigration:
         logger.info("="*80)
         
         # Carregar filtros do contracts step1 (se existir)
-        filter_data = self.load_filter_json()
+        # ⚠️ IMPORTANTE: Se há LIMIT, ignorar JSON e buscar diretamente da ViewOrcamentosLojas
+        filter_data = None
+        if self.limit_rows == 0:
+            filter_data = self.load_filter_json()
+        
         id_cliente_filter_list = []
         
         if filter_data and 'aggregated_ids' in filter_data:
@@ -646,29 +1065,62 @@ class CustomersMigration:
             logger.info(f"[ETAPA 2] Carregados {len(id_cliente_filter_list)} IdCliente do arquivo de filtros do contracts")
             print(f"[ETAPA 2] Carregados {len(id_cliente_filter_list)} IdCliente do arquivo de filtros do contracts")
         else:
-            # Se não há JSON, buscar diretamente da ViewOrcamentosLojas
-            logger.info("[ETAPA 2] Arquivo de filtros não encontrado. Buscando IdCliente diretamente da ViewOrcamentosLojas...")
-            print("[ETAPA 2] Buscando IdCliente diretamente da ViewOrcamentosLojas...")
-            try:
-                conn_sql_temp = DatabaseConnection.get_sql_server_prd_connection()
-                cursor_sql_temp = conn_sql_temp.cursor()
-                cursor_sql_temp.execute("SELECT DISTINCT IdCliente FROM ViewOrcamentosLojas WHERE IdCliente IS NOT NULL")
-                id_cliente_filter_list = [row[0] for row in cursor_sql_temp.fetchall()]
-                cursor_sql_temp.close()
-                conn_sql_temp.close()
-                logger.info(f"[ETAPA 2] Encontrados {len(id_cliente_filter_list)} IdCliente na ViewOrcamentosLojas")
-                print(f"[ETAPA 2] Encontrados {len(id_cliente_filter_list)} IdCliente na ViewOrcamentosLojas")
-            except Exception as e:
-                logger.error(f"Erro ao buscar IdCliente da ViewOrcamentosLojas: {e}")
-                print(f"ERRO - Não foi possível buscar IdCliente da ViewOrcamentosLojas: {e}")
-                return
+            # Se não há JSON ou há LIMIT, buscar diretamente da ViewOrcamentosLojas
+            if self.limit_rows > 0:
+                print(f"[ETAPA 2] LIMIT {self.limit_rows} especificado. Buscando IdCliente da ViewOrcamentosLojas com LIMIT...")
+                logger.info(f"[ETAPA 2] LIMIT {self.limit_rows} especificado. Ignorando JSON e buscando da ViewOrcamentosLojas")
+            else:
+                print("[ETAPA 2] Arquivo de filtros do contracts não encontrado. Buscando IdCliente da ViewOrcamentosLojas...")
+                logger.info("[ETAPA 2] Arquivo de filtros do contracts não encontrado. Buscando IdCliente da ViewOrcamentosLojas...")
+            
+            conn_sql_view = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql_view = conn_sql_view.cursor()
+            
+            # Se há LIMIT, aplicar nas linhas da ViewOrcamentosLojas
+            if self.limit_rows > 0:
+                if self.id_orcamento_filter:
+                    placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
+                    query = f"SELECT DISTINCT TOP {self.limit_rows} IdCliente FROM ViewOrcamentosLojas WHERE IdCliente IS NOT NULL AND IdOrcamento IN ({placeholders}) ORDER BY IdCliente"
+                    cursor_sql_view.execute(query, self.id_orcamento_filter)
+                    print(f"[ETAPA 2] Aplicando LIMIT {self.limit_rows} e filtro de IdOrcamento: {self.id_orcamento_filter}")
+                    logger.info(f"[ETAPA 2] Aplicando LIMIT {self.limit_rows} e filtro de IdOrcamento: {self.id_orcamento_filter}")
+                else:
+                    query = f"SELECT DISTINCT TOP {self.limit_rows} IdCliente FROM ViewOrcamentosLojas WHERE IdCliente IS NOT NULL ORDER BY IdCliente"
+                    cursor_sql_view.execute(query)
+                    print(f"[ETAPA 2] Aplicando LIMIT {self.limit_rows} na busca de IdCliente")
+                    logger.info(f"[ETAPA 2] Aplicando LIMIT {self.limit_rows} na busca de IdCliente")
+            elif self.id_orcamento_filter:
+                placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
+                query = f"SELECT DISTINCT IdCliente FROM ViewOrcamentosLojas WHERE IdCliente IS NOT NULL AND IdOrcamento IN ({placeholders})"
+                cursor_sql_view.execute(query, self.id_orcamento_filter)
+                print(f"[ETAPA 2] Aplicando filtro de IdOrcamento: {self.id_orcamento_filter}")
+                logger.info(f"[ETAPA 2] Aplicando filtro de IdOrcamento: {self.id_orcamento_filter}")
+            else:
+                cursor_sql_view.execute("SELECT DISTINCT IdCliente FROM ViewOrcamentosLojas WHERE IdCliente IS NOT NULL")
+            
+            id_cliente_filter_list = [row[0] for row in cursor_sql_view.fetchall()]
+            cursor_sql_view.close()
+            conn_sql_view.close()
+            print(f"[ETAPA 2] Carregados {len(id_cliente_filter_list)} IdCliente da ViewOrcamentosLojas")
+            logger.info(f"[ETAPA 2] Carregados {len(id_cliente_filter_list)} IdCliente da ViewOrcamentosLojas")
+            
+            # Atualizar JSON com IDs coletados da ViewOrcamentosLojas (apenas uma vez por execução)
+            if not self.json_updated_this_run:
+                self.save_filter_json_from_view(id_orcamento_list=self.id_orcamento_filter)
+                self.json_updated_this_run = True
         
-        # Limpar tabela (DELETE baseado nos IdCliente filtrados)
-        if id_cliente_filter_list:
+        # Limpar tabela
+        # ⚠️ IMPORTANTE: Se clear_data=True, sempre usar TRUNCATE (mesmo com filtros)
+        if self.clear_data:
+            print("\n[ETAPA 2] Limpando tabela customers (TRUNCATE - flag --clear-data ativo)...")
+            logger.info("[ETAPA 2] Flag --clear-data ativo: usando TRUNCATE mesmo com filtros")
+            self.truncate_table('customers')
+        elif id_cliente_filter_list:
+            # Com filtros e SEM clear_data: usar DELETE
             print("\n[ETAPA 2] Limpando registros filtrados da tabela customers...")
             self.delete_table_with_filter('customers', id_cliente_filter_list)
         else:
-            # Se não há filtros, fazer TRUNCATE (caso raro)
+            # Sem filtros e SEM clear_data: usar TRUNCATE (caso raro)
             print("\n[ETAPA 2] Limpando tabela customers...")
             self.truncate_table('customers')
         
@@ -994,7 +1446,13 @@ class CustomersMigration:
         
         try:
             # Delete apenas addresses de customers (tabela polimórfica)
-            print("\n[ETAPA 3] Limpando addresses de customers...")
+            # ⚠️ IMPORTANTE: delete_polymorphic_table sempre deleta TODOS os registros do tipo especificado
+            # Quando clear_data=True, o comportamento é o mesmo (deleta todos de 'customers')
+            if self.clear_data:
+                print("\n[ETAPA 3] Limpando addresses de customers (flag --clear-data ativo - todos os registros)...")
+                logger.info("[ETAPA 3] Flag --clear-data ativo: deletando TODOS os addresses de customers")
+            else:
+                print("\n[ETAPA 3] Limpando addresses de customers...")
             self.delete_polymorphic_table('addresses', 'customers', 'addressable_type')
             
             # Buscar dados do SQL Server
@@ -1423,7 +1881,13 @@ class CustomersMigration:
         
         try:
             # Delete apenas contacts de customers (tabela polimórfica)
-            print("\n[ETAPA 4] Limpando contacts de customers...")
+            # ⚠️ IMPORTANTE: delete_polymorphic_table sempre deleta TODOS os registros do tipo especificado
+            # Quando clear_data=True, o comportamento é o mesmo (deleta todos de 'customers')
+            if self.clear_data:
+                print("\n[ETAPA 4] Limpando contacts de customers (flag --clear-data ativo - todos os registros)...")
+                logger.info("[ETAPA 4] Flag --clear-data ativo: deletando TODOS os contacts de customers")
+            else:
+                print("\n[ETAPA 4] Limpando contacts de customers...")
             self.delete_polymorphic_table('contacts', 'customers', 'contactable_type')
             
             # Buscar dados do SQL Server

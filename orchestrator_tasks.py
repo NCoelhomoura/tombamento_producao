@@ -40,26 +40,39 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'customers'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'users'))
 
 
-def run_customers_task(step=None, limit_rows=0):
+def run_customers_task(step=None, limit_rows=0, id_orcamento_filter=None,
+                      data_aviso_previo_min=None, data_inicio_operacao_max=None, clear_data=False):
     """
     Executa a task de migracao de customers
     
     Args:
         step: None para todas as etapas, ou '1', '2', '3', '4' para etapa especifica
         limit_rows: 0 para todos os dados, > 0 para limitar quantidade
+        id_orcamento_filter: Lista opcional de IdOrcamento para filtrar
+        data_aviso_previo_min: Data mínima para DataAvisoPrevio (string 'YYYY-MM-DD')
+        data_inicio_operacao_max: Data máxima para DataInicioOperacao (string 'YYYY-MM-DD')
+        clear_data: Se True, força TRUNCATE mesmo com filtros aplicados
     """
     print("\n" + "="*80)
     print("TASK 1: CUSTOMERS")
     print("="*80)
     print(f"Data/Hora: {datetime.now()}")
     print(f"Limite de linhas: {'TODOS' if limit_rows == 0 else limit_rows}")
+    if id_orcamento_filter:
+        print(f"Filtro IdOrcamento: {id_orcamento_filter}")
     if step:
         print(f"Etapa: {step}")
     print("="*80)
     
     from customers.customers_to_core import CustomersMigration
     
-    migration = CustomersMigration(limit_rows=limit_rows)
+    migration = CustomersMigration(
+        limit_rows=limit_rows, 
+        id_orcamento_filter=id_orcamento_filter,
+        data_aviso_previo_min=data_aviso_previo_min,
+        data_inicio_operacao_max=data_inicio_operacao_max,
+        clear_data=clear_data
+    )
     
     if step:
         # Executar apenas etapa especifica
@@ -112,7 +125,7 @@ def run_customers_task(step=None, limit_rows=0):
         migration.run()
 
 
-def run_stores_task(step=None, limit_rows=0, id_orcamento_filter=None):
+def run_stores_task(step=None, limit_rows=0, id_orcamento_filter=None, clear_data=False):
     """
     Executa a task de migracao de stores
     
@@ -120,6 +133,7 @@ def run_stores_task(step=None, limit_rows=0, id_orcamento_filter=None):
         step: None para todas as etapas, ou '1', '2', '3', etc. para etapa especifica
         limit_rows: 0 para todos os dados, > 0 para limitar quantidade
         id_orcamento_filter: Lista de IdOrcamento para filtrar (ex: [6192, 6193])
+        clear_data: Se True, força TRUNCATE mesmo com filtros aplicados
     """
     from utils.database_connection import DatabaseConnection
     destino_atual = DatabaseConnection.get_destino()
@@ -140,7 +154,7 @@ def run_stores_task(step=None, limit_rows=0, id_orcamento_filter=None):
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'stores'))
     from stores.stores_to_core import StoresMigration
     
-    migration = StoresMigration(limit_rows=limit_rows, id_orcamento_filter=id_orcamento_filter)
+    migration = StoresMigration(limit_rows=limit_rows, id_orcamento_filter=id_orcamento_filter, clear_data=clear_data)
     
     if step:
         # Executar apenas uma etapa específica
@@ -531,20 +545,26 @@ def main():
         print("\n" + "="*80)
         print("INICIANDO TASK: CUSTOMERS")
         print("="*80)
-        run_customers_task(step=None, limit_rows=limit)
+        run_customers_task(step=None, limit_rows=limit, clear_data=clear_data)
         
         # Task 2: Stores
         print("\n" + "="*80)
         print("INICIANDO TASK: STORES")
         print("="*80)
-        run_stores_task(step=None, limit_rows=limit)
+        run_stores_task(step=None, limit_rows=limit, clear_data=clear_data)
         
         # Task 4: Users (DEVE SER EXECUTADO ANTES DE CONTRACTS)
+        # ⚠️ IMPORTANTE: Users sempre executa FULL quando executado como parte de todas as tasks
+        # Users não pode ser parcial porque contracts depende de todos os users
         print("\n" + "="*80)
         print("INICIANDO TASK: USERS")
         print("="*80)
         print("[INFO] Users deve ser executado antes de Contracts (dependencia)")
-        run_users_task(step=None, limit_rows=limit)
+        print("[INFO] ⚠️ Users sempre executa FULL (sem filtros/limites) quando executado automaticamente")
+        print("[INFO] Isso garante que todos os users estejam disponíveis para contracts")
+        # ⚠️ IMPORTANTE: Sempre executar users com limit_rows=0 (FULL)
+        # Não usar 'limit' porque users precisa de todos os registros para contracts funcionar
+        run_users_task(step=None, limit_rows=0)
         
         # Task 3: Contracts (DEPENDE DE USERS)
         print("\n" + "="*80)
@@ -558,9 +578,13 @@ def main():
                           clear_data=clear_data)
         
     elif task == 'customers':
-        run_customers_task(step=step, limit_rows=limit)
+        run_customers_task(step=step, limit_rows=limit, 
+                          id_orcamento_filter=id_orcamento_filter,
+                          data_aviso_previo_min=data_aviso_previo_min,
+                          data_inicio_operacao_max=data_inicio_operacao_max,
+                          clear_data=clear_data)
     elif task == 'stores':
-        run_stores_task(step=step, limit_rows=limit)
+        run_stores_task(step=step, limit_rows=limit, clear_data=clear_data)
     elif task == 'users':
         run_users_task(step=step, limit_rows=limit)
     elif task == 'contracts':
@@ -577,12 +601,12 @@ def main():
         try:
             # Step 1 de customers (customer_segments) - necessário antes do step 2
             print("  → Executando Customers step 1 (customer_segments)...")
-            run_customers_task(step='1', limit_rows=limit)
+            run_customers_task(step='1', limit_rows=limit, id_orcamento_filter=id_orcamento_filter, clear_data=clear_data)
             print("  [OK] Customers step 1 concluído")
             
             # Step 2 de customers (customers)
             print("  → Executando Customers step 2 (customers)...")
-            run_customers_task(step='2', limit_rows=limit)
+            run_customers_task(step='2', limit_rows=limit, id_orcamento_filter=id_orcamento_filter, clear_data=clear_data)
             print("  [OK] Customers step 2 concluído")
             
             print("[OK] Customers concluído")
@@ -595,22 +619,22 @@ def main():
         try:
             # Step 1 de stores (store_segments) - necessário antes dos outros
             print("  → Executando Stores step 1 (store_segments)...")
-            run_stores_task(step='1', limit_rows=limit, id_orcamento_filter=id_orcamento_filter)
+            run_stores_task(step='1', limit_rows=limit, id_orcamento_filter=id_orcamento_filter, clear_data=clear_data)
             print("  [OK] Stores step 1 concluído")
             
             # Step 2 de stores (retail_chains)
             print("  → Executando Stores step 2 (retail_chains)...")
-            run_stores_task(step='2', limit_rows=limit, id_orcamento_filter=id_orcamento_filter)
+            run_stores_task(step='2', limit_rows=limit, id_orcamento_filter=id_orcamento_filter, clear_data=clear_data)
             print("  [OK] Stores step 2 concluído")
             
             # Step 3 de stores (store_brands)
             print("  → Executando Stores step 3 (store_brands)...")
-            run_stores_task(step='3', limit_rows=limit, id_orcamento_filter=id_orcamento_filter)
+            run_stores_task(step='3', limit_rows=limit, id_orcamento_filter=id_orcamento_filter, clear_data=clear_data)
             print("  [OK] Stores step 3 concluído")
             
             # Step 4 de stores (stores)
             print("  → Executando Stores step 4 (stores)...")
-            run_stores_task(step='4', limit_rows=limit, id_orcamento_filter=id_orcamento_filter)
+            run_stores_task(step='4', limit_rows=limit, id_orcamento_filter=id_orcamento_filter, clear_data=clear_data)
             print("  [OK] Stores step 4 concluído")
             
             print("[OK] Todos os Stores steps concluídos")
@@ -619,6 +643,8 @@ def main():
             print("[AVISO] Continuando mesmo assim...")
         
         # 3. Verificar se users foi executado antes (dependencia)
+        # ⚠️ IMPORTANTE: Users sempre deve executar FULL quando executado automaticamente
+        # Users não pode ser parcial porque contracts depende de todos os users
         print("\n[INFO] Verificando dependencia: Contracts requer Users...")
         from utils.database_connection import DatabaseConnection
         schema_users = 'gmcore' if DatabaseConnection.get_destino() == 'HML' else 'core'
@@ -632,11 +658,15 @@ def main():
         if users_count == 0:
             print(f"[AVISO] Tabela {schema_users}.users esta vazia!")
             print("[AVISO] Contracts depende de Users. Executando Users primeiro...")
+            print("[INFO] ⚠️ Users sempre executa FULL (sem filtros/limites) quando executado automaticamente")
+            print("[INFO] Isso garante que todos os users estejam disponíveis para contracts")
             print("\n" + "="*80)
-            print("EXECUTANDO TASK: USERS (DEPENDENCIA DE CONTRACTS)")
+            print("EXECUTANDO TASK: USERS (DEPENDENCIA DE CONTRACTS) - FULL")
             print("="*80)
-            run_users_task(step=None, limit_rows=limit)
-            print("\n[INFO] Users executado. Continuando com Contracts...")
+            # ⚠️ IMPORTANTE: Sempre executar users com limit_rows=0 (FULL)
+            # Não usar 'limit' porque users precisa de todos os registros para contracts funcionar
+            run_users_task(step=None, limit_rows=0)
+            print("\n[INFO] Users executado (FULL). Continuando com Contracts...")
         
         run_contracts_task(step=step, limit_rows=limit,
                           id_orcamento_filter=id_orcamento_filter,
