@@ -21,7 +21,8 @@ from psycopg2.extras import execute_values
 
 # Adicionar diretório utils ao path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
-from database_connection import DatabaseConnection
+# ⚠️ CRÍTICO: Importar usando o mesmo caminho do orchestrator para garantir mesma referência
+from utils.database_connection import DatabaseConnection
 
 # ============================================================================
 # CONFIGURACAO DE SCHEMAS POR AMBIENTE
@@ -79,7 +80,8 @@ CHUNK_SIZE = 20000
 class StoresMigration:
     """Classe para executar a migração de dados de stores"""
     
-    def __init__(self, limit_rows=0, id_orcamento_filter=None, clear_data=False):
+    def __init__(self, limit_rows=0, id_orcamento_filter=None, 
+                 data_aviso_previo_min=None, data_inicio_operacao_max=None, clear_data=False):
         self.stats = {
             'store_segments': 0,
             'retail_chains': 0,
@@ -96,6 +98,8 @@ class StoresMigration:
         self.store_id_map = {}          # Map: legado_id -> uuid
         self.limit_rows = limit_rows     # 0 = todos, > 0 = limitar quantidade
         self.id_orcamento_filter = id_orcamento_filter  # Lista de IdOrcamento para filtrar
+        self.data_aviso_previo_min = data_aviso_previo_min  # Data mínima para DataAvisoPrevio
+        self.data_inicio_operacao_max = data_inicio_operacao_max  # Data máxima para DataInicioOperacao
         self.clear_data = clear_data  # Se True, força TRUNCATE mesmo com filtros aplicados
         self.json_updated_this_run = False  # Flag para evitar múltiplas atualizações do JSON na mesma execução
         
@@ -151,15 +155,23 @@ class StoresMigration:
         try:
             print("[STORES] Coletando IDs únicos da ViewOrcamentosLojas para atualizar JSON...")
             
-            # Carregar JSON existente para pegar filtros de data
-            existing_data = self.load_filter_json()
-            data_aviso_previo_min = None
-            data_inicio_operacao_max = None
+            # ⚠️ IMPORTANTE: Usar filtros de data da linha de comando (CMD) com prioridade sobre JSON
+            # Prioridade: CMD > JSON > None
+            data_aviso_previo_min = self.data_aviso_previo_min
+            data_inicio_operacao_max = self.data_inicio_operacao_max
             
-            if existing_data and 'filters_applied' in existing_data:
+            # Se CMD não especificou filtros, usar do JSON se existir
+            existing_data = self.load_filter_json()
+            if data_aviso_previo_min is None and existing_data and 'filters_applied' in existing_data:
                 filters = existing_data['filters_applied']
                 data_aviso_previo_min = filters.get('data_aviso_previo_min')
+            
+            if data_inicio_operacao_max is None and existing_data and 'filters_applied' in existing_data:
+                filters = existing_data['filters_applied']
                 data_inicio_operacao_max = filters.get('data_inicio_operacao_max')
+            
+            # Log dos filtros que estão sendo usados
+            logger.info(f"[STORES] Filtros aplicados em save_filter_json_from_view: data_aviso_previo_min={data_aviso_previo_min}, data_inicio_operacao_max={data_inicio_operacao_max}")
             
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
@@ -184,80 +196,12 @@ class StoresMigration:
                 where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
                 query_params.append(data_inicio_operacao_max)
             
+            # Construir WHERE clause exatamente como na query do usuário (com WHERE 1 = 1)
             where_clause = ""
             if where_conditions:
-                where_clause = " WHERE " + " AND ".join(where_conditions)
+                where_clause = " WHERE 1 = 1 AND " + " AND ".join(where_conditions)
             
-            # Query base com TOP se houver LIMIT (usar DISTINCT TOP como na query do usuário)
-            if self.limit_rows > 0:
-                base_query = f"""
-                SELECT DISTINCT TOP {self.limit_rows}
-                    v.IdOrcamento,
-                    v.IdCliente,
-                    v.IdEstabelecimento,
-                    v.IdBandeira,
-                    v.IdRede
-                FROM ViewOrcamentosLojas v
-                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
-                {where_clause}
-                """
-            else:
-                base_query = f"""
-                SELECT DISTINCT
-                    v.IdOrcamento,
-                    v.IdCliente,
-                    v.IdEstabelecimento,
-                    v.IdBandeira,
-                    v.IdRede
-                FROM ViewOrcamentosLojas v
-                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
-                {where_clause}
-                """
-            
-            # Query para IdOrcamento
-            query_orcamento = f"""
-            SELECT DISTINCT base.IdOrcamento
-            FROM ({base_query}) base
-            WHERE base.IdOrcamento IS NOT NULL
-            """
-            
-            # Query para IdCliente
-            query_cliente = f"""
-            SELECT DISTINCT base.IdCliente
-            FROM ({base_query}) base
-            WHERE base.IdCliente IS NOT NULL
-            """
-            
-            # Query para IdEstabelecimento
-            query_estabelecimento = f"""
-            SELECT DISTINCT base.IdEstabelecimento
-            FROM ({base_query}) base
-            WHERE base.IdEstabelecimento IS NOT NULL
-            """
-            
-            # Query para IdBandeira
-            query_bandeira = f"""
-            SELECT DISTINCT base.IdBandeira
-            FROM ({base_query}) base
-            WHERE base.IdBandeira IS NOT NULL
-            """
-            
-            # Query para IdRede
-            query_rede = f"""
-            SELECT DISTINCT base.IdRede
-            FROM ({base_query}) base
-            WHERE base.IdRede IS NOT NULL
-            """
-            
-            # Executar queries separadas para cada tipo de ID
-            aggregated_ids = {
-                'IdOrcamento': [],
-                'IdCliente': [],
-                'IdEstabelecimento': [],
-                'IdBandeira': [],
-                'IdRede': []
-            }
-            
+            # ⚠️ LÓGICA SIMPLIFICADA: Query direta sem subquery (conforme validação)
             # Função auxiliar para substituir parâmetros nas queries (para debug no SSMS)
             def format_query_for_ssms(query, params):
                 """Substitui placeholders (?) pelos valores reais para execução no SSMS"""
@@ -280,112 +224,147 @@ class StoresMigration:
                     param_idx += 1
                 return formatted
             
-            # Log completo de todas as queries para debug
+            # Executar query separada para cada tipo de ID usando estrutura simplificada
+            aggregated_ids = {}
+            
+            # IdOrcamento
+            if self.limit_rows > 0:
+                query_id_orcamento = f"""
+                SELECT DISTINCT TOP {self.limit_rows}
+                    v.IdOrcamento
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                {where_clause} AND v.IdOrcamento IS NOT NULL
+                """
+            else:
+                query_id_orcamento = f"""
+                SELECT DISTINCT
+                    v.IdOrcamento
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                {where_clause} AND v.IdOrcamento IS NOT NULL
+                """
+            if query_params:
+                cursor_sql.execute(query_id_orcamento, query_params)
+            else:
+                cursor_sql.execute(query_id_orcamento)
+            aggregated_ids['IdOrcamento'] = [row[0] for row in cursor_sql.fetchall()]
+            
+            # IdCliente
+            if self.limit_rows > 0:
+                query_id_cliente = f"""
+                SELECT DISTINCT TOP {self.limit_rows}
+                    v.IdCliente
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                {where_clause} AND v.IdCliente IS NOT NULL
+                """
+            else:
+                query_id_cliente = f"""
+                SELECT DISTINCT
+                    v.IdCliente
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                {where_clause} AND v.IdCliente IS NOT NULL
+                """
+            if query_params:
+                cursor_sql.execute(query_id_cliente, query_params)
+            else:
+                cursor_sql.execute(query_id_cliente)
+            aggregated_ids['IdCliente'] = [row[0] for row in cursor_sql.fetchall()]
+            
+            # IdEstabelecimento
+            if self.limit_rows > 0:
+                query_id_estabelecimento = f"""
+                SELECT DISTINCT TOP {self.limit_rows}
+                    v.IdEstabelecimento
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                {where_clause} AND v.IdEstabelecimento IS NOT NULL
+                """
+            else:
+                query_id_estabelecimento = f"""
+                SELECT DISTINCT
+                    v.IdEstabelecimento
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                {where_clause} AND v.IdEstabelecimento IS NOT NULL
+                """
+            if query_params:
+                cursor_sql.execute(query_id_estabelecimento, query_params)
+            else:
+                cursor_sql.execute(query_id_estabelecimento)
+            aggregated_ids['IdEstabelecimento'] = [row[0] for row in cursor_sql.fetchall()]
+            
+            # IdBandeira
+            if self.limit_rows > 0:
+                query_id_bandeira = f"""
+                SELECT DISTINCT TOP {self.limit_rows}
+                    v.IdBandeira
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                {where_clause} AND v.IdBandeira IS NOT NULL
+                """
+            else:
+                query_id_bandeira = f"""
+                SELECT DISTINCT
+                    v.IdBandeira
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                {where_clause} AND v.IdBandeira IS NOT NULL
+                """
+            if query_params:
+                cursor_sql.execute(query_id_bandeira, query_params)
+            else:
+                cursor_sql.execute(query_id_bandeira)
+            aggregated_ids['IdBandeira'] = [row[0] for row in cursor_sql.fetchall()]
+            
+            # IdRede
+            if self.limit_rows > 0:
+                query_id_rede = f"""
+                SELECT DISTINCT TOP {self.limit_rows}
+                    v.IdRede
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                {where_clause} AND v.IdRede IS NOT NULL
+                """
+            else:
+                query_id_rede = f"""
+                SELECT DISTINCT
+                    v.IdRede
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                {where_clause} AND v.IdRede IS NOT NULL
+                """
+            if query_params:
+                cursor_sql.execute(query_id_rede, query_params)
+            else:
+                cursor_sql.execute(query_id_rede)
+            aggregated_ids['IdRede'] = [row[0] for row in cursor_sql.fetchall()]
+            
+            # Log das queries para debug
             logger.info("="*80)
-            logger.info("[STORES] DEBUG - QUERIES COMPLETAS PARA COLETA DE IDs")
+            logger.info("[STORES] DEBUG - QUERIES PARA COLETA DE IDs (ESTRUTURA SIMPLIFICADA)")
             logger.info("="*80)
-            logger.info(f"[STORES] Query base (base_query):\n{base_query}")
-            logger.info(f"[STORES] Query IdOrcamento:\n{query_orcamento}")
-            logger.info(f"[STORES] Query IdCliente:\n{query_cliente}")
-            logger.info(f"[STORES] Query IdEstabelecimento:\n{query_estabelecimento}")
-            logger.info(f"[STORES] Query IdBandeira:\n{query_bandeira}")
-            logger.info(f"[STORES] Query IdRede:\n{query_rede}")
             logger.info(f"[STORES] Parâmetros da query: {query_params}")
             logger.info("="*80)
             
-            # Log das queries formatadas para SSMS (com valores substituídos)
+            # Log da query formatada para SSMS (exemplo com IdEstabelecimento)
             logger.info("="*80)
-            logger.info("[STORES] QUERIES PRONTAS PARA COPIAR E COLAR NO SSMS")
+            logger.info("[STORES] QUERY PRONTA PARA COPIAR E COLAR NO SSMS (Exemplo: IdEstabelecimento)")
             logger.info("="*80)
             if query_params:
-                logger.info("\n-- Query base (base_query) para SSMS:")
-                logger.info(format_query_for_ssms(base_query, query_params))
-                
-                logger.info("\n-- Query IdOrcamento para SSMS:")
-                logger.info(format_query_for_ssms(query_orcamento, query_params))
-                
-                logger.info("\n-- Query IdCliente para SSMS:")
-                logger.info(format_query_for_ssms(query_cliente, query_params))
-                
-                logger.info("\n-- Query IdEstabelecimento para SSMS:")
-                logger.info(format_query_for_ssms(query_estabelecimento, query_params))
-                
-                logger.info("\n-- Query IdBandeira para SSMS:")
-                logger.info(format_query_for_ssms(query_bandeira, query_params))
-                
-                logger.info("\n-- Query IdRede para SSMS:")
-                logger.info(format_query_for_ssms(query_rede, query_params))
+                logger.info("\n-- Query para IdEstabelecimento:")
+                logger.info(format_query_for_ssms(query_id_estabelecimento, query_params))
             else:
-                logger.info("\n-- Query base (base_query) para SSMS:")
-                logger.info(base_query)
-                
-                logger.info("\n-- Query IdOrcamento para SSMS:")
-                logger.info(query_orcamento)
-                
-                logger.info("\n-- Query IdCliente para SSMS:")
-                logger.info(query_cliente)
-                
-                logger.info("\n-- Query IdEstabelecimento para SSMS:")
-                logger.info(query_estabelecimento)
-                
-                logger.info("\n-- Query IdBandeira para SSMS:")
-                logger.info(query_bandeira)
-                
-                logger.info("\n-- Query IdRede para SSMS:")
-                logger.info(query_rede)
+                logger.info("\n-- Query para IdEstabelecimento:")
+                logger.info(query_id_estabelecimento)
             logger.info("="*80)
             
-            # Executar cada query separadamente (garantindo resultados corretos)
-            if query_params:
-                cursor_sql.execute(query_orcamento, query_params)
-                aggregated_ids['IdOrcamento'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
-                preview = aggregated_ids['IdOrcamento'][:10] if aggregated_ids['IdOrcamento'] else []
-                logger.info(f"[STORES] Resultado IdOrcamento: {len(aggregated_ids['IdOrcamento'])} registros - {preview}")
-                
-                cursor_sql.execute(query_cliente, query_params)
-                aggregated_ids['IdCliente'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
-                preview = aggregated_ids['IdCliente'][:10] if aggregated_ids['IdCliente'] else []
-                logger.info(f"[STORES] Resultado IdCliente: {len(aggregated_ids['IdCliente'])} registros - {preview}")
-                
-                cursor_sql.execute(query_estabelecimento, query_params)
-                aggregated_ids['IdEstabelecimento'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
-                preview = aggregated_ids['IdEstabelecimento'][:10] if aggregated_ids['IdEstabelecimento'] else []
-                logger.info(f"[STORES] Resultado IdEstabelecimento: {len(aggregated_ids['IdEstabelecimento'])} registros - {preview}")
-                
-                cursor_sql.execute(query_bandeira, query_params)
-                aggregated_ids['IdBandeira'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
-                preview = aggregated_ids['IdBandeira'][:10] if aggregated_ids['IdBandeira'] else []
-                logger.info(f"[STORES] Resultado IdBandeira: {len(aggregated_ids['IdBandeira'])} registros - {preview}")
-                
-                cursor_sql.execute(query_rede, query_params)
-                aggregated_ids['IdRede'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
-                preview = aggregated_ids['IdRede'][:10] if aggregated_ids['IdRede'] else []
-                logger.info(f"[STORES] Resultado IdRede: {len(aggregated_ids['IdRede'])} registros - {preview}")
-            else:
-                cursor_sql.execute(query_orcamento)
-                aggregated_ids['IdOrcamento'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
-                preview = aggregated_ids['IdOrcamento'][:10] if aggregated_ids['IdOrcamento'] else []
-                logger.info(f"[STORES] Resultado IdOrcamento: {len(aggregated_ids['IdOrcamento'])} registros - {preview}")
-                
-                cursor_sql.execute(query_cliente)
-                aggregated_ids['IdCliente'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
-                preview = aggregated_ids['IdCliente'][:10] if aggregated_ids['IdCliente'] else []
-                logger.info(f"[STORES] Resultado IdCliente: {len(aggregated_ids['IdCliente'])} registros - {preview}")
-                
-                cursor_sql.execute(query_estabelecimento)
-                aggregated_ids['IdEstabelecimento'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
-                preview = aggregated_ids['IdEstabelecimento'][:10] if aggregated_ids['IdEstabelecimento'] else []
-                logger.info(f"[STORES] Resultado IdEstabelecimento: {len(aggregated_ids['IdEstabelecimento'])} registros - {preview}")
-                
-                cursor_sql.execute(query_bandeira)
-                aggregated_ids['IdBandeira'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
-                preview = aggregated_ids['IdBandeira'][:10] if aggregated_ids['IdBandeira'] else []
-                logger.info(f"[STORES] Resultado IdBandeira: {len(aggregated_ids['IdBandeira'])} registros - {preview}")
-                
-                cursor_sql.execute(query_rede)
-                aggregated_ids['IdRede'] = [row[0] for row in cursor_sql.fetchall() if row[0] is not None]
-                preview = aggregated_ids['IdRede'][:10] if aggregated_ids['IdRede'] else []
-                logger.info(f"[STORES] Resultado IdRede: {len(aggregated_ids['IdRede'])} registros - {preview}")
+            # Log dos resultados
+            for id_type, id_list in aggregated_ids.items():
+                preview = id_list[:10] if id_list else []
+                logger.info(f"[STORES] Resultado {id_type}: {len(id_list)} registros - {preview}")
             
             cursor_sql.close()
             conn_sql.close()
@@ -1063,61 +1042,105 @@ class StoresMigration:
         logger.info("="*80)
         
         # Carregar filtros do contracts (se existir)
-        # ⚠️ IMPORTANTE: Se há LIMIT, ignorar JSON e buscar diretamente da ViewOrcamentosLojas
+        # ⚠️ IMPORTANTE: Sempre buscar da ViewOrcamentosLojas aplicando filtros de data para garantir consistência
         filter_data = None
         if self.limit_rows == 0:
             filter_data = self.load_filter_json()
         
         id_rede_filter_list = []
         
-        if filter_data and 'aggregated_ids' in filter_data:
-            id_rede_filter_list = filter_data['aggregated_ids'].get('IdRede', [])
-            logger.info(f"[ETAPA 2] Carregados {len(id_rede_filter_list)} IdRede do arquivo de filtros do contracts")
-            print(f"[ETAPA 2] Carregados {len(id_rede_filter_list)} IdRede do arquivo de filtros do contracts")
+        # ⚠️ IMPORTANTE: Sempre buscar da ViewOrcamentosLojas aplicando filtros de data
+        # Isso garante que os IDs correspondem aos filtros de data aplicados
+        if self.limit_rows > 0:
+            print(f"[ETAPA 2] LIMIT {self.limit_rows} especificado. Buscando IdRede da ViewOrcamentosLojas com LIMIT...")
+            logger.info(f"[ETAPA 2] LIMIT {self.limit_rows} especificado. Buscando da ViewOrcamentosLojas")
         else:
-            # Se não há JSON ou há LIMIT, buscar diretamente da ViewOrcamentosLojas
-            if self.limit_rows > 0:
-                print(f"[ETAPA 2] LIMIT {self.limit_rows} especificado. Buscando IdRede da ViewOrcamentosLojas com LIMIT...")
-                logger.info(f"[ETAPA 2] LIMIT {self.limit_rows} especificado. Ignorando JSON e buscando da ViewOrcamentosLojas")
-            else:
-                print("[ETAPA 2] Arquivo de filtros do contracts não encontrado. Buscando IdRede da ViewOrcamentosLojas...")
-                logger.info("[ETAPA 2] Arquivo de filtros do contracts não encontrado. Buscando IdRede da ViewOrcamentosLojas...")
-            
-            conn_sql_view = DatabaseConnection.get_sql_server_prd_connection()
-            cursor_sql_view = conn_sql_view.cursor()
-            
-            # Se há LIMIT, aplicar nas linhas da ViewOrcamentosLojas
-            if self.limit_rows > 0:
-                if self.id_orcamento_filter:
-                    placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
-                    query = f"SELECT DISTINCT TOP {self.limit_rows} IdRede FROM ViewOrcamentosLojas WHERE IdRede IS NOT NULL AND IdOrcamento IN ({placeholders}) ORDER BY IdRede"
-                    cursor_sql_view.execute(query, self.id_orcamento_filter)
-                    print(f"[ETAPA 2] Aplicando LIMIT {self.limit_rows} e filtro de IdOrcamento: {self.id_orcamento_filter}")
-                    logger.info(f"[ETAPA 2] Aplicando LIMIT {self.limit_rows} e filtro de IdOrcamento: {self.id_orcamento_filter}")
-                else:
-                    query = f"SELECT DISTINCT TOP {self.limit_rows} IdRede FROM ViewOrcamentosLojas WHERE IdRede IS NOT NULL ORDER BY IdRede"
-                    cursor_sql_view.execute(query)
-                    print(f"[ETAPA 2] Aplicando LIMIT {self.limit_rows} na busca de IdRede")
-                    logger.info(f"[ETAPA 2] Aplicando LIMIT {self.limit_rows} na busca de IdRede")
-            elif self.id_orcamento_filter:
-                placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
-                query = f"SELECT DISTINCT IdRede FROM ViewOrcamentosLojas WHERE IdRede IS NOT NULL AND IdOrcamento IN ({placeholders})"
-                cursor_sql_view.execute(query, self.id_orcamento_filter)
-                print(f"[ETAPA 2] Aplicando filtro de IdOrcamento: {self.id_orcamento_filter}")
-                logger.info(f"[ETAPA 2] Aplicando filtro de IdOrcamento: {self.id_orcamento_filter}")
-            else:
-                cursor_sql_view.execute("SELECT DISTINCT IdRede FROM ViewOrcamentosLojas WHERE IdRede IS NOT NULL")
-            
-            id_rede_filter_list = [row[0] for row in cursor_sql_view.fetchall()]
-            cursor_sql_view.close()
-            conn_sql_view.close()
-            print(f"[ETAPA 2] Carregados {len(id_rede_filter_list)} IdRede da ViewOrcamentosLojas")
-            logger.info(f"[ETAPA 2] Carregados {len(id_rede_filter_list)} IdRede da ViewOrcamentosLojas")
-            
-            # Atualizar JSON com IDs coletados da ViewOrcamentosLojas (apenas uma vez por execução)
-            if not self.json_updated_this_run:
-                self.save_filter_json_from_view(id_orcamento_list=self.id_orcamento_filter)
-                self.json_updated_this_run = True
+            print("[ETAPA 2] Buscando IdRede da ViewOrcamentosLojas com filtros de data aplicados...")
+            logger.info("[ETAPA 2] Buscando IdRede da ViewOrcamentosLojas com filtros de data aplicados...")
+        
+        conn_sql_view = DatabaseConnection.get_sql_server_prd_connection()
+        cursor_sql_view = conn_sql_view.cursor()
+        
+        # Construir query com filtros de data aplicados
+        where_conditions = []
+        query_params = []
+        
+        # Carregar filtros de data: prioridade CMD > JSON > None
+        data_aviso_previo_min = self.data_aviso_previo_min
+        data_inicio_operacao_max = self.data_inicio_operacao_max
+        
+        # Se CMD não especificou filtros, usar do JSON se existir
+        if data_aviso_previo_min is None and filter_data and 'filters_applied' in filter_data:
+            filters = filter_data['filters_applied']
+            data_aviso_previo_min = filters.get('data_aviso_previo_min')
+        
+        if data_inicio_operacao_max is None and filter_data and 'filters_applied' in filter_data:
+            filters = filter_data['filters_applied']
+            data_inicio_operacao_max = filters.get('data_inicio_operacao_max')
+        
+        # Filtro IdOrcamento
+        if self.id_orcamento_filter:
+            placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
+            where_conditions.append(f"v.IdOrcamento IN ({placeholders})")
+            query_params.extend(self.id_orcamento_filter)
+        
+        # Filtro DataAvisoPrevio (data mínima)
+        if data_aviso_previo_min:
+            where_conditions.append("(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)")
+            query_params.append(data_aviso_previo_min)
+        
+        # Filtro DataInicioOperacao (data máxima)
+        if data_inicio_operacao_max:
+            where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
+            query_params.append(data_inicio_operacao_max)
+        
+        # Construir query completa com INNER JOIN Orcamento e filtros
+        where_clause = ""
+        if where_conditions:
+            where_clause = "WHERE " + " AND ".join(where_conditions) + " AND v.IdRede IS NOT NULL"
+        else:
+            where_clause = "WHERE v.IdRede IS NOT NULL"
+        
+        # ⚠️ LÓGICA SIMPLIFICADA: Query direta sem subquery (conforme validação)
+        if self.limit_rows > 0:
+            query_id_rede = f"""
+            SELECT DISTINCT TOP {self.limit_rows}
+                v.IdRede
+            FROM ViewOrcamentosLojas v
+            INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+            {where_clause}
+            """
+        else:
+            query_id_rede = f"""
+            SELECT DISTINCT
+                v.IdRede
+            FROM ViewOrcamentosLojas v
+            INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+            {where_clause}
+            """
+        
+        # Log da query completa para debug
+        logger.info(f"[ETAPA 2] Query completa para buscar IdRede da ViewOrcamentosLojas: {query_id_rede}")
+        logger.info(f"[ETAPA 2] Parâmetros da query: {query_params}")
+        
+        # Executar query
+        if query_params:
+            cursor_sql_view.execute(query_id_rede, query_params)
+        else:
+            cursor_sql_view.execute(query_id_rede)
+        
+        # Carregar resultados (já são únicos devido ao DISTINCT na query externa)
+        id_rede_filter_list = [row[0] for row in cursor_sql_view.fetchall()]
+        cursor_sql_view.close()
+        conn_sql_view.close()
+        
+        print(f"[ETAPA 2] Carregados {len(id_rede_filter_list)} IdRede únicos da ViewOrcamentosLojas")
+        logger.info(f"[ETAPA 2] Carregados {len(id_rede_filter_list)} IdRede únicos da ViewOrcamentosLojas")
+        
+        # Atualizar JSON com IDs coletados da ViewOrcamentosLojas (apenas uma vez por execução)
+        if not self.json_updated_this_run:
+            self.save_filter_json_from_view(id_orcamento_list=self.id_orcamento_filter)
+            self.json_updated_this_run = True
         
         # Limpar tabela
         # ⚠️ IMPORTANTE: Se clear_data=True, sempre usar TRUNCATE (mesmo com filtros)
@@ -1462,61 +1485,105 @@ class StoresMigration:
         logger.info("="*80)
         
         # Carregar filtros do contracts (se existir)
-        # ⚠️ IMPORTANTE: Se há LIMIT, ignorar JSON e buscar diretamente da ViewOrcamentosLojas
+        # ⚠️ IMPORTANTE: Sempre buscar da ViewOrcamentosLojas aplicando filtros de data para garantir consistência
         filter_data = None
         if self.limit_rows == 0:
             filter_data = self.load_filter_json()
         
         id_bandeira_filter_list = []
         
-        if filter_data and 'aggregated_ids' in filter_data:
-            id_bandeira_filter_list = filter_data['aggregated_ids'].get('IdBandeira', [])
-            logger.info(f"[ETAPA 3] Carregados {len(id_bandeira_filter_list)} IdBandeira do arquivo de filtros do contracts")
-            print(f"[ETAPA 3] Carregados {len(id_bandeira_filter_list)} IdBandeira do arquivo de filtros do contracts")
+        # ⚠️ IMPORTANTE: Sempre buscar da ViewOrcamentosLojas aplicando filtros de data
+        # Isso garante que os IDs correspondem aos filtros de data aplicados
+        if self.limit_rows > 0:
+            print(f"[ETAPA 3] LIMIT {self.limit_rows} especificado. Buscando IdBandeira da ViewOrcamentosLojas com LIMIT...")
+            logger.info(f"[ETAPA 3] LIMIT {self.limit_rows} especificado. Buscando da ViewOrcamentosLojas")
         else:
-            # Se não há JSON ou há LIMIT, buscar diretamente da ViewOrcamentosLojas
-            if self.limit_rows > 0:
-                print(f"[ETAPA 3] LIMIT {self.limit_rows} especificado. Buscando IdBandeira da ViewOrcamentosLojas com LIMIT...")
-                logger.info(f"[ETAPA 3] LIMIT {self.limit_rows} especificado. Ignorando JSON e buscando da ViewOrcamentosLojas")
-            else:
-                print("[ETAPA 3] Arquivo de filtros do contracts não encontrado. Buscando IdBandeira da ViewOrcamentosLojas...")
-                logger.info("[ETAPA 3] Arquivo de filtros do contracts não encontrado. Buscando IdBandeira da ViewOrcamentosLojas...")
-            
-            conn_sql_view = DatabaseConnection.get_sql_server_prd_connection()
-            cursor_sql_view = conn_sql_view.cursor()
-            
-            # Se há LIMIT, aplicar nas linhas da ViewOrcamentosLojas
-            if self.limit_rows > 0:
-                if self.id_orcamento_filter:
-                    placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
-                    query = f"SELECT DISTINCT TOP {self.limit_rows} IdBandeira FROM ViewOrcamentosLojas WHERE IdBandeira IS NOT NULL AND IdOrcamento IN ({placeholders}) ORDER BY IdBandeira"
-                    cursor_sql_view.execute(query, self.id_orcamento_filter)
-                    print(f"[ETAPA 3] Aplicando LIMIT {self.limit_rows} e filtro de IdOrcamento: {self.id_orcamento_filter}")
-                    logger.info(f"[ETAPA 3] Aplicando LIMIT {self.limit_rows} e filtro de IdOrcamento: {self.id_orcamento_filter}")
-                else:
-                    query = f"SELECT DISTINCT TOP {self.limit_rows} IdBandeira FROM ViewOrcamentosLojas WHERE IdBandeira IS NOT NULL ORDER BY IdBandeira"
-                    cursor_sql_view.execute(query)
-                    print(f"[ETAPA 3] Aplicando LIMIT {self.limit_rows} na busca de IdBandeira")
-                    logger.info(f"[ETAPA 3] Aplicando LIMIT {self.limit_rows} na busca de IdBandeira")
-            elif self.id_orcamento_filter:
-                placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
-                query = f"SELECT DISTINCT IdBandeira FROM ViewOrcamentosLojas WHERE IdBandeira IS NOT NULL AND IdOrcamento IN ({placeholders})"
-                cursor_sql_view.execute(query, self.id_orcamento_filter)
-                print(f"[ETAPA 3] Aplicando filtro de IdOrcamento: {self.id_orcamento_filter}")
-                logger.info(f"[ETAPA 3] Aplicando filtro de IdOrcamento: {self.id_orcamento_filter}")
-            else:
-                cursor_sql_view.execute("SELECT DISTINCT IdBandeira FROM ViewOrcamentosLojas WHERE IdBandeira IS NOT NULL")
-            
-            id_bandeira_filter_list = [row[0] for row in cursor_sql_view.fetchall()]
-            cursor_sql_view.close()
-            conn_sql_view.close()
-            print(f"[ETAPA 3] Carregados {len(id_bandeira_filter_list)} IdBandeira da ViewOrcamentosLojas")
-            logger.info(f"[ETAPA 3] Carregados {len(id_bandeira_filter_list)} IdBandeira da ViewOrcamentosLojas")
-            
-            # Atualizar JSON com IDs coletados da ViewOrcamentosLojas (apenas uma vez por execução)
-            if not self.json_updated_this_run:
-                self.save_filter_json_from_view(id_orcamento_list=self.id_orcamento_filter)
-                self.json_updated_this_run = True
+            print("[ETAPA 3] Buscando IdBandeira da ViewOrcamentosLojas com filtros de data aplicados...")
+            logger.info("[ETAPA 3] Buscando IdBandeira da ViewOrcamentosLojas com filtros de data aplicados...")
+        
+        conn_sql_view = DatabaseConnection.get_sql_server_prd_connection()
+        cursor_sql_view = conn_sql_view.cursor()
+        
+        # Construir query com filtros de data aplicados
+        where_conditions = []
+        query_params = []
+        
+        # Carregar filtros de data: prioridade CMD > JSON > None
+        data_aviso_previo_min = self.data_aviso_previo_min
+        data_inicio_operacao_max = self.data_inicio_operacao_max
+        
+        # Se CMD não especificou filtros, usar do JSON se existir
+        if data_aviso_previo_min is None and filter_data and 'filters_applied' in filter_data:
+            filters = filter_data['filters_applied']
+            data_aviso_previo_min = filters.get('data_aviso_previo_min')
+        
+        if data_inicio_operacao_max is None and filter_data and 'filters_applied' in filter_data:
+            filters = filter_data['filters_applied']
+            data_inicio_operacao_max = filters.get('data_inicio_operacao_max')
+        
+        # Filtro IdOrcamento
+        if self.id_orcamento_filter:
+            placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
+            where_conditions.append(f"v.IdOrcamento IN ({placeholders})")
+            query_params.extend(self.id_orcamento_filter)
+        
+        # Filtro DataAvisoPrevio (data mínima)
+        if data_aviso_previo_min:
+            where_conditions.append("(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)")
+            query_params.append(data_aviso_previo_min)
+        
+        # Filtro DataInicioOperacao (data máxima)
+        if data_inicio_operacao_max:
+            where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
+            query_params.append(data_inicio_operacao_max)
+        
+        # Construir query completa com INNER JOIN Orcamento e filtros
+        where_clause = ""
+        if where_conditions:
+            where_clause = "WHERE " + " AND ".join(where_conditions) + " AND v.IdBandeira IS NOT NULL"
+        else:
+            where_clause = "WHERE v.IdBandeira IS NOT NULL"
+        
+        # ⚠️ LÓGICA SIMPLIFICADA: Query direta sem subquery (conforme validação)
+        if self.limit_rows > 0:
+            query_id_bandeira = f"""
+            SELECT DISTINCT TOP {self.limit_rows}
+                v.IdBandeira
+            FROM ViewOrcamentosLojas v
+            INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+            {where_clause}
+            """
+        else:
+            query_id_bandeira = f"""
+            SELECT DISTINCT
+                v.IdBandeira
+            FROM ViewOrcamentosLojas v
+            INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+            {where_clause}
+            """
+        
+        # Log da query completa para debug
+        logger.info(f"[ETAPA 3] Query completa para buscar IdBandeira da ViewOrcamentosLojas: {query_id_bandeira}")
+        logger.info(f"[ETAPA 3] Parâmetros da query: {query_params}")
+        
+        # Executar query
+        if query_params:
+            cursor_sql_view.execute(query_id_bandeira, query_params)
+        else:
+            cursor_sql_view.execute(query_id_bandeira)
+        
+        # Carregar resultados (já são únicos devido ao DISTINCT na query externa)
+        id_bandeira_filter_list = [row[0] for row in cursor_sql_view.fetchall()]
+        cursor_sql_view.close()
+        conn_sql_view.close()
+        
+        print(f"[ETAPA 3] Carregados {len(id_bandeira_filter_list)} IdBandeira únicos da ViewOrcamentosLojas")
+        logger.info(f"[ETAPA 3] Carregados {len(id_bandeira_filter_list)} IdBandeira únicos da ViewOrcamentosLojas")
+        
+        # Atualizar JSON com IDs coletados da ViewOrcamentosLojas (apenas uma vez por execução)
+        if not self.json_updated_this_run:
+            self.save_filter_json_from_view(id_orcamento_list=self.id_orcamento_filter)
+            self.json_updated_this_run = True
         
         # Limpar tabela
         # ⚠️ IMPORTANTE: Se clear_data=True, sempre usar TRUNCATE (mesmo com filtros)
@@ -1908,13 +1975,28 @@ class StoresMigration:
             cursor_sql = conn_sql.cursor()
             
             if id_estabelecimento_list:
-                # Aplicar filtro de IdEstabelecimento do JSON
-                placeholders = ','.join(['?' for _ in id_estabelecimento_list])
-                cursor_sql.execute(f"SELECT COUNT(*) FROM Estabelecimento WHERE Id IN ({placeholders})", id_estabelecimento_list)
+                # ⚠️ IMPORTANTE: SQL Server tem limite de ~2100 parâmetros
+                # Dividir em chunks de 2000 para evitar erro "COUNT field incorrect"
+                MAX_PARAMS_PER_QUERY = 2000
+                origem_count = 0
+                
+                if len(id_estabelecimento_list) > MAX_PARAMS_PER_QUERY:
+                    # Dividir em chunks
+                    chunks = [id_estabelecimento_list[i:i + MAX_PARAMS_PER_QUERY] 
+                             for i in range(0, len(id_estabelecimento_list), MAX_PARAMS_PER_QUERY)]
+                    for chunk in chunks:
+                        placeholders = ','.join(['?' for _ in chunk])
+                        cursor_sql.execute(f"SELECT COUNT(*) FROM Estabelecimento WHERE Id IN ({placeholders})", chunk)
+                        origem_count += cursor_sql.fetchone()[0]
+                else:
+                    # Menos de 2000 parâmetros, executar query normal
+                    placeholders = ','.join(['?' for _ in id_estabelecimento_list])
+                    cursor_sql.execute(f"SELECT COUNT(*) FROM Estabelecimento WHERE Id IN ({placeholders})", id_estabelecimento_list)
+                    origem_count = cursor_sql.fetchone()[0]
             else:
                 # Buscar diretamente da ViewOrcamentosLojas (mesmo em full load)
                 cursor_sql.execute("SELECT COUNT(DISTINCT IdEstabelecimento) FROM ViewOrcamentosLojas WHERE IdEstabelecimento IS NOT NULL")
-            origem_count = cursor_sql.fetchone()[0]
+                origem_count = cursor_sql.fetchone()[0]
             cursor_sql.close()
             conn_sql.close()
             
@@ -1925,12 +2007,26 @@ class StoresMigration:
             cursor_pg = conn_pg.cursor()
             
             if id_estabelecimento_list:
-                # Contar apenas os stores migrados nesta execução
-                cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.stores WHERE legacy_id = ANY(%s)", (id_estabelecimento_list,))
+                # ⚠️ IMPORTANTE: PostgreSQL pode ter problemas com arrays muito grandes
+                # Dividir em chunks de 2000 para evitar erro
+                MAX_PARAMS_PER_QUERY = 2000
+                destino_count = 0
+                
+                if len(id_estabelecimento_list) > MAX_PARAMS_PER_QUERY:
+                    # Dividir em chunks
+                    chunks = [id_estabelecimento_list[i:i + MAX_PARAMS_PER_QUERY] 
+                             for i in range(0, len(id_estabelecimento_list), MAX_PARAMS_PER_QUERY)]
+                    for chunk in chunks:
+                        cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.stores WHERE legacy_id = ANY(%s)", (chunk,))
+                        destino_count += cursor_pg.fetchone()[0]
+                else:
+                    # Menos de 2000 parâmetros, executar query normal
+                    cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.stores WHERE legacy_id = ANY(%s)", (id_estabelecimento_list,))
+                    destino_count = cursor_pg.fetchone()[0]
             else:
                 # Contar todos (fallback)
                 cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.stores")
-            destino_count = cursor_pg.fetchone()[0]
+                destino_count = cursor_pg.fetchone()[0]
             cursor_pg.close()
             conn_pg.close()
             
@@ -1970,61 +2066,105 @@ class StoresMigration:
         logger.info("="*80)
         
         # Carregar filtros do contracts (se existir)
-        # ⚠️ IMPORTANTE: Se há LIMIT, ignorar JSON e buscar diretamente da ViewOrcamentosLojas
+        # ⚠️ IMPORTANTE: Sempre buscar da ViewOrcamentosLojas aplicando filtros de data para garantir consistência
         filter_data = None
         if self.limit_rows == 0:
             filter_data = self.load_filter_json()
         
         id_estabelecimento_filter_list = []
         
-        if filter_data and 'aggregated_ids' in filter_data:
-            id_estabelecimento_filter_list = filter_data['aggregated_ids'].get('IdEstabelecimento', [])
-            logger.info(f"[ETAPA 4] Carregados {len(id_estabelecimento_filter_list)} IdEstabelecimento do arquivo de filtros do contracts")
-            print(f"[ETAPA 4] Carregados {len(id_estabelecimento_filter_list)} IdEstabelecimento do arquivo de filtros do contracts")
+        # ⚠️ IMPORTANTE: Sempre buscar da ViewOrcamentosLojas aplicando filtros de data
+        # Isso garante que os IDs correspondem aos filtros de data aplicados
+        if self.limit_rows > 0:
+            print(f"[ETAPA 4] LIMIT {self.limit_rows} especificado. Buscando IdEstabelecimento da ViewOrcamentosLojas com LIMIT...")
+            logger.info(f"[ETAPA 4] LIMIT {self.limit_rows} especificado. Buscando da ViewOrcamentosLojas")
         else:
-            # Se não há JSON ou há LIMIT, buscar diretamente da ViewOrcamentosLojas
-            if self.limit_rows > 0:
-                print(f"[ETAPA 4] LIMIT {self.limit_rows} especificado. Buscando IdEstabelecimento da ViewOrcamentosLojas com LIMIT...")
-                logger.info(f"[ETAPA 4] LIMIT {self.limit_rows} especificado. Ignorando JSON e buscando da ViewOrcamentosLojas")
-            else:
-                print("[ETAPA 4] Arquivo de filtros do contracts não encontrado. Buscando IdEstabelecimento da ViewOrcamentosLojas...")
-                logger.info("[ETAPA 4] Arquivo de filtros do contracts não encontrado. Buscando IdEstabelecimento da ViewOrcamentosLojas...")
-            
-            conn_sql_view = DatabaseConnection.get_sql_server_prd_connection()
-            cursor_sql_view = conn_sql_view.cursor()
-            
-            # Se há LIMIT, aplicar nas linhas da ViewOrcamentosLojas
-            if self.limit_rows > 0:
-                if self.id_orcamento_filter:
-                    placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
-                    query = f"SELECT DISTINCT TOP {self.limit_rows} IdEstabelecimento FROM ViewOrcamentosLojas WHERE IdEstabelecimento IS NOT NULL AND IdOrcamento IN ({placeholders}) ORDER BY IdEstabelecimento"
-                    cursor_sql_view.execute(query, self.id_orcamento_filter)
-                    print(f"[ETAPA 4] Aplicando LIMIT {self.limit_rows} e filtro de IdOrcamento: {self.id_orcamento_filter}")
-                    logger.info(f"[ETAPA 4] Aplicando LIMIT {self.limit_rows} e filtro de IdOrcamento: {self.id_orcamento_filter}")
-                else:
-                    query = f"SELECT DISTINCT TOP {self.limit_rows} IdEstabelecimento FROM ViewOrcamentosLojas WHERE IdEstabelecimento IS NOT NULL ORDER BY IdEstabelecimento"
-                    cursor_sql_view.execute(query)
-                    print(f"[ETAPA 4] Aplicando LIMIT {self.limit_rows} na busca de IdEstabelecimento")
-                    logger.info(f"[ETAPA 4] Aplicando LIMIT {self.limit_rows} na busca de IdEstabelecimento")
-            elif self.id_orcamento_filter:
-                placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
-                query = f"SELECT DISTINCT IdEstabelecimento FROM ViewOrcamentosLojas WHERE IdEstabelecimento IS NOT NULL AND IdOrcamento IN ({placeholders})"
-                cursor_sql_view.execute(query, self.id_orcamento_filter)
-                print(f"[ETAPA 4] Aplicando filtro de IdOrcamento: {self.id_orcamento_filter}")
-                logger.info(f"[ETAPA 4] Aplicando filtro de IdOrcamento: {self.id_orcamento_filter}")
-            else:
-                cursor_sql_view.execute("SELECT DISTINCT IdEstabelecimento FROM ViewOrcamentosLojas WHERE IdEstabelecimento IS NOT NULL")
-            
-            id_estabelecimento_filter_list = [row[0] for row in cursor_sql_view.fetchall()]
-            cursor_sql_view.close()
-            conn_sql_view.close()
-            print(f"[ETAPA 4] Carregados {len(id_estabelecimento_filter_list)} IdEstabelecimento da ViewOrcamentosLojas")
-            logger.info(f"[ETAPA 4] Carregados {len(id_estabelecimento_filter_list)} IdEstabelecimento da ViewOrcamentosLojas")
-            
-            # Atualizar JSON com IDs coletados da ViewOrcamentosLojas (apenas uma vez por execução)
-            if not self.json_updated_this_run:
-                self.save_filter_json_from_view(id_orcamento_list=self.id_orcamento_filter)
-                self.json_updated_this_run = True
+            print("[ETAPA 4] Buscando IdEstabelecimento da ViewOrcamentosLojas com filtros de data aplicados...")
+            logger.info("[ETAPA 4] Buscando IdEstabelecimento da ViewOrcamentosLojas com filtros de data aplicados...")
+        
+        conn_sql_view = DatabaseConnection.get_sql_server_prd_connection()
+        cursor_sql_view = conn_sql_view.cursor()
+        
+        # Construir query com filtros de data aplicados
+        where_conditions = []
+        query_params = []
+        
+        # Carregar filtros de data: prioridade CMD > JSON > None
+        data_aviso_previo_min = self.data_aviso_previo_min
+        data_inicio_operacao_max = self.data_inicio_operacao_max
+        
+        # Se CMD não especificou filtros, usar do JSON se existir
+        if data_aviso_previo_min is None and filter_data and 'filters_applied' in filter_data:
+            filters = filter_data['filters_applied']
+            data_aviso_previo_min = filters.get('data_aviso_previo_min')
+        
+        if data_inicio_operacao_max is None and filter_data and 'filters_applied' in filter_data:
+            filters = filter_data['filters_applied']
+            data_inicio_operacao_max = filters.get('data_inicio_operacao_max')
+        
+        # Filtro IdOrcamento
+        if self.id_orcamento_filter:
+            placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
+            where_conditions.append(f"v.IdOrcamento IN ({placeholders})")
+            query_params.extend(self.id_orcamento_filter)
+        
+        # Filtro DataAvisoPrevio (data mínima)
+        if data_aviso_previo_min:
+            where_conditions.append("(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)")
+            query_params.append(data_aviso_previo_min)
+        
+        # Filtro DataInicioOperacao (data máxima)
+        if data_inicio_operacao_max:
+            where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
+            query_params.append(data_inicio_operacao_max)
+        
+        # Construir query completa com INNER JOIN Orcamento e filtros
+        where_clause = ""
+        if where_conditions:
+            where_clause = "WHERE " + " AND ".join(where_conditions) + " AND v.IdEstabelecimento IS NOT NULL"
+        else:
+            where_clause = "WHERE v.IdEstabelecimento IS NOT NULL"
+        
+        # ⚠️ LÓGICA SIMPLIFICADA: Query direta sem subquery (conforme validação)
+        if self.limit_rows > 0:
+            query_id_estabelecimento = f"""
+            SELECT DISTINCT TOP {self.limit_rows}
+                v.IdEstabelecimento
+            FROM ViewOrcamentosLojas v
+            INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+            {where_clause}
+            """
+        else:
+            query_id_estabelecimento = f"""
+            SELECT DISTINCT
+                v.IdEstabelecimento
+            FROM ViewOrcamentosLojas v
+            INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+            {where_clause}
+            """
+        
+        # Log da query completa para debug
+        logger.info(f"[ETAPA 4] Query completa para buscar IdEstabelecimento da ViewOrcamentosLojas: {query_id_estabelecimento}")
+        logger.info(f"[ETAPA 4] Parâmetros da query: {query_params}")
+        
+        # Executar query
+        if query_params:
+            cursor_sql_view.execute(query_id_estabelecimento, query_params)
+        else:
+            cursor_sql_view.execute(query_id_estabelecimento)
+        
+        # Carregar resultados (já são únicos devido ao DISTINCT na query externa)
+        id_estabelecimento_filter_list = [row[0] for row in cursor_sql_view.fetchall()]
+        cursor_sql_view.close()
+        conn_sql_view.close()
+        
+        print(f"[ETAPA 4] Carregados {len(id_estabelecimento_filter_list)} IdEstabelecimento únicos da ViewOrcamentosLojas")
+        logger.info(f"[ETAPA 4] Carregados {len(id_estabelecimento_filter_list)} IdEstabelecimento únicos da ViewOrcamentosLojas")
+        
+        # Atualizar JSON com IDs coletados da ViewOrcamentosLojas (apenas uma vez por execução)
+        if not self.json_updated_this_run:
+            self.save_filter_json_from_view(id_orcamento_list=self.id_orcamento_filter)
+            self.json_updated_this_run = True
         
         # Limpar tabela
         # ⚠️ IMPORTANTE: Se clear_data=True, sempre usar TRUNCATE (mesmo com filtros)
@@ -2084,21 +2224,46 @@ class StoresMigration:
         query_params = []
         
         if id_estabelecimento_filter_list:
-            # Aplicar filtro de IdEstabelecimento do JSON ou ViewOrcamentosLojas
-            placeholders = ','.join(['?' for _ in id_estabelecimento_filter_list])
-            sql_query = f"""
-            SELECT 
-                Id,
-                NomeFantasia,
-                IdBandeira,
-                Ativo,
-                DataInclusao,
-                DataAlteracao
-            FROM Estabelecimento
-            WHERE Id IN ({placeholders})
-            ORDER BY Id
-            """
-            query_params.extend(id_estabelecimento_filter_list)
+            # ⚠️ IMPORTANTE: SQL Server tem limite de ~2100 parâmetros
+            # Dividir em chunks de 2000 para evitar erro "COUNT field incorrect"
+            MAX_PARAMS_PER_QUERY = 2000
+            all_rows = []
+            
+            # Dividir lista em chunks
+            chunks = [id_estabelecimento_filter_list[i:i + MAX_PARAMS_PER_QUERY] 
+                     for i in range(0, len(id_estabelecimento_filter_list), MAX_PARAMS_PER_QUERY)]
+            
+            print(f"[ETAPA 4] Processando {len(id_estabelecimento_filter_list)} IdEstabelecimento em {len(chunks)} chunks de até {MAX_PARAMS_PER_QUERY} registros cada...")
+            logger.info(f"[ETAPA 4] Processando {len(id_estabelecimento_filter_list)} IdEstabelecimento em {len(chunks)} chunks")
+            
+            conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql = conn_sql.cursor()
+            
+            for chunk_idx, chunk in enumerate(chunks, 1):
+                placeholders = ','.join(['?' for _ in chunk])
+                sql_query = f"""
+                SELECT 
+                    Id,
+                    NomeFantasia,
+                    IdBandeira,
+                    Ativo,
+                    DataInclusao,
+                    DataAlteracao
+                FROM Estabelecimento
+                WHERE Id IN ({placeholders})
+                ORDER BY Id
+                """
+                cursor_sql.execute(sql_query, chunk)
+                chunk_rows = cursor_sql.fetchall()
+                all_rows.extend(chunk_rows)
+                print(f"[ETAPA 4] Chunk {chunk_idx}/{len(chunks)}: {len(chunk_rows)} registros carregados")
+                logger.info(f"[ETAPA 4] Chunk {chunk_idx}/{len(chunks)}: {len(chunk_rows)} registros carregados")
+            
+            cursor_sql.close()
+            conn_sql.close()
+            
+            print(f"[ETAPA 4] Total: {len(all_rows)} registros carregados de {len(id_estabelecimento_filter_list)} IdEstabelecimento")
+            logger.info(f"[ETAPA 4] Total: {len(all_rows)} registros carregados")
         elif self.limit_rows > 0:
             if store_brand_map:
                 # Buscar apenas estabelecimentos cujas bandeiras foram migradas
@@ -2129,6 +2294,14 @@ class StoresMigration:
                 FROM Estabelecimento
                 ORDER BY Id
                 """
+            
+            conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql = conn_sql.cursor()
+            cursor_sql.execute(sql_query)
+            all_rows = cursor_sql.fetchall()
+            cursor_sql.close()
+            conn_sql.close()
+            print(f"[ETAPA 4] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
         else:
             # Sem filtros e sem limite: buscar apenas da ViewOrcamentosLojas (mesmo em full load)
             sql_query = """
@@ -2147,21 +2320,14 @@ class StoresMigration:
             )
             ORDER BY e.Id
             """
-        
-        conn_sql = DatabaseConnection.get_sql_server_prd_connection()
-        cursor_sql = conn_sql.cursor()
-        if query_params:
-            cursor_sql.execute(sql_query, query_params)
-        else:
+            
+            conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql = conn_sql.cursor()
             cursor_sql.execute(sql_query)
-        
-        # Carregar TODOS os dados na memória de uma vez
-        print("[ETAPA 4] Carregando dados na memória...")
-        all_rows = cursor_sql.fetchall()
-        cursor_sql.close()
-        conn_sql.close()
-        
-        print(f"[ETAPA 4] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
+            all_rows = cursor_sql.fetchall()
+            cursor_sql.close()
+            conn_sql.close()
+            print(f"[ETAPA 4] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
         
         # Processar conversões em massa usando DataFrame (vetorizado)
         # Criar DataFrame usando from_records que é mais adequado para dados de banco
@@ -2444,23 +2610,50 @@ class StoresMigration:
             # Buscar apenas estabelecimentos que foram migrados
             estabelecimentos_ids = list(self.store_id_map.keys())
             if estabelecimentos_ids:
-                placeholders = ','.join(['?' for _ in estabelecimentos_ids])
-                sql_query = f"""
-                SELECT 
-                    Id,
-                    Cnpj,
-                    Ativo,
-                    DataInclusao,
-                    DataAlteracao
-                FROM Estabelecimento
-                WHERE Id IN ({placeholders})
-                  AND Cnpj IS NOT NULL AND LTRIM(RTRIM(Cnpj)) != ''
-                ORDER BY Id
-                """
-                query_params.extend(estabelecimentos_ids)
+                # ⚠️ IMPORTANTE: SQL Server tem limite de ~2100 parâmetros
+                # Dividir em chunks de 2000 para evitar erro "COUNT field incorrect"
+                MAX_PARAMS_PER_QUERY = 2000
+                all_rows = []
                 
-                # Aplicar limite se especificado
-                if self.limit_rows > 0:
+                if len(estabelecimentos_ids) > MAX_PARAMS_PER_QUERY:
+                    # Dividir em chunks
+                    chunks = [estabelecimentos_ids[i:i + MAX_PARAMS_PER_QUERY] 
+                             for i in range(0, len(estabelecimentos_ids), MAX_PARAMS_PER_QUERY)]
+                    
+                    print(f"[ETAPA 5] Processando {len(estabelecimentos_ids)} IdEstabelecimento em {len(chunks)} chunks de até {MAX_PARAMS_PER_QUERY} registros cada...")
+                    logger.info(f"[ETAPA 5] Processando {len(estabelecimentos_ids)} IdEstabelecimento em {len(chunks)} chunks")
+                    
+                    conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+                    cursor_sql = conn_sql.cursor()
+                    
+                    for chunk_idx, chunk in enumerate(chunks, 1):
+                        placeholders = ','.join(['?' for _ in chunk])
+                        chunk_query = f"""
+                        SELECT 
+                            Id,
+                            Cnpj,
+                            Ativo,
+                            DataInclusao,
+                            DataAlteracao
+                        FROM Estabelecimento
+                        WHERE Id IN ({placeholders})
+                          AND Cnpj IS NOT NULL AND LTRIM(RTRIM(Cnpj)) != ''
+                        ORDER BY Id
+                        """
+                        cursor_sql.execute(chunk_query, chunk)
+                        chunk_rows = cursor_sql.fetchall()
+                        all_rows.extend(chunk_rows)
+                        print(f"[ETAPA 5] Chunk {chunk_idx}/{len(chunks)}: {len(chunk_rows)} registros carregados")
+                        logger.info(f"[ETAPA 5] Chunk {chunk_idx}/{len(chunks)}: {len(chunk_rows)} registros carregados")
+                    
+                    cursor_sql.close()
+                    conn_sql.close()
+                    
+                    print(f"[ETAPA 5] Total: {len(all_rows)} registros carregados de {len(estabelecimentos_ids)} IdEstabelecimento")
+                    logger.info(f"[ETAPA 5] Total: {len(all_rows)} registros carregados")
+                else:
+                    # Menos de 2000 parâmetros, executar query normal
+                    placeholders = ','.join(['?' for _ in estabelecimentos_ids])
                     sql_query = f"""
                     SELECT 
                         Id,
@@ -2472,11 +2665,35 @@ class StoresMigration:
                     WHERE Id IN ({placeholders})
                       AND Cnpj IS NOT NULL AND LTRIM(RTRIM(Cnpj)) != ''
                     ORDER BY Id
-                    OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY
                     """
+                    query_params.extend(estabelecimentos_ids)
+                    
+                    # Aplicar limite se especificado
+                    if self.limit_rows > 0:
+                        sql_query = f"""
+                        SELECT 
+                            Id,
+                            Cnpj,
+                            Ativo,
+                            DataInclusao,
+                            DataAlteracao
+                        FROM Estabelecimento
+                        WHERE Id IN ({placeholders})
+                          AND Cnpj IS NOT NULL AND LTRIM(RTRIM(Cnpj)) != ''
+                        ORDER BY Id
+                        OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY
+                        """
+                    
+                    conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+                    cursor_sql = conn_sql.cursor()
+                    cursor_sql.execute(sql_query, query_params)
+                    all_rows = cursor_sql.fetchall()
+                    cursor_sql.close()
+                    conn_sql.close()
+                    print(f"[ETAPA 5] {len(all_rows)} registros carregados. Processando conversões...")
             else:
                 # Se não há estabelecimentos migrados, retornar query vazia
-                sql_query = "SELECT Id, Cnpj, Ativo, DataInclusao, DataAlteracao FROM Estabelecimento WHERE 1=0"
+                all_rows = []
         else:
             sql_query = """
             SELECT 
@@ -2492,21 +2709,14 @@ class StoresMigration:
             # Adicionar LIMIT se especificado e não houver mapeamento
             if self.limit_rows > 0:
                 sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
-        
-        conn_sql = DatabaseConnection.get_sql_server_prd_connection()
-        cursor_sql = conn_sql.cursor()
-        if query_params:
-            cursor_sql.execute(sql_query, query_params)
-        else:
+            
+            conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql = conn_sql.cursor()
             cursor_sql.execute(sql_query)
-        
-        # Carregar TODOS os dados na memória de uma vez
-        print("[ETAPA 5] Carregando dados na memória...")
-        all_rows = cursor_sql.fetchall()
-        cursor_sql.close()
-        conn_sql.close()
-        
-        print(f"[ETAPA 5] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
+            all_rows = cursor_sql.fetchall()
+            cursor_sql.close()
+            conn_sql.close()
+            print(f"[ETAPA 5] {len(all_rows)} registros carregados. Processando conversões...")
         
         # Processar conversões em massa usando DataFrame (vetorizado)
         # Criar DataFrame usando from_records que é mais adequado para dados de banco
@@ -2640,15 +2850,36 @@ class StoresMigration:
             if self.store_id_map:
                 estabelecimentos_ids = list(self.store_id_map.keys())
                 if estabelecimentos_ids:
-                    placeholders = ','.join(['?' for _ in estabelecimentos_ids])
-                    query_main = f"""
-                        SELECT COUNT(*) 
-                        FROM Estabelecimento
-                        WHERE Id IN ({placeholders})
-                          AND Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != ''
-                    """
-                    cursor_sql.execute(query_main, estabelecimentos_ids)
-                    origem_count = cursor_sql.fetchone()[0]
+                    # ⚠️ IMPORTANTE: SQL Server tem limite de ~2100 parâmetros
+                    # Dividir em chunks de 2000 para evitar erro "COUNT field incorrect"
+                    MAX_PARAMS_PER_QUERY = 2000
+                    origem_count = 0
+                    
+                    if len(estabelecimentos_ids) > MAX_PARAMS_PER_QUERY:
+                        # Dividir em chunks
+                        chunks = [estabelecimentos_ids[i:i + MAX_PARAMS_PER_QUERY] 
+                                 for i in range(0, len(estabelecimentos_ids), MAX_PARAMS_PER_QUERY)]
+                        for chunk in chunks:
+                            placeholders = ','.join(['?' for _ in chunk])
+                            query_main = f"""
+                                SELECT COUNT(*) 
+                                FROM Estabelecimento
+                                WHERE Id IN ({placeholders})
+                                  AND Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != ''
+                            """
+                            cursor_sql.execute(query_main, chunk)
+                            origem_count += cursor_sql.fetchone()[0]
+                    else:
+                        # Menos de 2000 parâmetros, executar query normal
+                        placeholders = ','.join(['?' for _ in estabelecimentos_ids])
+                        query_main = f"""
+                            SELECT COUNT(*) 
+                            FROM Estabelecimento
+                            WHERE Id IN ({placeholders})
+                              AND Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != ''
+                        """
+                        cursor_sql.execute(query_main, estabelecimentos_ids)
+                        origem_count = cursor_sql.fetchone()[0]
                 else:
                     origem_count = 0
             elif self.limit_rows > 0:
@@ -2739,30 +2970,57 @@ class StoresMigration:
             # Buscar apenas estabelecimentos que foram migrados
             estabelecimentos_ids = list(self.store_id_map.keys())
             if estabelecimentos_ids:
-                placeholders = ','.join(['?' for _ in estabelecimentos_ids])
-                sql_query = f"""
-                SELECT 
-                    Id,
-                    Endereco,
-                    Numero,
-                    Complemento,
-                    Bairro,
-                    CEP,
-                    Cidade,
-                    UF,
-                    Latitude,
-                    Longitude,
-                    DataInclusao,
-                    DataAlteracao
-                FROM Estabelecimento
-                WHERE Id IN ({placeholders})
-                  AND Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != ''
-                ORDER BY Id
-                """
-                query_params.extend(estabelecimentos_ids)
+                # ⚠️ IMPORTANTE: SQL Server tem limite de ~2100 parâmetros
+                # Dividir em chunks de 2000 para evitar erro "COUNT field incorrect"
+                MAX_PARAMS_PER_QUERY = 2000
+                all_rows = []
                 
-                # Aplicar limite se especificado
-                if self.limit_rows > 0:
+                if len(estabelecimentos_ids) > MAX_PARAMS_PER_QUERY:
+                    # Dividir em chunks
+                    chunks = [estabelecimentos_ids[i:i + MAX_PARAMS_PER_QUERY] 
+                             for i in range(0, len(estabelecimentos_ids), MAX_PARAMS_PER_QUERY)]
+                    
+                    print(f"[ETAPA 6] Processando {len(estabelecimentos_ids)} IdEstabelecimento em {len(chunks)} chunks de até {MAX_PARAMS_PER_QUERY} registros cada...")
+                    logger.info(f"[ETAPA 6] Processando {len(estabelecimentos_ids)} IdEstabelecimento em {len(chunks)} chunks")
+                    
+                    conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+                    cursor_sql = conn_sql.cursor()
+                    
+                    for chunk_idx, chunk in enumerate(chunks, 1):
+                        placeholders = ','.join(['?' for _ in chunk])
+                        chunk_query = f"""
+                        SELECT 
+                            Id,
+                            Endereco,
+                            Numero,
+                            Complemento,
+                            Bairro,
+                            CEP,
+                            Cidade,
+                            UF,
+                            Latitude,
+                            Longitude,
+                            DataInclusao,
+                            DataAlteracao
+                        FROM Estabelecimento
+                        WHERE Id IN ({placeholders})
+                          AND Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != ''
+                        ORDER BY Id
+                        """
+                        cursor_sql.execute(chunk_query, chunk)
+                        chunk_rows = cursor_sql.fetchall()
+                        all_rows.extend(chunk_rows)
+                        print(f"[ETAPA 6] Chunk {chunk_idx}/{len(chunks)}: {len(chunk_rows)} registros carregados")
+                        logger.info(f"[ETAPA 6] Chunk {chunk_idx}/{len(chunks)}: {len(chunk_rows)} registros carregados")
+                    
+                    cursor_sql.close()
+                    conn_sql.close()
+                    
+                    print(f"[ETAPA 6] Total: {len(all_rows)} registros carregados de {len(estabelecimentos_ids)} IdEstabelecimento")
+                    logger.info(f"[ETAPA 6] Total: {len(all_rows)} registros carregados")
+                else:
+                    # Menos de 2000 parâmetros, executar query normal
+                    placeholders = ','.join(['?' for _ in estabelecimentos_ids])
                     sql_query = f"""
                     SELECT 
                         Id,
@@ -2781,11 +3039,42 @@ class StoresMigration:
                     WHERE Id IN ({placeholders})
                       AND Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != ''
                     ORDER BY Id
-                    OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY
                     """
+                    query_params.extend(estabelecimentos_ids)
+                    
+                    # Aplicar limite se especificado
+                    if self.limit_rows > 0:
+                        sql_query = f"""
+                        SELECT 
+                            Id,
+                            Endereco,
+                            Numero,
+                            Complemento,
+                            Bairro,
+                            CEP,
+                            Cidade,
+                            UF,
+                            Latitude,
+                            Longitude,
+                            DataInclusao,
+                            DataAlteracao
+                        FROM Estabelecimento
+                        WHERE Id IN ({placeholders})
+                          AND Endereco IS NOT NULL AND LTRIM(RTRIM(Endereco)) != ''
+                        ORDER BY Id
+                        OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY
+                        """
+                    
+                    conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+                    cursor_sql = conn_sql.cursor()
+                    cursor_sql.execute(sql_query, query_params)
+                    all_rows = cursor_sql.fetchall()
+                    cursor_sql.close()
+                    conn_sql.close()
+                    print(f"[ETAPA 6] {len(all_rows)} registros carregados. Processando conversões...")
             else:
                 # Se não há estabelecimentos migrados, retornar query vazia
-                sql_query = "SELECT Id, Endereco, Numero, Complemento, Bairro, CEP, Cidade, UF, Latitude, Longitude, DataInclusao, DataAlteracao FROM Estabelecimento WHERE 1=0"
+                all_rows = []
         else:
             sql_query = """
             SELECT 
@@ -2808,21 +3097,14 @@ class StoresMigration:
             # Adicionar LIMIT se especificado e não houver mapeamento
             if self.limit_rows > 0:
                 sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
-        
-        conn_sql = DatabaseConnection.get_sql_server_prd_connection()
-        cursor_sql = conn_sql.cursor()
-        if query_params:
-            cursor_sql.execute(sql_query, query_params)
-        else:
+            
+            conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql = conn_sql.cursor()
             cursor_sql.execute(sql_query)
-        
-        # Carregar TODOS os dados na memória de uma vez
-        print("[ETAPA 6] Carregando dados na memória...")
-        all_rows = cursor_sql.fetchall()
-        cursor_sql.close()
-        conn_sql.close()
-        
-        print(f"[ETAPA 6] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
+            all_rows = cursor_sql.fetchall()
+            cursor_sql.close()
+            conn_sql.close()
+            print(f"[ETAPA 6] {len(all_rows)} registros carregados. Processando conversões...")
         
         # Processar conversões em massa usando DataFrame (vetorizado)
         include_legacy = self.should_include_legacy_id()
@@ -3111,14 +3393,55 @@ class StoresMigration:
             if self.store_id_map:
                 estabelecimentos_ids = list(self.store_id_map.keys())
                 if estabelecimentos_ids:
-                    cursor_sql.execute(query_email, estabelecimentos_ids)
-                    origem_email = cursor_sql.fetchone()[0]
+                    # ⚠️ IMPORTANTE: SQL Server tem limite de ~2100 parâmetros
+                    # Dividir em chunks de 2000 para evitar erro "COUNT field incorrect"
+                    MAX_PARAMS_PER_QUERY = 2000
+                    origem_email = 0
+                    origem_phone = 0
+                    origem_cellphone = 0
                     
-                    cursor_sql.execute(query_phone, estabelecimentos_ids)
-                    origem_phone = cursor_sql.fetchone()[0]
-                    
-                    cursor_sql.execute(query_cellphone, estabelecimentos_ids)
-                    origem_cellphone = cursor_sql.fetchone()[0]
+                    if len(estabelecimentos_ids) > MAX_PARAMS_PER_QUERY:
+                        # Dividir em chunks
+                        chunks = [estabelecimentos_ids[i:i + MAX_PARAMS_PER_QUERY] 
+                                 for i in range(0, len(estabelecimentos_ids), MAX_PARAMS_PER_QUERY)]
+                        for chunk in chunks:
+                            placeholders = ','.join(['?' for _ in chunk])
+                            query_email_chunk = f"""
+                                SELECT COUNT(*) 
+                                FROM Estabelecimento
+                                WHERE Id IN ({placeholders})
+                                  AND Email IS NOT NULL AND LTRIM(RTRIM(Email)) != ''
+                            """
+                            query_phone_chunk = f"""
+                                SELECT COUNT(*) 
+                                FROM Estabelecimento
+                                WHERE Id IN ({placeholders})
+                                  AND Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != ''
+                            """
+                            query_cellphone_chunk = f"""
+                                SELECT COUNT(*) 
+                                FROM Estabelecimento
+                                WHERE Id IN ({placeholders})
+                                  AND CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != ''
+                            """
+                            cursor_sql.execute(query_email_chunk, chunk)
+                            origem_email += cursor_sql.fetchone()[0]
+                            
+                            cursor_sql.execute(query_phone_chunk, chunk)
+                            origem_phone += cursor_sql.fetchone()[0]
+                            
+                            cursor_sql.execute(query_cellphone_chunk, chunk)
+                            origem_cellphone += cursor_sql.fetchone()[0]
+                    else:
+                        # Menos de 2000 parâmetros, executar queries normais
+                        cursor_sql.execute(query_email, estabelecimentos_ids)
+                        origem_email = cursor_sql.fetchone()[0]
+                        
+                        cursor_sql.execute(query_phone, estabelecimentos_ids)
+                        origem_phone = cursor_sql.fetchone()[0]
+                        
+                        cursor_sql.execute(query_cellphone, estabelecimentos_ids)
+                        origem_cellphone = cursor_sql.fetchone()[0]
                 else:
                     origem_email = 0
                     origem_phone = 0
@@ -3217,26 +3540,53 @@ class StoresMigration:
             # Buscar apenas estabelecimentos que foram migrados
             estabelecimentos_ids = list(self.store_id_map.keys())
             if estabelecimentos_ids:
-                placeholders = ','.join(['?' for _ in estabelecimentos_ids])
-                sql_query = f"""
-                SELECT 
-                    Id,
-                    Email,
-                    Telefone,
-                    CelularGerente,
-                    DataInclusao,
-                    DataAlteracao
-                FROM Estabelecimento
-                WHERE Id IN ({placeholders})
-                  AND ((Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
-                   OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
-                   OR (CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != ''))
-                ORDER BY Id
-                """
-                query_params.extend(estabelecimentos_ids)
+                # ⚠️ IMPORTANTE: SQL Server tem limite de ~2100 parâmetros
+                # Dividir em chunks de 2000 para evitar erro "COUNT field incorrect"
+                MAX_PARAMS_PER_QUERY = 2000
+                all_rows = []
                 
-                # Aplicar limite se especificado
-                if self.limit_rows > 0:
+                if len(estabelecimentos_ids) > MAX_PARAMS_PER_QUERY:
+                    # Dividir em chunks
+                    chunks = [estabelecimentos_ids[i:i + MAX_PARAMS_PER_QUERY] 
+                             for i in range(0, len(estabelecimentos_ids), MAX_PARAMS_PER_QUERY)]
+                    
+                    print(f"[ETAPA 7] Processando {len(estabelecimentos_ids)} IdEstabelecimento em {len(chunks)} chunks de até {MAX_PARAMS_PER_QUERY} registros cada...")
+                    logger.info(f"[ETAPA 7] Processando {len(estabelecimentos_ids)} IdEstabelecimento em {len(chunks)} chunks")
+                    
+                    conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+                    cursor_sql = conn_sql.cursor()
+                    
+                    for chunk_idx, chunk in enumerate(chunks, 1):
+                        placeholders = ','.join(['?' for _ in chunk])
+                        chunk_query = f"""
+                        SELECT 
+                            Id,
+                            Email,
+                            Telefone,
+                            CelularGerente,
+                            DataInclusao,
+                            DataAlteracao
+                        FROM Estabelecimento
+                        WHERE Id IN ({placeholders})
+                          AND ((Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
+                           OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
+                           OR (CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != ''))
+                        ORDER BY Id
+                        """
+                        cursor_sql.execute(chunk_query, chunk)
+                        chunk_rows = cursor_sql.fetchall()
+                        all_rows.extend(chunk_rows)
+                        print(f"[ETAPA 7] Chunk {chunk_idx}/{len(chunks)}: {len(chunk_rows)} registros carregados")
+                        logger.info(f"[ETAPA 7] Chunk {chunk_idx}/{len(chunks)}: {len(chunk_rows)} registros carregados")
+                    
+                    cursor_sql.close()
+                    conn_sql.close()
+                    
+                    print(f"[ETAPA 7] Total: {len(all_rows)} registros carregados de {len(estabelecimentos_ids)} IdEstabelecimento")
+                    logger.info(f"[ETAPA 7] Total: {len(all_rows)} registros carregados")
+                else:
+                    # Menos de 2000 parâmetros, executar query normal
+                    placeholders = ','.join(['?' for _ in estabelecimentos_ids])
                     sql_query = f"""
                     SELECT 
                         Id,
@@ -3251,11 +3601,38 @@ class StoresMigration:
                        OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
                        OR (CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != ''))
                     ORDER BY Id
-                    OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY
                     """
+                    query_params.extend(estabelecimentos_ids)
+                    
+                    # Aplicar limite se especificado
+                    if self.limit_rows > 0:
+                        sql_query = f"""
+                        SELECT 
+                            Id,
+                            Email,
+                            Telefone,
+                            CelularGerente,
+                            DataInclusao,
+                            DataAlteracao
+                        FROM Estabelecimento
+                        WHERE Id IN ({placeholders})
+                          AND ((Email IS NOT NULL AND LTRIM(RTRIM(Email)) != '')
+                           OR (Telefone IS NOT NULL AND LTRIM(RTRIM(Telefone)) != '')
+                           OR (CelularGerente IS NOT NULL AND LTRIM(RTRIM(CelularGerente)) != ''))
+                        ORDER BY Id
+                        OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY
+                        """
+                    
+                    conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+                    cursor_sql = conn_sql.cursor()
+                    cursor_sql.execute(sql_query, query_params)
+                    all_rows = cursor_sql.fetchall()
+                    cursor_sql.close()
+                    conn_sql.close()
+                    print(f"[ETAPA 7] {len(all_rows)} registros carregados. Processando conversões...")
             else:
                 # Se não há estabelecimentos migrados, retornar query vazia
-                sql_query = "SELECT Id, Email, Telefone, CelularGerente, DataInclusao, DataAlteracao FROM Estabelecimento WHERE 1=0"
+                all_rows = []
         else:
             sql_query = """
             SELECT 
@@ -3274,19 +3651,14 @@ class StoresMigration:
             # Adicionar LIMIT se especificado e não houver mapeamento
             if self.limit_rows > 0:
                 sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
-        
-        conn_sql = DatabaseConnection.get_sql_server_prd_connection()
-        cursor_sql = conn_sql.cursor()
-        if query_params:
-            cursor_sql.execute(sql_query, query_params)
-        else:
+            
+            conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql = conn_sql.cursor()
             cursor_sql.execute(sql_query)
-        
-        # Carregar TODOS os dados na memória de uma vez
-        print("[ETAPA 7] Carregando dados na memória...")
-        all_rows = cursor_sql.fetchall()
-        cursor_sql.close()
-        conn_sql.close()
+            all_rows = cursor_sql.fetchall()
+            cursor_sql.close()
+            conn_sql.close()
+            print(f"[ETAPA 7] {len(all_rows)} registros carregados. Processando conversões...")
         
         print(f"[ETAPA 7] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
         

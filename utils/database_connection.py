@@ -56,7 +56,8 @@ class DatabaseConnection:
     
     # Chaveador de destino: 'HML' ou 'PRD'
     # Pode ser alterado via variável de ambiente MIGRATION_DESTINO ou método set_destino()
-    _destino_atual = 'HML'  # Padrão: HML
+    _destino_atual = 'HML'  # Padrão: HML (será sobrescrito por set_destino() ou variável de ambiente)
+    _destino_configurado_explicitamente = False  # Flag para indicar se foi configurado via set_destino()
     
     @staticmethod
     def get_sql_server_prd_connection():
@@ -113,8 +114,17 @@ class DatabaseConnection:
         destino_upper = destino.upper()
         if destino_upper not in ['HML', 'PRD']:
             raise ValueError(f"Destino invalido: {destino}. Use 'HML' ou 'PRD'")
+        
+        # ⚠️ CRÍTICO: Sempre sobrescrever o destino quando set_destino() é chamado
         DatabaseConnection._destino_atual = destino_upper
-        print(f"Destino configurado para: {destino_upper}")
+        DatabaseConnection._destino_configurado_explicitamente = True  # Marcar como configurado explicitamente
+        
+        # Verificar se foi aplicado corretamente
+        destino_verificado = DatabaseConnection._destino_atual
+        if destino_verificado != destino_upper:
+            print(f"[ERRO] Destino nao foi aplicado corretamente! Esperado: {destino_upper}, Atual: {destino_verificado}")
+        else:
+            print(f"[OK] Destino configurado para: {destino_upper} (verificado: {destino_verificado})")
     
     @staticmethod
     def get_destino():
@@ -124,7 +134,13 @@ class DatabaseConnection:
         Returns:
             str: 'HML' ou 'PRD'
         """
-        # Verificar variável de ambiente primeiro
+        # ⚠️ CRÍTICO: Se destino foi configurado explicitamente, retornar diretamente
+        # Não verificar variável de ambiente se já foi configurado via set_destino()
+        if DatabaseConnection._destino_configurado_explicitamente:
+            return DatabaseConnection._destino_atual
+        
+        # ⚠️ IMPORTANTE: Variável de ambiente só é verificada se destino NÃO foi configurado explicitamente
+        # Isso permite que set_destino() sobrescreva a variável de ambiente
         env_destino = os.getenv('MIGRATION_DESTINO', '').upper()
         if env_destino in ['HML', 'PRD']:
             DatabaseConnection._destino_atual = env_destino

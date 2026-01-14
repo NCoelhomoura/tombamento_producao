@@ -19,7 +19,8 @@ from psycopg2.extras import execute_values
 utils_path = os.path.join(os.path.dirname(__file__), '..', 'utils')
 if utils_path not in sys.path:
     sys.path.insert(0, utils_path)
-from database_connection import DatabaseConnection
+# ⚠️ CRÍTICO: Importar usando o mesmo caminho do orchestrator para garantir mesma referência
+from utils.database_connection import DatabaseConnection
 
 # ============================================================================
 # CONFIGURACAO DE SCHEMAS POR AMBIENTE
@@ -765,34 +766,24 @@ class ContractsMigration:
         
         print(f"[ETAPA 1] {len(all_rows)} registros carregados. Processando conversões...")
         
-        # Coletar TODOS os IDs únicos da ViewOrcamentosLojas
-        # Quando há LIMIT, primeiro identificar quais IdOrcamento serão migrados,
-        # depois coletar TODOS os IDs únicos relacionados a esses contratos (sem LIMIT na coleta)
+        # ⚠️ LÓGICA SIMPLIFICADA: Query direta sem subquery (conforme validação)
+        # Coletar TODOS os IDs únicos da ViewOrcamentosLojas usando queries separadas para cada tipo
         print("[ETAPA 1] Coletando IDs únicos da ViewOrcamentosLojas...")
         
+        # Construir WHERE clause comum para todas as queries
+        where_clause_ids = ""
+        query_params_ids = []
+        
         if self.limit_rows > 0:
-            # Primeiro, identificar quais IdOrcamento serão migrados (aplicando LIMIT)
+            # Quando há LIMIT, primeiro identificar quais IdOrcamento serão migrados
             id_orcamento_migrados = [row[0] for row in all_rows]  # IdOrcamento da query principal (já com LIMIT aplicado)
             
             if id_orcamento_migrados:
-                # Agora coletar TODOS os IDs únicos relacionados a esses contratos (SEM LIMIT)
                 placeholders = ','.join(['?' for _ in id_orcamento_migrados])
-                sql_query_ids = f"""
-                SELECT DISTINCT
-                    v.IdOrcamento,
-                    v.IdCliente,
-                    v.IdEstabelecimento,
-                    v.IdBandeira,
-                    v.IdRede
-                FROM ViewOrcamentosLojas v
-                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
-                WHERE v.IdOrcamento IN ({placeholders})
-                """
-                
-                # Aplicar os mesmos filtros adicionais (DataAvisoPrevio, DataInicioOperacao) se existirem
-                where_conditions_ids = []
+                where_conditions_ids = [f"v.IdOrcamento IN ({placeholders})"]
                 query_params_ids = list(id_orcamento_migrados)
                 
+                # Aplicar os mesmos filtros adicionais (DataAvisoPrevio, DataInicioOperacao) se existirem
                 if self.data_aviso_previo_min is not None:
                     if isinstance(self.data_aviso_previo_min, str):
                         data_aviso_previo_str = self.data_aviso_previo_min
@@ -809,84 +800,102 @@ class ContractsMigration:
                     where_conditions_ids.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
                     query_params_ids.append(data_inicio_str)
                 
-                if where_conditions_ids:
-                    sql_query_ids += " AND " + " AND ".join(where_conditions_ids)
-                
+                where_clause_ids = "WHERE " + " AND ".join(where_conditions_ids)
                 print(f"[ETAPA 1] Coletando TODOS os IDs únicos para {len(id_orcamento_migrados)} contratos: {id_orcamento_migrados[:5]}{'...' if len(id_orcamento_migrados) > 5 else ''}")
             else:
-                sql_query_ids = "SELECT DISTINCT v.IdOrcamento, v.IdCliente, v.IdEstabelecimento, v.IdBandeira, v.IdRede FROM ViewOrcamentosLojas v WHERE 1=0"
+                where_clause_ids = "WHERE 1=0"
                 query_params_ids = []
         else:
             # Sem LIMIT, usar os mesmos filtros da query principal
-            sql_query_ids = """
-            SELECT DISTINCT
-                v.IdOrcamento,
-                v.IdCliente,
-                v.IdEstabelecimento,
-                v.IdBandeira,
-                v.IdRede
-            FROM ViewOrcamentosLojas v
-            INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
-            """
-            
             if where_conditions:
-                sql_query_ids += " WHERE " + " AND ".join(where_conditions)
-            
+                where_clause_ids = "WHERE " + " AND ".join(where_conditions)
             query_params_ids = query_params
-            print(f"[ETAPA 1] Coletando IDs únicos sem LIMIT (aplicando filtros: {where_conditions})")
-            logger.info(f"[ETAPA 1] Query completa (sem LIMIT): {sql_query_ids}")
-            logger.info(f"[ETAPA 1] Parâmetros (sem LIMIT): {query_params_ids}")
+            print(f"[ETAPA 1] Coletando IDs únicos sem LIMIT (aplicando filtros)")
+            logger.info(f"[ETAPA 1] Filtros aplicados: {where_conditions}")
         
         conn_sql_ids = DatabaseConnection.get_sql_server_prd_connection()
         cursor_sql_ids = conn_sql_ids.cursor()
         
-        # Log da query para debug
-        logger.info(f"[ETAPA 1] Query de coleta de IDs: {sql_query_ids[:200]}...")
-        logger.info(f"[ETAPA 1] Parâmetros da query: {query_params_ids}")
+        # Executar query separada para cada tipo de ID usando estrutura simplificada
+        aggregated_ids = {}
         
+        # IdOrcamento
+        query_id_orcamento = f"""
+        SELECT DISTINCT
+            v.IdOrcamento
+        FROM ViewOrcamentosLojas v
+        INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+        {where_clause_ids} AND v.IdOrcamento IS NOT NULL
+        """
         if query_params_ids:
-            cursor_sql_ids.execute(sql_query_ids, query_params_ids)
+            cursor_sql_ids.execute(query_id_orcamento, query_params_ids)
         else:
-            cursor_sql_ids.execute(sql_query_ids)
+            cursor_sql_ids.execute(query_id_orcamento)
+        aggregated_ids['IdOrcamento'] = [row[0] for row in cursor_sql_ids.fetchall()]
         
-        ids_rows = cursor_sql_ids.fetchall()
+        # IdCliente
+        query_id_cliente = f"""
+        SELECT DISTINCT
+            v.IdCliente
+        FROM ViewOrcamentosLojas v
+        INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+        {where_clause_ids} AND v.IdCliente IS NOT NULL
+        """
+        if query_params_ids:
+            cursor_sql_ids.execute(query_id_cliente, query_params_ids)
+        else:
+            cursor_sql_ids.execute(query_id_cliente)
+        aggregated_ids['IdCliente'] = [row[0] for row in cursor_sql_ids.fetchall()]
+        
+        # IdEstabelecimento
+        query_id_estabelecimento = f"""
+        SELECT DISTINCT
+            v.IdEstabelecimento
+        FROM ViewOrcamentosLojas v
+        INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+        {where_clause_ids} AND v.IdEstabelecimento IS NOT NULL
+        """
+        if query_params_ids:
+            cursor_sql_ids.execute(query_id_estabelecimento, query_params_ids)
+        else:
+            cursor_sql_ids.execute(query_id_estabelecimento)
+        aggregated_ids['IdEstabelecimento'] = [row[0] for row in cursor_sql_ids.fetchall()]
+        
+        # IdBandeira
+        query_id_bandeira = f"""
+        SELECT DISTINCT
+            v.IdBandeira
+        FROM ViewOrcamentosLojas v
+        INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+        {where_clause_ids} AND v.IdBandeira IS NOT NULL
+        """
+        if query_params_ids:
+            cursor_sql_ids.execute(query_id_bandeira, query_params_ids)
+        else:
+            cursor_sql_ids.execute(query_id_bandeira)
+        aggregated_ids['IdBandeira'] = [row[0] for row in cursor_sql_ids.fetchall()]
+        
+        # IdRede
+        query_id_rede = f"""
+        SELECT DISTINCT
+            v.IdRede
+        FROM ViewOrcamentosLojas v
+        INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+        {where_clause_ids} AND v.IdRede IS NOT NULL
+        """
+        if query_params_ids:
+            cursor_sql_ids.execute(query_id_rede, query_params_ids)
+        else:
+            cursor_sql_ids.execute(query_id_rede)
+        aggregated_ids['IdRede'] = [row[0] for row in cursor_sql_ids.fetchall()]
+        
         cursor_sql_ids.close()
         conn_sql_ids.close()
         
-        print(f"[ETAPA 1] Query retornou {len(ids_rows)} linhas da ViewOrcamentosLojas")
-        logger.info(f"[ETAPA 1] Query retornou {len(ids_rows)} linhas da ViewOrcamentosLojas")
-        
-        # Log das primeiras linhas para debug
-        if ids_rows:
-            print(f"[ETAPA 1] Primeiras 3 linhas retornadas: {ids_rows[:3]}")
-            logger.info(f"[ETAPA 1] Primeiras 3 linhas: {ids_rows[:3]}")
-        
-        # Coletar dados agregados para o JSON (TODOS os IDs únicos)
-        aggregated_ids = {
-            'IdOrcamento': [],
-            'IdCliente': [],
-            'IdEstabelecimento': [],
-            'IdBandeira': [],
-            'IdRede': []
-        }
-        
-        for id_row in ids_rows:
-            id_orcamento = id_row[0]
-            id_cliente = id_row[1]
-            id_estabelecimento = id_row[2]
-            id_bandeira = id_row[3]
-            id_rede = id_row[4]
-            
-            if id_orcamento and id_orcamento not in aggregated_ids['IdOrcamento']:
-                aggregated_ids['IdOrcamento'].append(id_orcamento)
-            if id_cliente and id_cliente not in aggregated_ids['IdCliente']:
-                aggregated_ids['IdCliente'].append(id_cliente)
-            if id_estabelecimento and id_estabelecimento not in aggregated_ids['IdEstabelecimento']:
-                aggregated_ids['IdEstabelecimento'].append(id_estabelecimento)
-            if id_bandeira and id_bandeira not in aggregated_ids['IdBandeira']:
-                aggregated_ids['IdBandeira'].append(id_bandeira)
-            if id_rede and id_rede not in aggregated_ids['IdRede']:
-                aggregated_ids['IdRede'].append(id_rede)
+        # Log dos resultados
+        logger.info(f"[ETAPA 1] Query de coleta de IDs (estrutura simplificada)")
+        logger.info(f"[ETAPA 1] Parâmetros da query: {query_params_ids}")
+        logger.info(f"[ETAPA 1] Exemplo de query (IdEstabelecimento): {query_id_estabelecimento[:200]}...")
         
         print(f"[ETAPA 1] IDs únicos coletados: {len(aggregated_ids['IdOrcamento'])} contratos, "
               f"{len(aggregated_ids['IdEstabelecimento'])} estabelecimentos, "

@@ -20,7 +20,7 @@ LIMIT_ROWS = 0
 # Configuracao de destino
 # 'HML' = PostgreSQL HML (padrao)
 # 'PRD' = PostgreSQL PRD AWS
-DESTINO_PADRAO = 'HML'  # Ambiente padrão: HML
+DESTINO_PADRAO = 'HML'  # Ambiente padrão: PRD
 
 # Limpar arquivo de log no inicio do orchestrator
 def clear_log_file():
@@ -36,6 +36,7 @@ def clear_log_file():
 
 # Adicionar diretorios ao path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'utils'))
+# ⚠️ IMPORTANTE: Não importar módulos de migração aqui - serão importados depois de configurar destino
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'customers'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'users'))
 
@@ -64,7 +65,16 @@ def run_customers_task(step=None, limit_rows=0, id_orcamento_filter=None,
         print(f"Etapa: {step}")
     print("="*80)
     
+    # ⚠️ CRÍTICO: Garantir que o destino está configurado antes de importar o módulo
+    from utils.database_connection import DatabaseConnection
+    destino_atual = DatabaseConnection.get_destino()
+    print(f"[DEBUG run_customers_task] Destino antes de importar CustomersMigration: {destino_atual}")
+    
     from customers.customers_to_core import CustomersMigration
+    
+    # ⚠️ CRÍTICO: Verificar novamente após importar
+    destino_apos_import = DatabaseConnection.get_destino()
+    print(f"[DEBUG run_customers_task] Destino após importar CustomersMigration: {destino_apos_import}")
     
     migration = CustomersMigration(
         limit_rows=limit_rows, 
@@ -125,7 +135,8 @@ def run_customers_task(step=None, limit_rows=0, id_orcamento_filter=None,
         migration.run()
 
 
-def run_stores_task(step=None, limit_rows=0, id_orcamento_filter=None, clear_data=False):
+def run_stores_task(step=None, limit_rows=0, id_orcamento_filter=None,
+                    data_aviso_previo_min=None, data_inicio_operacao_max=None, clear_data=False):
     """
     Executa a task de migracao de stores
     
@@ -133,6 +144,8 @@ def run_stores_task(step=None, limit_rows=0, id_orcamento_filter=None, clear_dat
         step: None para todas as etapas, ou '1', '2', '3', etc. para etapa especifica
         limit_rows: 0 para todos os dados, > 0 para limitar quantidade
         id_orcamento_filter: Lista de IdOrcamento para filtrar (ex: [6192, 6193])
+        data_aviso_previo_min: Data mínima para DataAvisoPrevio (string 'YYYY-MM-DD')
+        data_inicio_operacao_max: Data máxima para DataInicioOperacao (string 'YYYY-MM-DD')
         clear_data: Se True, força TRUNCATE mesmo com filtros aplicados
     """
     from utils.database_connection import DatabaseConnection
@@ -154,7 +167,13 @@ def run_stores_task(step=None, limit_rows=0, id_orcamento_filter=None, clear_dat
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'stores'))
     from stores.stores_to_core import StoresMigration
     
-    migration = StoresMigration(limit_rows=limit_rows, id_orcamento_filter=id_orcamento_filter, clear_data=clear_data)
+    migration = StoresMigration(
+        limit_rows=limit_rows, 
+        id_orcamento_filter=id_orcamento_filter,
+        data_aviso_previo_min=data_aviso_previo_min,
+        data_inicio_operacao_max=data_inicio_operacao_max,
+        clear_data=clear_data
+    )
     
     if step:
         # Executar apenas uma etapa específica
@@ -438,21 +457,18 @@ def run_users_task(step=None, limit_rows=0):
 
 def main():
     """Funcao principal do orchestrator"""
-    # Limpar arquivo de log no inicio
-    clear_log_file()
+    # ⚠️ CRÍTICO: Importar DatabaseConnection primeiro (sem configurar ainda)
+    from utils.database_connection import DatabaseConnection
     
-    print("\n" + "="*80)
-    print("ORCHESTRATOR DE MIGRACAO DE DADOS")
-    print("="*80)
-    print(f"Data/Hora: {datetime.now()}")
-    print("="*80)
-
-    # Ler configuracao de limite e destino
+    # Ler configuracao de limite e destino padrão
     global LIMIT_ROWS, DESTINO_PADRAO
     limit_rows = LIMIT_ROWS
-    destino = DESTINO_PADRAO
+    destino = DESTINO_PADRAO  # Valor padrão inicial
     
-    # Processar argumentos da linha de comando
+    # ============================================================================
+    # ETAPA 1: PROCESSAR TODOS OS ARGUMENTOS PRIMEIRO
+    # ============================================================================
+    # Processar argumentos da linha de comando ANTES de configurar destino
     # Formato: python orchestrator_tasks.py [task] [step] [--limit N] [--destino HML|PRD]
     # Exemplos:
     #   python orchestrator_tasks.py                    # Executa todas as tasks
@@ -473,7 +489,7 @@ def main():
     data_aviso_previo_min = None
     data_inicio_operacao_max = None
     
-    # Processar argumentos
+    # Processar TODOS os argumentos primeiro
     i = 1
     while i < len(sys.argv):
         arg = sys.argv[i]
@@ -481,10 +497,10 @@ def main():
             limit = int(sys.argv[i + 1])
             i += 2
         elif arg == '--destino' and i + 1 < len(sys.argv):
+            # ⚠️ PRIORIDADE 1: Se --destino foi especificado, usar esse valor
             destino_arg = sys.argv[i + 1].upper()
             if destino_arg in ['HML', 'PRD']:
-                destino = destino_arg
-                print(f"DEBUG: Destino recebido via argumento: {destino}")
+                destino = destino_arg  # Atualizar variável local (será configurado depois)
             else:
                 print(f"AVISO: Destino invalido '{sys.argv[i + 1]}'. Usando padrao: {destino}")
             i += 2
@@ -515,12 +531,44 @@ def main():
     if limit == 0:
         limit = limit_rows
     
-    # Configurar destino ANTES de importar qualquer módulo de migração
-    from utils.database_connection import DatabaseConnection
+    # ============================================================================
+    # ETAPA 2: CONFIGURAR DESTINO UMA ÚNICA VEZ APÓS PROCESSAR ARGUMENTOS
+    # ============================================================================
+    # Lógica de prioridade:
+    # 1. --destino na linha de comando (já processado acima)
+    # 2. DESTINO_PADRAO do orchestrator (valor inicial de 'destino')
+    # 3. Variável de ambiente MIGRATION_DESTINO (verificado dentro de get_destino())
+    # 4. Valor padrão 'HML' (fallback)
+    
+    print(f"\n[DEBUG] Configurando destino final: {destino}")
     DatabaseConnection.set_destino(destino)
+    
+    # Verificar se foi configurado corretamente
     destino_verificado = DatabaseConnection.get_destino()
-    print(f"\nDestino configurado: {destino} (verificado: {destino_verificado})")
+    if destino_verificado != destino:
+        print(f"\n⚠️ AVISO: Destino verificado ({destino_verificado}) diferente do esperado ({destino})")
+        print(f"[DEBUG] Reconfigurando destino para: {destino}")
+        DatabaseConnection.set_destino(destino)
+        destino_verificado = DatabaseConnection.get_destino()
+    
+    print(f"[DEBUG] Destino configurado com sucesso: {destino_verificado}")
+    print(f"[DEBUG] Flag _destino_configurado_explicitamente: {DatabaseConnection._destino_configurado_explicitamente}")
+    print(f"[DEBUG] Valor _destino_atual: {DatabaseConnection._destino_atual}")
     print("="*80)
+    
+    # Limpar arquivo de log no inicio (após configurar destino)
+    clear_log_file()
+    
+    print("\n" + "="*80)
+    print("ORCHESTRATOR DE MIGRACAO DE DADOS")
+    print("="*80)
+    print(f"Data/Hora: {datetime.now()}")
+    print(f"Destino configurado: {destino_verificado}")
+    print("="*80)
+    
+    # ⚠️ CRÍTICO: Verificar destino ANTES de importar módulos
+    destino_antes_import = DatabaseConnection.get_destino()
+    print(f"[DEBUG] Destino ANTES de importar módulos: {destino_antes_import}")
     
     # Recarregar módulos de migração para garantir que leiam o destino correto
     import importlib
@@ -533,6 +581,18 @@ def main():
             importlib.reload(sys.modules[module_name])
         except Exception:
             pass  # Ignorar erros de reload
+    
+    # ⚠️ CRÍTICO: Verificar destino APÓS recarregar módulos
+    destino_apos_reload = DatabaseConnection.get_destino()
+    print(f"[DEBUG] Destino APÓS recarregar módulos: {destino_apos_reload}")
+    
+    if destino_apos_reload != destino_verificado:
+        print(f"\n⚠️ ERRO CRÍTICO: Destino mudou após recarregar módulos!")
+        print(f"  Esperado: {destino_verificado}, Atual: {destino_apos_reload}")
+        print(f"  Reconfigurando destino para: {destino_verificado}")
+        DatabaseConnection.set_destino(destino_verificado)
+        destino_apos_reload = DatabaseConnection.get_destino()
+        print(f"  Destino após reconfiguração: {destino_apos_reload}")
     
     # Executar task(s)
     if task is None:
@@ -551,7 +611,10 @@ def main():
         print("\n" + "="*80)
         print("INICIANDO TASK: STORES")
         print("="*80)
-        run_stores_task(step=None, limit_rows=limit, clear_data=clear_data)
+        run_stores_task(step=None, limit_rows=limit,
+                        data_aviso_previo_min=data_aviso_previo_min,
+                        data_inicio_operacao_max=data_inicio_operacao_max,
+                        clear_data=clear_data)
         
         # Task 4: Users (DEVE SER EXECUTADO ANTES DE CONTRACTS)
         # ⚠️ IMPORTANTE: Users sempre executa FULL quando executado como parte de todas as tasks
@@ -584,7 +647,10 @@ def main():
                           data_inicio_operacao_max=data_inicio_operacao_max,
                           clear_data=clear_data)
     elif task == 'stores':
-        run_stores_task(step=step, limit_rows=limit, clear_data=clear_data)
+        run_stores_task(step=step, limit_rows=limit,
+                        data_aviso_previo_min=data_aviso_previo_min,
+                        data_inicio_operacao_max=data_inicio_operacao_max,
+                        clear_data=clear_data)
     elif task == 'users':
         run_users_task(step=step, limit_rows=limit)
     elif task == 'contracts':
@@ -619,22 +685,34 @@ def main():
         try:
             # Step 1 de stores (store_segments) - necessário antes dos outros
             print("  → Executando Stores step 1 (store_segments)...")
-            run_stores_task(step='1', limit_rows=limit, id_orcamento_filter=id_orcamento_filter, clear_data=clear_data)
+            run_stores_task(step='1', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
+                            data_aviso_previo_min=data_aviso_previo_min,
+                            data_inicio_operacao_max=data_inicio_operacao_max,
+                            clear_data=clear_data)
             print("  [OK] Stores step 1 concluído")
             
             # Step 2 de stores (retail_chains)
             print("  → Executando Stores step 2 (retail_chains)...")
-            run_stores_task(step='2', limit_rows=limit, id_orcamento_filter=id_orcamento_filter, clear_data=clear_data)
+            run_stores_task(step='2', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
+                            data_aviso_previo_min=data_aviso_previo_min,
+                            data_inicio_operacao_max=data_inicio_operacao_max,
+                            clear_data=clear_data)
             print("  [OK] Stores step 2 concluído")
             
             # Step 3 de stores (store_brands)
             print("  → Executando Stores step 3 (store_brands)...")
-            run_stores_task(step='3', limit_rows=limit, id_orcamento_filter=id_orcamento_filter, clear_data=clear_data)
+            run_stores_task(step='3', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
+                            data_aviso_previo_min=data_aviso_previo_min,
+                            data_inicio_operacao_max=data_inicio_operacao_max,
+                            clear_data=clear_data)
             print("  [OK] Stores step 3 concluído")
             
             # Step 4 de stores (stores)
             print("  → Executando Stores step 4 (stores)...")
-            run_stores_task(step='4', limit_rows=limit, id_orcamento_filter=id_orcamento_filter, clear_data=clear_data)
+            run_stores_task(step='4', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
+                            data_aviso_previo_min=data_aviso_previo_min,
+                            data_inicio_operacao_max=data_inicio_operacao_max,
+                            clear_data=clear_data)
             print("  [OK] Stores step 4 concluído")
             
             print("[OK] Todos os Stores steps concluídos")
