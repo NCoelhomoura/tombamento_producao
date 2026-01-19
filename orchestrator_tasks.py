@@ -20,7 +20,7 @@ LIMIT_ROWS = 0
 # Configuracao de destino
 # 'HML' = PostgreSQL HML (padrao)
 # 'PRD' = PostgreSQL PRD AWS
-DESTINO_PADRAO = 'HML'  # Ambiente padrão: PRD
+DESTINO_PADRAO = 'PRD'  # Ambiente padrão: PRD
 
 # Limpar arquivo de log no inicio do orchestrator
 def clear_log_file():
@@ -310,6 +310,17 @@ def run_contracts_task(step=None, limit_rows=0, id_orcamento_filter=None,
         if step == '1':
             migration.step1_migrate_contracts()
         elif step == '2':
+            # Verificar se step9 foi executado (promoter_tasks deve estar migrado)
+            # Se não, executar step9 primeiro
+            if not migration.promoter_task_map:
+                print("[ETAPA 2] Step9 (promoter_tasks) não executado. Executando step9 primeiro...")
+                # Garantir que step1 foi executado antes do step9
+                filter_data = migration.load_filter_json()
+                if not filter_data or 'aggregated_ids' not in filter_data:
+                    print("[ETAPA 2] Step1 não executado. Executando step1 primeiro...")
+                    migration.step1_migrate_contracts()
+                migration.step9_migrate_promoter_tasks()
+            
             # Carregar mapeamento de contracts
             schema = get_schema_atual()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
@@ -408,9 +419,18 @@ def run_contracts_task(step=None, limit_rows=0, id_orcamento_filter=None,
             cursor_pg.close()
             conn_pg.close()
             migration.step8_migrate_contract_additional_charges()
+        elif step == '9':
+            # Executar step9 (promoter_tasks) - requer step1 executado antes
+            # Carregar filtros do step1 se necessário
+            filter_data = migration.load_filter_json()
+            if not filter_data or 'aggregated_ids' not in filter_data:
+                print("[ETAPA 9] AVISO: Step1 deve ser executado antes do step9")
+                print("[ETAPA 9] Executando step1 primeiro...")
+                migration.step1_migrate_contracts()
+            migration.step9_migrate_promoter_tasks()
         else:
             print(f"ERRO: Etapa '{step}' invalida para contracts")
-            print("Etapas disponiveis: 1, 2, 3, 4, 5, 6, 7, 8")
+            print("Etapas disponiveis: 1, 2, 3, 4, 5, 6, 7, 8, 9")
             return
     else:
         # Executar migração completa
@@ -434,25 +454,46 @@ def run_users_task(step=None, limit_rows=0):
         print(f"Etapa: {step}")
     print("="*80)
     
+    # ⚠️ CRÍTICO: Garantir que o destino está configurado antes de importar o módulo
+    from utils.database_connection import DatabaseConnection
+    destino_atual = DatabaseConnection.get_destino()
+    print(f"[DEBUG run_users_task] Destino antes de importar UsersMigration: {destino_atual}")
+    
     # Adicionar diretório users ao path
     users_path = os.path.join(os.path.dirname(__file__), 'users')
     if users_path not in sys.path:
         sys.path.insert(0, users_path)
     from users_to_core import UsersMigration
     
+    # ⚠️ CRÍTICO: Verificar novamente após importar
+    destino_apos_import = DatabaseConnection.get_destino()
+    print(f"[DEBUG run_users_task] Destino após importar UsersMigration: {destino_apos_import}")
+    
+    # ⚠️ CRÍTICO: Garantir que o destino está correto antes de criar a instância
+    # Se o destino não está correto, reconfigurar
+    if destino_apos_import != destino_atual:
+        print(f"[DEBUG run_users_task] Destino mudou após importar. Reconfigurando para: {destino_atual}")
+        DatabaseConnection.set_destino(destino_atual)
+        destino_apos_import = DatabaseConnection.get_destino()
+        print(f"[DEBUG run_users_task] Destino após reconfiguração: {destino_apos_import}")
+    
     migration = UsersMigration(limit_rows=limit_rows)
+    
+    # ⚠️ CRÍTICO: Passar destino explicitamente como parâmetro
+    # Isso garante que o destino correto seja usado, independente do estado global
+    print(f"[DEBUG run_users_task] Passando destino explicitamente: {destino_atual}")
     
     if step:
         # Executar apenas etapa específica
         if step == '1':
-            migration.step1_migrate_users()
+            migration.step1_migrate_users(destino=destino_atual)
         else:
             print(f"ERRO: Etapa '{step}' invalida para users")
             print("Etapas disponiveis: 1")
             return
     else:
         # Executar todas as etapas em sequência
-        migration.step1_migrate_users()
+        migration.step1_migrate_users(destino=destino_atual)
 
 
 def main():
@@ -574,7 +615,7 @@ def main():
     import importlib
     modules_to_reload = []
     for module_name in sys.modules.keys():
-        if 'customers_to_core' in module_name or 'stores_to_core' in module_name:
+        if 'customers_to_core' in module_name or 'stores_to_core' in module_name or 'users_to_core' in module_name:
             modules_to_reload.append(module_name)
     for module_name in modules_to_reload:
         try:

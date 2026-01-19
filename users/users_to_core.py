@@ -31,9 +31,15 @@ SCHEMA_PRD = 'core'
 def get_schema_atual():
     """Retorna o schema atual baseado no destino configurado"""
     destino = DatabaseConnection.get_destino()
+    # Debug para identificar problemas
+    import logging
+    debug_logger = logging.getLogger(__name__)
+    debug_logger.debug(f"[get_schema_atual] Destino obtido: {destino}")
     if destino == 'PRD':
+        debug_logger.debug(f"[get_schema_atual] Retornando schema PRD: {SCHEMA_PRD}")
         return SCHEMA_PRD
     else:
+        debug_logger.debug(f"[get_schema_atual] Retornando schema HML: {SCHEMA_HML}")
         return SCHEMA_HML
 
 # Configurar logging
@@ -82,9 +88,9 @@ class UsersMigration:
         self.limit_rows = limit_rows  # 0 = todos, > 0 = limitar quantidade
     
     def should_include_legacy_id(self):
-        """Retorna True se deve incluir legacy_id (apenas em HML)"""
-        destino = DatabaseConnection.get_destino()
-        return destino == 'HML'
+        """Retorna True se deve incluir legacy_id (HML e PRD)"""
+        # legacy_id existe tanto em HML quanto em PRD
+        return True
     
     def clean_string(self, value: Optional[str], max_length: Optional[int] = None) -> Optional[str]:
         """Limpa e trunca string"""
@@ -113,18 +119,42 @@ class UsersMigration:
             return 'active'
         return 'inactive'
     
-    def truncate_table(self, table_name: str, schema: str = None):
-        """Faz TRUNCATE em uma tabela"""
+    def truncate_table(self, table_name: str, schema: str = None, destino: str = None):
+        """
+        Faz TRUNCATE em uma tabela
+        
+        Args:
+            table_name: Nome da tabela
+            schema: Nome do schema. Se None, será determinado baseado no destino
+            destino: 'HML' ou 'PRD'. Se None, tenta obter de DatabaseConnection.get_destino()
+        """
         if schema is None:
-            schema = get_schema_atual()
+            if destino is None:
+                destino = DatabaseConnection.get_destino()
+            schema = SCHEMA_PRD if destino == 'PRD' else SCHEMA_HML
         
         conn = None
         try:
-            conn = DatabaseConnection.get_postgresql_destino_connection()
+            # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+            if destino == 'PRD':
+                conn = DatabaseConnection.get_postgresql_prd_destino_connection()
+            else:
+                conn = DatabaseConnection.get_postgresql_hml_destino_connection()
             cursor = conn.cursor()
             
-            query = f"TRUNCATE TABLE {schema}.{table_name} CASCADE"
-            cursor.execute(query)
+            # Configurar search_path explicitamente para garantir que o schema seja encontrado
+            cursor.execute(f"SET search_path TO {schema}, public")
+            
+            # Tentar TRUNCATE usando o schema explícito primeiro
+            query = f'TRUNCATE TABLE "{schema}"."{table_name}" CASCADE'
+            try:
+                cursor.execute(query)
+            except Exception as e1:
+                # Se falhar com aspas, tentar sem aspas
+                logger.warning(f"[truncate_table] Tentativa com aspas falhou: {e1}. Tentando sem aspas...")
+                query = f"TRUNCATE TABLE {schema}.{table_name} CASCADE"
+                cursor.execute(query)
+            
             conn.commit()
             
             logger.info(f"Tabela {schema}.{table_name} truncada com sucesso")
@@ -136,15 +166,24 @@ class UsersMigration:
         except Exception as e:
             logger.error(f"Erro ao truncar tabela {schema}.{table_name}: {e}")
             if conn:
-                conn.rollback()
+                try:
+                    conn.rollback()
+                except:
+                    pass
                 conn.close()
             raise
     
-    def validate_step1_users(self):
-        """Validação e relatório de qualidade - ETAPA 1"""
+    def validate_step1_users(self, destino: str = None):
+        """
+        Validação e relatório de qualidade - ETAPA 1
+        
+        Args:
+            destino: 'HML' ou 'PRD'. Se None, tenta obter de DatabaseConnection.get_destino()
+        """
         try:
-            destino = DatabaseConnection.get_destino()
-            schema = get_schema_atual()
+            if destino is None:
+                destino = DatabaseConnection.get_destino()
+            schema = SCHEMA_PRD if destino == 'PRD' else SCHEMA_HML
             
             # Contar origem
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
@@ -165,9 +204,17 @@ class UsersMigration:
             conn_sql.close()
             
             # Contar destino
-            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+            if destino == 'PRD':
+                conn_pg = DatabaseConnection.get_postgresql_prd_destino_connection()
+            else:
+                conn_pg = DatabaseConnection.get_postgresql_hml_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.users")
+            
+            # Configurar search_path
+            cursor_pg.execute(f"SET search_path TO {schema}, public")
+            
+            cursor_pg.execute(f'SELECT COUNT(*) FROM "{schema}"."users"')
             destino_count = cursor_pg.fetchone()[0]
             cursor_pg.close()
             conn_pg.close()
@@ -194,10 +241,50 @@ class UsersMigration:
             print(f"ERRO na validacao: {e}")
             return False
     
-    def step1_migrate_users(self):
-        """ETAPA 1: Migrar users"""
-        destino = DatabaseConnection.get_destino()
-        schema = get_schema_atual()
+    def step1_migrate_users(self, destino: str = None):
+        """
+        ETAPA 1: Migrar users
+        
+        Args:
+            destino: 'HML' ou 'PRD'. Se None, tenta obter de DatabaseConnection.get_destino()
+        """
+        # ========================================================================
+        # DETERMINAÇÃO DO DESTINO E SCHEMA
+        # ========================================================================
+        # Prioridade:
+        # 1. Parâmetro destino (explicito)
+        # 2. DatabaseConnection.get_destino() (fallback)
+        
+        # 1. Determinar destino
+        if destino is None:
+            destino = DatabaseConnection.get_destino()
+            logger.info(f"[DESTINO] Destino obtido de DatabaseConnection.get_destino(): {destino}")
+        else:
+            destino = destino.upper()
+            if destino not in ['HML', 'PRD']:
+                raise ValueError(f"Destino invalido: {destino}. Use 'HML' ou 'PRD'")
+            logger.info(f"[DESTINO] Destino recebido como parâmetro: {destino}")
+        
+        # 2. Determinar schema baseado no destino (mapeamento direto)
+        # Mapeamento conforme definição:
+        # - HML → gmcore (definido em SCHEMA_HML e POSTGRESQL_HML_DESTINO_CONFIG)
+        # - PRD → core (definido em SCHEMA_PRD e POSTGRESQL_PRD_DESTINO_CONFIG)
+        if destino == 'PRD':
+            schema = SCHEMA_PRD  # 'core'
+        else:
+            schema = SCHEMA_HML  # 'gmcore'
+        
+        logger.info(f"[DESTINO] Schema determinado: {schema} (baseado em destino={destino})")
+        
+        # 3. Validação de consistência: garantir que destino e schema estão alinhados
+        if destino == 'PRD' and schema != 'core':
+            logger.error(f"[DESTINO] ⚠️ ERRO DE INCONSISTÊNCIA: Destino=PRD mas Schema={schema}. Forçando schema=core")
+            schema = 'core'
+        elif destino == 'HML' and schema != 'gmcore':
+            logger.error(f"[DESTINO] ⚠️ ERRO DE INCONSISTÊNCIA: Destino=HML mas Schema={schema}. Forçando schema=gmcore")
+            schema = 'gmcore'
+        
+        logger.info(f"[DESTINO] ✅ Schema final validado: {schema} para destino: {destino}")
         print("\n" + "="*80)
         print("ETAPA 1: MIGRANDO USERS")
         print("="*80)
@@ -210,18 +297,31 @@ class UsersMigration:
         include_legacy = self.should_include_legacy_id()
         if include_legacy:
             try:
-                conn_check = DatabaseConnection.get_postgresql_destino_connection()
+                # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+                if destino == 'PRD':
+                    conn_check = DatabaseConnection.get_postgresql_prd_destino_connection()
+                else:
+                    conn_check = DatabaseConnection.get_postgresql_hml_destino_connection()
                 cursor_check = conn_check.cursor()
-                cursor_check.execute(f"""
+                
+                # Configurar search_path
+                cursor_check.execute(f"SET search_path TO {schema}, public")
+                
+                cursor_check.execute("""
                     SELECT column_name 
                     FROM information_schema.columns 
-                    WHERE table_schema = '{schema}' 
+                    WHERE table_schema = %s 
                     AND table_name = 'users' 
                     AND column_name = 'legacy_id'
-                """)
+                """, (schema,))
                 if not cursor_check.fetchone():
                     print("[ETAPA 1] Criando coluna legacy_id...")
-                    cursor_check.execute(f"ALTER TABLE {schema}.users ADD COLUMN legacy_id INTEGER")
+                    # ⚠️ NUNCA criar colunas em PRD - apenas verificar
+                    if destino == 'PRD':
+                        logger.warning(f"[ETAPA 1] Tentativa de criar coluna legacy_id em PRD ignorada (não permitido)")
+                        print("[ETAPA 1] Coluna legacy_id não existe, mas criação em PRD não é permitida")
+                    else:
+                        cursor_check.execute(f"ALTER TABLE {schema}.users ADD COLUMN legacy_id INTEGER")
                     conn_check.commit()
                     print("OK - Coluna legacy_id criada")
                 else:
@@ -233,7 +333,7 @@ class UsersMigration:
         
         # Truncate
         print("\n[ETAPA 1] Limpando tabela users...")
-        self.truncate_table('users')
+        self.truncate_table('users', destino=destino)
         
         # Buscar dados do SQL Server
         print("[ETAPA 1] Buscando dados do SQL Server...")
@@ -311,20 +411,44 @@ class UsersMigration:
         print(f"[ETAPA 1] {len(df)} registros processados. Inserindo no banco (otimizado com execute_values)...")
         
         # Conectar ao PostgreSQL
-        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+        # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD para garantir contexto correto
+        if destino == 'PRD':
+            conn_pg = DatabaseConnection.get_postgresql_prd_destino_connection()
+        else:
+            conn_pg = DatabaseConnection.get_postgresql_hml_destino_connection()
         cursor_pg = conn_pg.cursor()
+        
+        # Configurar search_path para garantir acesso ao schema correto
+        cursor_pg.execute(f"SET search_path TO {schema}, public")
+        
+        # Verificar se a tabela existe antes de tentar inserir
+        cursor_pg.execute("""
+            SELECT EXISTS (
+                SELECT 1 
+                FROM information_schema.tables 
+                WHERE table_schema = %s 
+                AND table_name = 'users'
+            )
+        """, (schema,))
+        table_exists = cursor_pg.fetchone()[0]
+        
+        if not table_exists:
+            error_msg = f"Tabela '{schema}.users' não existe no banco de dados"
+            logger.error(f"[ERRO] {error_msg}")
+            raise ValueError(error_msg)
+        
+        logger.info(f"[VERIFICAÇÃO] Tabela '{schema}.users' existe e está acessível")
         
         # Preparar query e dados baseado em include_legacy
         if include_legacy:
             insert_query = f"""
-            INSERT INTO {schema}.users (
+            INSERT INTO "{schema}"."users" (
                 id, legacy_id, name, user_name, normalized_user_name, email, normalized_email,
                 phone_number, password_hash, status, created_at, updated_at, deleted_at,
                 email_confirmed, email_confirmed_at, phone_number_confirmed, temporary_password,
                 two_factor_enabled, lockout_enabled, lockout_end, access_failed_count,
                 security_stamp, concurrency_stamp
             ) VALUES %s
-            RETURNING id, legacy_id
             """
             insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             processed_tuples = list(zip(
@@ -398,32 +522,19 @@ class UsersMigration:
                 
                 if chunk:
                     try:
-                        if include_legacy:
-                            # Usar execute_values com RETURNING para obter UUIDs gerados
-                            execute_values(
-                                cursor_pg,
-                                insert_query,
-                                chunk,
-                                template=insert_template,
-                                page_size=CHUNK_SIZE,
-                                fetch=True
-                            )
-                            # Obter UUIDs retornados
-                            returned_rows = cursor_pg.fetchall()
-                            for uuid_row, leg_id in returned_rows:
-                                self.user_id_map[leg_id] = uuid_row
-                        else:
-                            # Sem legacy_id, inserir normalmente
-                            execute_values(
-                                cursor_pg,
-                                insert_query,
-                                chunk,
-                                template=insert_template,
-                                page_size=CHUNK_SIZE
-                            )
+                        # Usar execute_values para inserção otimizada em bulk
+                        execute_values(
+                            cursor_pg,
+                            insert_query,
+                            chunk,
+                            template=insert_template,
+                            page_size=CHUNK_SIZE,
+                            fetch=False
+                        )
                         
                         conn_pg.commit()
                         total_processed += len(chunk)
+                        self.stats['users'] += len(chunk)
                         print(f"[ETAPA 1] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
                         logger.info(f"[ETAPA 1] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
                         
@@ -449,13 +560,11 @@ class UsersMigration:
             cursor_pg.close()
             conn_pg.close()
             
-            self.stats['users'] = total_processed
-            
             print(f"\n[ETAPA 1] CONCLUIDA! Total de users migrados: {self.stats['users']}")
             logger.info(f"[ETAPA 1] CONCLUIDA! Total: {self.stats['users']}")
             
             # Validação
-            self.validate_step1_users()
+            self.validate_step1_users(destino=destino)
             
         except Exception as e:
             logger.error(f"Erro na ETAPA 1: {e}")

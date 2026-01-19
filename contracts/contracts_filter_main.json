@@ -14701,8 +14701,7 @@
     ]
   },
   "execution_info": {
-    "timestamp": "2026-01-14T15:18:45.875803",
-    "source": "stores",
-    "total_stores_migrated": 0
+    "timestamp": "2026-01-19T12:30:27.074181",
+    "total_contracts_migrated": 0
   }
 }

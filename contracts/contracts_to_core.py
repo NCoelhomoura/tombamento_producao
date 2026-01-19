@@ -96,12 +96,14 @@ class ContractsMigration:
             'contract_contacts': 0,
             'contract_partners': 0,
             'contract_additional_charges': 0,
+            'promoter_tasks': 0,
             'errors': []
         }
         self.contract_id_map = {}      # Map: legado_id (IdOrcamento) -> uuid
         self.customer_id_map = {}      # Map: legado_id -> uuid (carregado de customers)
         self.store_id_map = {}         # Map: legado_id -> uuid (carregado de stores)
         self.scenario_id_map = {}      # Map: legado_id (IdOrcamentoLoja) -> uuid
+        self.promoter_task_map = {}    # Map: (IdTarefa, NomeTarefa_normalizado) -> uuid (promoter_tasks.id)
         self.limit_rows = limit_rows   # 0 = todos, > 0 = limitar quantidade
         
         # Filtros opcionais
@@ -114,9 +116,9 @@ class ContractsMigration:
         self.filter_json_path = os.path.join(os.path.dirname(__file__), 'contracts_filter_main.json')
     
     def should_include_legacy_id(self):
-        """Retorna True se deve incluir legacy_id (apenas em HML)"""
-        destino = DatabaseConnection.get_destino()
-        return destino == 'HML'
+        """Retorna True se deve incluir legacy_id (HML e PRD)"""
+        # legacy_id existe tanto em HML quanto em PRD
+        return True
     
     def clean_string(self, value: Optional[str], max_length: Optional[int] = None) -> Optional[str]:
         """Limpa e trunca string"""
@@ -301,55 +303,66 @@ class ContractsMigration:
     
     def map_billing_type(self, modo_faturamento: Optional[str]) -> str:
         """Mapeia ModoFaturamento para billing_type"""
-        if not modo_faturamento:
-            return 'monthly'
-        modo = str(modo_faturamento).strip().upper()
-        if modo in ['M', 'MONTHLY', 'MENSAL']:
-            return 'monthly'
-        elif modo in ['W', 'WEEKLY', 'SEMANAL']:
-            return 'weekly'
-        elif modo in ['D', 'DAILY', 'DIARIO']:
-            return 'daily'
-        else:
-            return 'monthly'  # padrão
+        return 'current'
+
+        # # lógica anterior
+        # if not modo_faturamento:
+        #     return 'monthly'
+        # modo = str(modo_faturamento).strip().upper()
+        # if modo in ['M', 'MONTHLY', 'MENSAL']:
+        #     return 'monthly'
+        # elif modo in ['W', 'WEEKLY', 'SEMANAL']:
+        #     return 'weekly'
+        # elif modo in ['D', 'DAILY', 'DIARIO']:
+        #     return 'daily'
+        # else:
+        #     return 'monthly'  # padrão
     
     def map_operation_type(self, tipo_orcamento: Optional[str]) -> str:
         """Mapeia TipoOrcamento para operation_type"""
-        if not tipo_orcamento:
-            return 'standard'
-        tipo = str(tipo_orcamento).strip().upper()
-        # Mapear conforme valores possíveis
-        if tipo in ['ST', 'STANDARD', 'PADRAO']:
-            return 'standard'
-        elif tipo in ['SP', 'SPECIAL', 'ESPECIAL']:
-            return 'special'
-        else:
-            return 'standard'  # padrão
+        return 'shared'
+        # # abaixo lógica antiga
+        # if not tipo_orcamento:
+        #     return 'standard'
+        # tipo = str(tipo_orcamento).strip().upper()
+        # # Mapear conforme valores possíveis
+        # if tipo in ['ST', 'STANDARD', 'PADRAO']:
+        #     return 'standard'
+        # elif tipo in ['SP', 'SPECIAL', 'ESPECIAL']:
+        #     return 'special'
+        # else:
+        #     return 'standard'  # padrão
     
     def map_thirteenth_salary_type(self, tipo_calculo: Optional[int]) -> str:
         """Mapeia TipoCalculoDecimoTerceiro para thirteenth_salary_type"""
-        if tipo_calculo is None:
-            return 'none'
-        # Mapear valores comuns
-        tipo_map = {
-            0: 'none',
-            1: 'proportional',
-            2: 'full',
-            3: 'custom'
-        }
-        return tipo_map.get(tipo_calculo, 'none')
+        return 'monthly'
+
+        # # lógica anterior
+        # if tipo_calculo is None:
+        #     return 'none'
+        # # Mapear valores comuns
+        # tipo_map = {
+        #     0: 'none',
+        #     1: 'proportional',
+        #     2: 'full',
+        #     3: 'custom'
+        # }
+        # return tipo_map.get(tipo_calculo, 'none')
     
     def map_trade_type(self, trade_marketing: Optional[str]) -> str:
         """Mapeia TradeMarketing para trade_type"""
-        if not trade_marketing:
-            return 'none'
-        trade = str(trade_marketing).strip().upper()
-        if trade in ['N', 'NONE', 'NAO', 'NÃO']:
-            return 'none'
-        elif trade in ['S', 'SIM', 'YES']:
-            return 'yes'
-        else:
-            return 'none'  # padrão
+        return 'shared'
+
+        # # lógica anterior
+        # if not trade_marketing:
+        #     return 'none'
+        # trade = str(trade_marketing).strip().upper()
+        # if trade in ['N', 'NONE', 'NAO', 'NÃO']:
+        #     return 'none'
+        # elif trade in ['S', 'SIM', 'YES']:
+        #     return 'yes'
+        # else:
+        #     return 'none'  # padrão
     
     def _get_filter_ids_for_validation(self):
         """
@@ -617,7 +630,11 @@ class ContractsMigration:
         # Carregar mapeamento de customers existentes
         print("[ETAPA 1] Carregando mapeamento de customers existentes...")
         schema_customers = 'gmcore' if destino == 'HML' else 'core'
-        conn_customers = DatabaseConnection.get_postgresql_destino_connection()
+        # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+        if destino == 'PRD':
+            conn_customers = DatabaseConnection.get_postgresql_prd_destino_connection()
+        else:
+            conn_customers = DatabaseConnection.get_postgresql_hml_destino_connection()
         cursor_customers = conn_customers.cursor()
         cursor_customers.execute(f"SELECT id, legacy_id FROM {schema_customers}.customers WHERE legacy_id IS NOT NULL")
         for row in cursor_customers.fetchall():
@@ -648,7 +665,11 @@ class ContractsMigration:
                 
                 # Recarregar mapeamento de customers após migração
                 print("[ETAPA 1] Recarregando mapeamento de customers após migração...")
-                conn_customers = DatabaseConnection.get_postgresql_destino_connection()
+                # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+                if destino == 'PRD':
+                    conn_customers = DatabaseConnection.get_postgresql_prd_destino_connection()
+                else:
+                    conn_customers = DatabaseConnection.get_postgresql_hml_destino_connection()
                 cursor_customers = conn_customers.cursor()
                 cursor_customers.execute(f"SELECT id, legacy_id FROM {schema_customers}.customers WHERE legacy_id IS NOT NULL")
                 for row in cursor_customers.fetchall():
@@ -1259,6 +1280,399 @@ class ContractsMigration:
             print(f"ERRO na validacao: {e}")
             return False
     
+    def translate_task_name_to_english(self, nome_tarefa: Optional[str]) -> str:
+        """Traduz nome de tarefa do português para inglês em snake_case"""
+        if not nome_tarefa:
+            return "standard_task"
+        
+        nome_tarefa = str(nome_tarefa).strip().upper()
+        
+        # Dicionário de traduções conhecidas
+        translations = {
+            'REABASTECIMENTO': 'supply_and_disruption',
+            'REPOSIÇÃO': 'replenishment',
+            'MERCHANDISING': 'merchandising',
+            'PROMOÇÃO': 'promotion',
+            'FACING': 'facing',
+            'GONDOLA': 'gondola',
+            'EXPOSIÇÃO': 'exhibition',
+            'ORGANIZAÇÃO': 'organization',
+            'LIMPEZA': 'cleaning',
+            'ATENDIMENTO': 'service',
+            'VENDAS': 'sales',
+            'TREINAMENTO': 'training',
+            'AUDITORIA': 'audit',
+            'INVENTÁRIO': 'inventory',
+            'CONTROLE': 'control',
+            'VERIFICAÇÃO': 'verification',
+            'MONITORAMENTO': 'monitoring',
+            'SUPERVISÃO': 'supervision',
+            'GESTÃO': 'management',
+            'ADMINISTRAÇÃO': 'administration'
+        }
+        
+        # Verificar tradução direta
+        if nome_tarefa in translations:
+            return translations[nome_tarefa]
+        
+        # Se não encontrar tradução direta, normalizar para snake_case
+        # Converter para minúsculas e substituir espaços/caracteres especiais por underscore
+        import re
+        normalized = nome_tarefa.lower()
+        normalized = re.sub(r'[^a-z0-9]+', '_', normalized)
+        normalized = re.sub(r'_+', '_', normalized)  # Remover underscores duplicados
+        normalized = normalized.strip('_')  # Remover underscores no início/fim
+        
+        return normalized if normalized else "standard_task"
+    
+    def _ensure_default_promoter_task(self):
+        """Garante que existe uma tarefa padrão no banco e no mapeamento"""
+        DEFAULT_TASK_NAME = "standard_task"
+        
+        # Se já está no mapeamento, não precisa fazer nada
+        if DEFAULT_TASK_NAME in self.promoter_task_map:
+            return
+        
+        conn_pg = None
+        cursor_pg = None
+        
+        try:
+            destino = DatabaseConnection.get_destino()
+            # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+            if destino == 'PRD':
+                conn_pg = DatabaseConnection.get_postgresql_prd_destino_connection()
+            else:
+                conn_pg = DatabaseConnection.get_postgresql_hml_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            
+            # Verificar se já existe no banco
+            cursor_pg.execute("""
+                SELECT id FROM pdv.promoter_tasks WHERE name = %s
+            """, (DEFAULT_TASK_NAME,))
+            existing = cursor_pg.fetchone()
+            
+            if existing:
+                # Já existe, adicionar ao mapeamento
+                task_uuid = str(existing[0])
+                self.promoter_task_map[DEFAULT_TASK_NAME] = task_uuid
+                logger.info(f"[ETAPA 2] Tarefa padrão '{DEFAULT_TASK_NAME}' encontrada no banco: {task_uuid}")
+            else:
+                # Criar tarefa padrão
+                task_uuid_obj = uuid.uuid4()
+                task_uuid = str(task_uuid_obj)
+                now = datetime.now()
+                
+                cursor_pg.execute("""
+                    INSERT INTO pdv.promoter_tasks 
+                    (id, name, task_type, is_active, deleted_at, created_at, updated_at)
+                    VALUES (%s::uuid, %s, %s, %s, %s, %s, %s)
+                """, (
+                    task_uuid,
+                    DEFAULT_TASK_NAME,
+                    "standard",
+                    True,
+                    None,
+                    now,
+                    now
+                ))
+                conn_pg.commit()
+                
+                # Adicionar ao mapeamento
+                self.promoter_task_map[DEFAULT_TASK_NAME] = task_uuid
+                logger.info(f"[ETAPA 2] Tarefa padrão '{DEFAULT_TASK_NAME}' criada: {task_uuid}")
+                print(f"[ETAPA 2] Tarefa padrão '{DEFAULT_TASK_NAME}' criada: {task_uuid}")
+                
+        except Exception as e:
+            logger.error(f"Erro ao garantir tarefa padrão: {e}")
+            print(f"ERRO ao garantir tarefa padrão: {e}")
+            if conn_pg:
+                conn_pg.rollback()
+            raise
+        finally:
+            if cursor_pg:
+                cursor_pg.close()
+            if conn_pg:
+                conn_pg.close()
+    
+    def step9_migrate_promoter_tasks(self):
+        """ETAPA 9: Migrar promoter_tasks (deve ser executado antes do step2)"""
+        destino = DatabaseConnection.get_destino()
+        schema_pdv = 'pdv'  # Schema fixo para promoter_tasks
+        print("\n" + "="*80)
+        print("ETAPA 9: MIGRANDO PROMOTER_TASKS")
+        print("="*80)
+        logger.info("="*80)
+        logger.info("ETAPA 9: Migrando promoter_tasks")
+        logger.info(f"Ambiente: {destino} | Schema: {schema_pdv} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
+        logger.info("="*80)
+        
+        # Carregar filtros do step1 (se existir)
+        filter_data = self.load_filter_json()
+        id_orcamento_filter_list = []
+        
+        if filter_data and 'aggregated_ids' in filter_data:
+            id_orcamento_filter_list = filter_data['aggregated_ids'].get('IdOrcamento', [])
+            logger.info(f"[ETAPA 9] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
+            print(f"[ETAPA 9] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
+        else:
+            logger.warning("[ETAPA 9] Arquivo de filtros não encontrado. Buscando todos os IdOrcamento de contracts...")
+            # Se não há JSON, buscar todos os IdOrcamento de contracts
+            try:
+                schema = get_schema_atual()
+                conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+                cursor_pg = conn_pg.cursor()
+                if self.should_include_legacy_id():
+                    cursor_pg.execute(f"SELECT DISTINCT legacy_id FROM {schema}.contracts WHERE legacy_id IS NOT NULL")
+                    id_orcamento_filter_list = [row[0] for row in cursor_pg.fetchall()]
+                cursor_pg.close()
+                conn_pg.close()
+            except Exception as e:
+                logger.error(f"Erro ao buscar IdOrcamento de contracts: {e}")
+                print(f"ERRO ao buscar IdOrcamento: {e}")
+                return
+        
+        if not id_orcamento_filter_list:
+            logger.warning("[ETAPA 9] Nenhum IdOrcamento encontrado. Pulando migração de promoter_tasks.")
+            print("[ETAPA 9] Nenhum IdOrcamento encontrado. Pulando migração.")
+            return
+        
+        # Construir query para coletar tarefas únicas da ViewOrcamentosLojas
+        conn_sql = None
+        cursor_sql = None
+        conn_pg = None
+        cursor_pg = None
+        
+        try:
+            conn_sql = DatabaseConnection.get_sql_server_connection()
+            cursor_sql = conn_sql.cursor()
+            
+            # Query para coletar tarefas únicas
+            placeholders = ','.join(['?' for _ in id_orcamento_filter_list])
+            query_tarefas = f"""
+            SELECT DISTINCT
+                v.IdTarefa,
+                v.NomeTarefa
+            FROM ViewOrcamentosLojas v
+            INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+            WHERE v.IdOrcamento IN ({placeholders})
+                AND (v.IdTarefa IS NOT NULL OR v.NomeTarefa IS NOT NULL)
+            ORDER BY v.IdTarefa, v.NomeTarefa
+            """
+            
+            print(f"[ETAPA 9] Coletando tarefas únicas da ViewOrcamentosLojas...")
+            cursor_sql.execute(query_tarefas, id_orcamento_filter_list)
+            tarefas_view = cursor_sql.fetchall()
+            
+            if not tarefas_view:
+                logger.warning("[ETAPA 9] Nenhuma tarefa encontrada na ViewOrcamentosLojas.")
+                print("[ETAPA 9] Nenhuma tarefa encontrada.")
+                return
+            
+            print(f"[ETAPA 9] Encontradas {len(tarefas_view)} tarefas únicas")
+            logger.info(f"[ETAPA 9] Encontradas {len(tarefas_view)} tarefas únicas")
+            
+            # Coletar dados complementares de dbo.Tarefa
+            tarefas_completas = []
+            id_tarefas_unicos = set()
+            
+            for row in tarefas_view:
+                id_tarefa = row[0]
+                nome_tarefa_view = row[1]
+                
+                if id_tarefa and id_tarefa not in id_tarefas_unicos:
+                    id_tarefas_unicos.add(id_tarefa)
+                    # Buscar dados de dbo.Tarefa
+                    query_tarefa = """
+                    SELECT 
+                        Id,
+                        Nome,
+                        Ativo,
+                        DataInclusao,
+                        DataAlteracao,
+                        DataInativacao
+                    FROM Tarefa
+                    WHERE Id = ?
+                    """
+                    cursor_sql.execute(query_tarefa, (id_tarefa,))
+                    tarefa_row = cursor_sql.fetchone()
+                    
+                    if tarefa_row:
+                        tarefas_completas.append({
+                            'IdTarefa': id_tarefa,
+                            'NomeTarefa': nome_tarefa_view or tarefa_row[1],  # Preferir NomeTarefa da view
+                            'Nome': tarefa_row[1],
+                            'Ativo': tarefa_row[2],
+                            'DataInclusao': tarefa_row[3],
+                            'DataAlteracao': tarefa_row[4],
+                            'DataInativacao': tarefa_row[5]
+                        })
+                    else:
+                        # Se não encontrou na tabela Tarefa, usar apenas dados da view
+                        tarefas_completas.append({
+                            'IdTarefa': id_tarefa,
+                            'NomeTarefa': nome_tarefa_view,
+                            'Nome': None,
+                            'Ativo': True,  # Padrão
+                            'DataInclusao': None,
+                            'DataAlteracao': None,
+                            'DataInativacao': None
+                        })
+                elif nome_tarefa_view and not any(t.get('NomeTarefa') == nome_tarefa_view for t in tarefas_completas):
+                    # Tarefa sem IdTarefa, mas com NomeTarefa
+                    tarefas_completas.append({
+                        'IdTarefa': None,
+                        'NomeTarefa': nome_tarefa_view,
+                        'Nome': None,
+                        'Ativo': True,  # Padrão
+                        'DataInclusao': None,
+                        'DataAlteracao': None,
+                        'DataInativacao': None
+                    })
+            
+            print(f"[ETAPA 9] Processando {len(tarefas_completas)} tarefas para migração...")
+            logger.info(f"[ETAPA 9] Processando {len(tarefas_completas)} tarefas")
+            
+            # Conectar ao PostgreSQL
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            
+            # Preparar dados para UPSERT
+            records_to_insert = []
+            now = datetime.now()
+            
+            for tarefa in tarefas_completas:
+                # Traduzir nome para inglês em snake_case
+                nome_original = tarefa.get('NomeTarefa') or tarefa.get('Nome') or ''
+                name_normalized = self.translate_task_name_to_english(nome_original)
+                
+                # Determinar task_type (padrão: "standard")
+                task_type = "standard"
+                name_lower = name_normalized.lower()
+                if 'supply' in name_lower or 'disruption' in name_lower:
+                    task_type = "supply"
+                elif 'replenishment' in name_lower or 'reposição' in name_lower:
+                    task_type = "replenishment"
+                elif 'merchandising' in name_lower:
+                    task_type = "merchandising"
+                elif 'promotion' in name_lower or 'promoção' in name_lower:
+                    task_type = "promotion"
+                elif 'facing' in name_lower:
+                    task_type = "facing"
+                elif 'cleaning' in name_lower or 'limpeza' in name_lower:
+                    task_type = "cleaning"
+                elif 'audit' in name_lower or 'auditoria' in name_lower:
+                    task_type = "audit"
+                elif 'inventory' in name_lower or 'inventário' in name_lower:
+                    task_type = "inventory"
+                
+                # Mapear campos
+                is_active = bool(tarefa.get('Ativo', True))
+                deleted_at = tarefa.get('DataInativacao') if tarefa.get('DataInativacao') else None
+                created_at = tarefa.get('DataInclusao') if tarefa.get('DataInclusao') else now
+                updated_at = tarefa.get('DataAlteracao') if tarefa.get('DataAlteracao') else created_at
+                
+                records_to_insert.append({
+                    'name': name_normalized,
+                    'task_type': task_type,
+                    'is_active': is_active,
+                    'deleted_at': deleted_at,
+                    'created_at': created_at,
+                    'updated_at': updated_at,
+                    'id_tarefa_original': tarefa.get('IdTarefa'),
+                    'nome_tarefa_original': nome_original
+                })
+            
+            # Executar UPSERT (INSERT ... ON CONFLICT ... DO UPDATE)
+            print(f"[ETAPA 9] Executando UPSERT de {len(records_to_insert)} tarefas...")
+            logger.info(f"[ETAPA 9] Executando UPSERT de {len(records_to_insert)} tarefas")
+            
+            inserted_count = 0
+            updated_count = 0
+            
+            for record in records_to_insert:
+                try:
+                    # Verificar se já existe (por name)
+                    cursor_pg.execute("""
+                        SELECT id FROM pdv.promoter_tasks WHERE name = %s
+                    """, (record['name'],))
+                    existing = cursor_pg.fetchone()
+                    
+                    if existing:
+                        # UPDATE
+                        cursor_pg.execute("""
+                            UPDATE pdv.promoter_tasks
+                            SET task_type = %s,
+                                is_active = %s,
+                                deleted_at = %s,
+                                updated_at = %s
+                            WHERE name = %s
+                        """, (
+                            record['task_type'],
+                            record['is_active'],
+                            record['deleted_at'],
+                            record['updated_at'],
+                            record['name']
+                        ))
+                        updated_count += 1
+                        task_uuid = str(existing[0])  # Converter UUID para string
+                    else:
+                        # INSERT
+                        task_uuid_obj = uuid.uuid4()
+                        task_uuid = str(task_uuid_obj)  # Converter UUID para string
+                        cursor_pg.execute("""
+                            INSERT INTO pdv.promoter_tasks 
+                            (id, name, task_type, is_active, deleted_at, created_at, updated_at)
+                            VALUES (%s::uuid, %s, %s, %s, %s, %s, %s)
+                        """, (
+                            task_uuid,
+                            record['name'],
+                            record['task_type'],
+                            record['is_active'],
+                            record['deleted_at'],
+                            record['created_at'],
+                            record['updated_at']
+                        ))
+                        inserted_count += 1
+                    
+                    # Criar mapeamento para uso no step2
+                    # Chave: (IdTarefa, NomeTarefa_normalizado) -> UUID (string)
+                    if record['id_tarefa_original'] is not None:
+                        key = (int(record['id_tarefa_original']), record['name'])
+                        self.promoter_task_map[key] = task_uuid
+                    
+                    # Sempre criar mapeamento apenas por nome normalizado (para casos sem IdTarefa ou como fallback)
+                    self.promoter_task_map[record['name']] = task_uuid
+                    
+                except Exception as e:
+                    logger.error(f"Erro ao inserir/atualizar promoter_task '{record['name']}': {e}")
+                    print(f"ERRO ao processar tarefa '{record['name']}': {e}")
+                    self.stats['errors'].append(f"promoter_task '{record['name']}': {e}")
+            
+            conn_pg.commit()
+            
+            self.stats['promoter_tasks'] = inserted_count + updated_count
+            
+            print(f"[ETAPA 9] Concluído: {inserted_count} inseridos, {updated_count} atualizados")
+            logger.info(f"[ETAPA 9] Concluído: {inserted_count} inseridos, {updated_count} atualizados")
+            logger.info(f"[ETAPA 9] Mapeamento criado: {len(self.promoter_task_map)} entradas")
+            print(f"[ETAPA 9] Mapeamento criado: {len(self.promoter_task_map)} entradas")
+            
+        except Exception as e:
+            logger.error(f"ERRO CRITICO na ETAPA 9: {e}")
+            print(f"ERRO CRITICO: {e}")
+            if conn_pg:
+                conn_pg.rollback()
+            raise
+        finally:
+            if cursor_sql:
+                cursor_sql.close()
+            if conn_sql:
+                conn_sql.close()
+            if cursor_pg:
+                cursor_pg.close()
+            if conn_pg:
+                conn_pg.close()
+    
     def step2_migrate_contract_scenarios(self):
         """ETAPA 2: Migrar contract_scenarios"""
         destino = DatabaseConnection.get_destino()
@@ -1270,6 +1684,19 @@ class ContractsMigration:
         logger.info("ETAPA 2: Migrando contract_scenarios")
         logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
+        
+        # Verificar se step9 foi executado (promoter_task_map deve estar populado)
+        if not self.promoter_task_map:
+            logger.warning("[ETAPA 2] promoter_task_map vazio. Executando step9_migrate_promoter_tasks primeiro...")
+            print("[ETAPA 2] Executando step9_migrate_promoter_tasks primeiro...")
+            self.step9_migrate_promoter_tasks()
+            if not self.promoter_task_map:
+                logger.error("[ETAPA 2] ERRO: Não foi possível criar promoter_task_map. Abortando step2.")
+                print("[ETAPA 2] ERRO: Não foi possível criar promoter_task_map. Abortando.")
+                raise Exception("promoter_task_map não disponível. step9 deve ser executado antes de step2.")
+        
+        # Garantir que existe uma tarefa padrão (para casos onde não encontra tarefa)
+        self._ensure_default_promoter_task()
         
         # Verificar/criar coluna legacy_id (apenas em HML)
         include_legacy = False
@@ -1300,19 +1727,43 @@ class ContractsMigration:
                 include_legacy = False
         
         # Carregar mapeamento de stores
+        # Buscar do banco usando legacy_id (disponível tanto em HML quanto em PRD)
         print("[ETAPA 2] Carregando mapeamento de stores...")
         try:
-            schema_stores = 'gmcore' if destino == 'HML' else 'core'
-            conn_stores = DatabaseConnection.get_postgresql_destino_connection()
-            cursor_stores = conn_stores.cursor()
-            cursor_stores.execute(f"SELECT id, legacy_id FROM {schema_stores}.stores WHERE legacy_id IS NOT NULL")
-            for row in cursor_stores.fetchall():
-                if row[1] is not None:
-                    self.store_id_map[row[1]] = row[0]
-            cursor_stores.close()
-            conn_stores.close()
-            print(f"OK - {len(self.store_id_map)} stores carregados")
-            logger.info(f"Carregados {len(self.store_id_map)} stores para mapeamento")
+            if self.should_include_legacy_id():
+                # Buscar do banco usando legacy_id
+                destino = DatabaseConnection.get_destino()
+                schema_stores = 'gmcore' if destino == 'HML' else 'core'
+                # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+                if destino == 'PRD':
+                    conn_stores = DatabaseConnection.get_postgresql_prd_destino_connection()
+                else:
+                    conn_stores = DatabaseConnection.get_postgresql_hml_destino_connection()
+                cursor_stores = conn_stores.cursor()
+                
+                # Verificar se a coluna legacy_id existe
+                cursor_stores.execute(f"""
+                    SELECT COUNT(*) 
+                    FROM information_schema.columns 
+                    WHERE table_schema = %s 
+                    AND table_name = 'stores' 
+                    AND column_name = 'legacy_id'
+                """, (schema_stores,))
+                has_legacy_id = cursor_stores.fetchone()[0] > 0
+                
+                if has_legacy_id:
+                    cursor_stores.execute(f"SELECT id, legacy_id FROM {schema_stores}.stores WHERE legacy_id IS NOT NULL")
+                    for row in cursor_stores.fetchall():
+                        if row[1] is not None:
+                            self.store_id_map[row[1]] = row[0]
+                    print(f"OK - {len(self.store_id_map)} stores carregados")
+                    logger.info(f"Carregados {len(self.store_id_map)} stores para mapeamento")
+                else:
+                    logger.warning(f"Coluna legacy_id não existe em {schema_stores}.stores. Mapeamento de stores não será carregado.")
+                    print(f"AVISO - Coluna legacy_id não existe em {schema_stores}.stores. Certifique-se de que stores foi migrado antes de contracts.")
+                
+                cursor_stores.close()
+                conn_stores.close()
         except Exception as e:
             logger.warning(f"Erro ao carregar stores: {e}")
             print(f"AVISO - Nao foi possivel carregar stores: {e}")
@@ -1434,13 +1885,43 @@ class ContractsMigration:
         # Filtrar apenas linhas válidas
         df = df[mask_valid].copy()
         
-        # Preparar valores com transformações vetorizadas
-        df['task'] = self.clean_string_vectorized(df['NomeTarefa'], max_length=50)
-        # Se task vazio, usar IdTarefa como string
-        mask_task_empty = df['task'].isna() | (df['task'] == '')
-        df.loc[mask_task_empty & df['IdTarefa'].notna(), 'task'] = df.loc[mask_task_empty & df['IdTarefa'].notna(), 'IdTarefa'].astype(str)
-        # Se ainda vazio, usar valor padrão
-        df.loc[df['task'].isna() | (df['task'] == ''), 'task'] = 'Tarefa Padrão'
+        # Preparar promoter_task_id usando o mapeamento do step9
+        def get_promoter_task_id(row):
+            """Obtém UUID do promoter_task baseado em IdTarefa ou NomeTarefa"""
+            id_tarefa = row['IdTarefa'] if pd.notna(row.get('IdTarefa')) else None
+            nome_tarefa = row['NomeTarefa'] if pd.notna(row.get('NomeTarefa')) else None
+            
+            # Tentar buscar por (IdTarefa, nome_normalizado)
+            if id_tarefa is not None:
+                nome_normalized = self.translate_task_name_to_english(nome_tarefa)
+                key = (int(id_tarefa), nome_normalized)
+                if key in self.promoter_task_map:
+                    return str(self.promoter_task_map[key])
+            
+            # Tentar buscar apenas por nome normalizado (mesmo se nome_tarefa for None, translate retorna "standard_task")
+            nome_normalized = self.translate_task_name_to_english(nome_tarefa)
+            if nome_normalized in self.promoter_task_map:
+                return str(self.promoter_task_map[nome_normalized])
+            
+            # Se não encontrou, usar tarefa padrão (garantida pelo _ensure_default_promoter_task)
+            DEFAULT_TASK_NAME = "standard_task"
+            if DEFAULT_TASK_NAME in self.promoter_task_map:
+                logger.warning(f"[ETAPA 2] Tarefa não encontrada para IdTarefa={id_tarefa}, NomeTarefa={nome_tarefa}. Usando tarefa padrão.")
+                return str(self.promoter_task_map[DEFAULT_TASK_NAME])
+            
+            # Se nem a tarefa padrão existe (não deveria acontecer), retornar None
+            logger.error(f"[ETAPA 2] ERRO CRÍTICO: Tarefa padrão não disponível!")
+            return None
+        
+        # Aplicar função para obter promoter_task_id
+        df['promoter_task_id'] = df.apply(get_promoter_task_id, axis=1)
+        
+        # Verificar se há valores None (erro crítico - não deveria acontecer)
+        if df['promoter_task_id'].isna().any():
+            missing_count = df['promoter_task_id'].isna().sum()
+            logger.error(f"[ETAPA 2] ERRO CRÍTICO: {missing_count} registros sem promoter_task_id válido mesmo com tarefa padrão")
+            print(f"[ETAPA 2] ERRO CRÍTICO: {missing_count} registros sem promoter_task_id válido")
+            raise Exception(f"Não foi possível atribuir promoter_task_id para {missing_count} registros")
         
         df['frequency'] = self.clean_string_vectorized(df['Frequencia'], max_length=50)
         df['hours'] = self.convert_hours_to_float_vectorized(df['Horas'])
@@ -1458,13 +1939,14 @@ class ContractsMigration:
         # Converter UUIDs para string
         df['contract_id'] = df['contract_id'].astype(str)
         df['store_id'] = df['store_id'].astype(str)
+        df['promoter_task_id'] = df['promoter_task_id'].astype(str)
         
         # Converter DataFrame diretamente para lista de tuplas (otimizado)
         if include_legacy:
             processed_tuples = list(zip(
                 df['contract_id'].tolist(),
                 df['store_id'].tolist(),
-                df['task'].tolist(),
+                df['promoter_task_id'].tolist(),
                 df['frequency'].tolist(),
                 df['hours'].tolist(),
                 df['hour_value'].tolist(),
@@ -1478,7 +1960,7 @@ class ContractsMigration:
             processed_tuples = list(zip(
                 df['contract_id'].tolist(),
                 df['store_id'].tolist(),
-                df['task'].tolist(),
+                df['promoter_task_id'].tolist(),
                 df['frequency'].tolist(),
                 df['hours'].tolist(),
                 df['hour_value'].tolist(),
@@ -1499,7 +1981,7 @@ class ContractsMigration:
         if include_legacy:
             insert_query = f"""
             INSERT INTO {schema}.contract_scenarios (
-                id, contract_id, store_id, task, frequency, hours, hour_value,
+                id, contract_id, store_id, promoter_task_id, frequency, hours, hour_value,
                 start_date, status, created_at, updated_at, legacy_id
             ) VALUES %s
             """
@@ -1507,7 +1989,7 @@ class ContractsMigration:
         else:
             insert_query = f"""
             INSERT INTO {schema}.contract_scenarios (
-                id, contract_id, store_id, task, frequency, hours, hour_value,
+                id, contract_id, store_id, promoter_task_id, frequency, hours, hour_value,
                 start_date, status, created_at, updated_at
             ) VALUES %s
             """
@@ -1706,7 +2188,11 @@ class ContractsMigration:
         print("[ETAPA 3] Carregando mapeamentos de scenarios e stores...")
         try:
             schema_scenarios = schema
-            conn_scenarios = DatabaseConnection.get_postgresql_destino_connection()
+            # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+            if destino == 'PRD':
+                conn_scenarios = DatabaseConnection.get_postgresql_prd_destino_connection()
+            else:
+                conn_scenarios = DatabaseConnection.get_postgresql_hml_destino_connection()
             cursor_scenarios = conn_scenarios.cursor()
             if self.should_include_legacy_id():
                 cursor_scenarios.execute(f"SELECT id, legacy_id FROM {schema_scenarios}.contract_scenarios WHERE legacy_id IS NOT NULL")
@@ -1722,24 +2208,47 @@ class ContractsMigration:
             print(f"AVISO - Nao foi possivel carregar scenarios: {e}")
         
         try:
-            schema_stores = 'gmcore' if destino == 'HML' else 'core'
-            conn_stores = DatabaseConnection.get_postgresql_destino_connection()
-            cursor_stores = conn_stores.cursor()
-            cursor_stores.execute(f"SELECT id, legacy_id FROM {schema_stores}.stores WHERE legacy_id IS NOT NULL")
-            for row in cursor_stores.fetchall():
-                if row[1] is not None:
-                    self.store_id_map[row[1]] = row[0]
-            cursor_stores.close()
-            conn_stores.close()
-            print(f"OK - {len(self.store_id_map)} stores carregados")
-            logger.info(f"Carregados {len(self.store_id_map)} stores para mapeamento")
+            if self.should_include_legacy_id():
+                # Buscar do banco usando legacy_id
+                destino = DatabaseConnection.get_destino()
+                schema_stores = 'gmcore' if destino == 'HML' else 'core'
+                # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+                if destino == 'PRD':
+                    conn_stores = DatabaseConnection.get_postgresql_prd_destino_connection()
+                else:
+                    conn_stores = DatabaseConnection.get_postgresql_hml_destino_connection()
+                cursor_stores = conn_stores.cursor()
+                
+                # Verificar se a coluna legacy_id existe
+                cursor_stores.execute(f"""
+                    SELECT COUNT(*) 
+                    FROM information_schema.columns 
+                    WHERE table_schema = %s 
+                    AND table_name = 'stores' 
+                    AND column_name = 'legacy_id'
+                """, (schema_stores,))
+                has_legacy_id = cursor_stores.fetchone()[0] > 0
+                
+                if has_legacy_id:
+                    cursor_stores.execute(f"SELECT id, legacy_id FROM {schema_stores}.stores WHERE legacy_id IS NOT NULL")
+                    for row in cursor_stores.fetchall():
+                        if row[1] is not None:
+                            self.store_id_map[row[1]] = row[0]
+                    print(f"OK - {len(self.store_id_map)} stores carregados")
+                    logger.info(f"Carregados {len(self.store_id_map)} stores para mapeamento")
+                else:
+                    logger.warning(f"Coluna legacy_id não existe em {schema_stores}.stores. Mapeamento de stores não será carregado.")
+                    print(f"AVISO - Coluna legacy_id não existe em {schema_stores}.stores. Certifique-se de que stores foi migrado antes de contracts.")
+                
+                cursor_stores.close()
+                conn_stores.close()
         except Exception as e:
             logger.warning(f"Erro ao carregar stores: {e}")
             print(f"AVISO - Nao foi possivel carregar stores: {e}")
         
-        # Verificar se precisa criar coluna legacy_id em HML
-        include_legacy = self.should_include_legacy_id()
-        if include_legacy:
+        # Verificar se precisa criar coluna legacy_id (apenas em HML)
+        include_legacy = False
+        if self.should_include_legacy_id():
             try:
                 conn_check = DatabaseConnection.get_postgresql_destino_connection()
                 cursor_check = conn_check.cursor()
@@ -1750,15 +2259,20 @@ class ContractsMigration:
                     AND table_name = 'contract_scenario_stores' 
                     AND column_name = 'legacy_id'
                 """)
-                if not cursor_check.fetchone():
+                if cursor_check.fetchone():
+                    include_legacy = True
+                    print("[ETAPA 3] Coluna legacy_id já existe na tabela")
+                else:
                     print("[ETAPA 3] Criando coluna legacy_id...")
                     cursor_check.execute(f"ALTER TABLE {schema}.contract_scenario_stores ADD COLUMN legacy_id INTEGER")
                     conn_check.commit()
+                    include_legacy = True
                     print("OK - Coluna legacy_id criada")
                 cursor_check.close()
                 conn_check.close()
             except Exception as e:
                 logger.warning(f"Nao foi possivel criar/verificar coluna legacy_id: {e}")
+                include_legacy = False
         
         # Truncate
         print("\n[ETAPA 3] Limpando tabela contract_scenario_stores...")
@@ -1828,8 +2342,13 @@ class ContractsMigration:
         df.loc[df['start_date'].isna(), 'start_date'] = datetime.now()
         df['status'] = df['Ativo'].fillna(False).astype(int)
         # Converter NaT para None explicitamente - usar mask para identificar NaT/NaN e substituir
-        df['removed_at'] = df['DataExclusao']
-        df.loc[pd.isna(df['removed_at']), 'removed_at'] = None
+        # NOTA: Em PRD a coluna é 'closed_at' (DATE), não 'removed_at' (TIMESTAMP)
+        # Converter datetime para date apenas (remover hora) - tratar None/NaT corretamente
+        df['closed_at'] = pd.to_datetime(df['DataExclusao'], errors='coerce')
+        # Converter para date apenas onde não é NaT/None
+        mask_not_null = df['closed_at'].notna()
+        df.loc[mask_not_null, 'closed_at'] = df.loc[mask_not_null, 'closed_at'].dt.date
+        df.loc[~mask_not_null, 'closed_at'] = None
         df['created_at'] = df['DataInclusaoOrcamentoLojas'].fillna(datetime.now())
         df['updated_at'] = df['DataAlteracaoOrcamentoLojas'].fillna(df['created_at'])
         
@@ -1839,13 +2358,16 @@ class ContractsMigration:
         
         # Converter DataFrame diretamente para lista de tuplas (otimizado)
         # Converter NaT/NaN para None explicitamente antes de criar tuplas
-        # Função helper para converter NaT/NaN para None
+        # Função helper para converter NaT/NaN para None (inclui objetos date)
         def convert_nat_to_none(val):
+            if val is None:
+                return None
             if pd.isna(val) or val is pd.NaT or str(val) == 'NaT':
                 return None
+            # Se for objeto date do Python, manter como está
             return val
         
-        removed_at_list = [convert_nat_to_none(x) for x in df['removed_at']]
+        closed_at_list = [convert_nat_to_none(x) for x in df['closed_at']]
         
         if include_legacy:
             processed_tuples = list(zip(
@@ -1854,7 +2376,7 @@ class ContractsMigration:
                 df['store_id'].tolist(),
                 df['start_date'].tolist(),
                 df['status'].tolist(),
-                removed_at_list,
+                closed_at_list,
                 df['created_at'].tolist(),
                 df['updated_at'].tolist()
             ))
@@ -1865,7 +2387,7 @@ class ContractsMigration:
                 df['store_id'].tolist(),
                 df['start_date'].tolist(),
                 df['status'].tolist(),
-                removed_at_list,
+                closed_at_list,
                 df['created_at'].tolist(),
                 df['updated_at'].tolist()
             ))
@@ -1878,11 +2400,12 @@ class ContractsMigration:
         cursor_pg = conn_pg.cursor()
         
         # Query de insert usando gen_random_uuid() - formato para execute_values
+        # NOTA: Em PRD a coluna é 'closed_at' (DATE), não 'removed_at' (TIMESTAMP)
         if include_legacy:
             insert_query = f"""
             INSERT INTO {schema}.contract_scenario_stores (
                 id, legacy_id, scenario_id, store_id, start_date,
-                status, removed_at, created_at, updated_at
+                status, closed_at, created_at, updated_at
             ) VALUES %s
             """
             insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s)"
@@ -1890,7 +2413,7 @@ class ContractsMigration:
             insert_query = f"""
             INSERT INTO {schema}.contract_scenario_stores (
                 id, scenario_id, store_id, start_date,
-                status, removed_at, created_at, updated_at
+                status, closed_at, created_at, updated_at
             ) VALUES %s
             """
             insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s)"
@@ -2084,7 +2607,11 @@ class ContractsMigration:
         user_id_map = {}
         try:
             schema_users = 'gmcore' if destino == 'HML' else 'core'
-            conn_users = DatabaseConnection.get_postgresql_destino_connection()
+            # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+            if destino == 'PRD':
+                conn_users = DatabaseConnection.get_postgresql_prd_destino_connection()
+            else:
+                conn_users = DatabaseConnection.get_postgresql_hml_destino_connection()
             cursor_users = conn_users.cursor()
             
             # Verificar se a coluna legacy_id existe
@@ -2462,7 +2989,11 @@ class ContractsMigration:
         user_id_map = {}
         try:
             schema_users = 'gmcore' if destino == 'HML' else 'core'
-            conn_users = DatabaseConnection.get_postgresql_destino_connection()
+            # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+            if destino == 'PRD':
+                conn_users = DatabaseConnection.get_postgresql_prd_destino_connection()
+            else:
+                conn_users = DatabaseConnection.get_postgresql_hml_destino_connection()
             cursor_users = conn_users.cursor()
             
             # Verificar se a coluna legacy_id existe
@@ -3060,24 +3591,30 @@ class ContractsMigration:
             
             if id_orcamento_list:
                 placeholders = ','.join(['?' for _ in id_orcamento_list])
+                # ⚠️ CORRIGIDO: Contar todas as linhas (não DISTINCT IdOrcamento)
+                # Cada IdClienteLoja é um registro diferente em contract_partners
                 cursor_sql.execute(f"""
-                    SELECT COUNT(DISTINCT IdOrcamento) 
+                    SELECT COUNT(*) 
                     FROM ViewOrcamentosLojas 
-                    WHERE IdClienteLoja IS NOT NULL
+                    WHERE IdClienteLoja IS NOT NULL 
+                    AND NomeClienteLoja IS NOT NULL
                     AND IdOrcamento IN ({placeholders})
                 """, id_orcamento_list)
             elif self.limit_rows > 0:
+                # ⚠️ CORRIGIDO: Contar todas as linhas (não DISTINCT IdOrcamento)
                 cursor_sql.execute(f"""
-                    SELECT COUNT(DISTINCT IdOrcamento) 
+                    SELECT COUNT(*) 
                     FROM (
-                        SELECT DISTINCT TOP {self.limit_rows} IdOrcamento 
+                        SELECT TOP {self.limit_rows} IdOrcamento, IdClienteLoja
                         FROM ViewOrcamentosLojas 
-                        WHERE IdClienteLoja IS NOT NULL
+                        WHERE IdClienteLoja IS NOT NULL 
+                        AND NomeClienteLoja IS NOT NULL
                         ORDER BY IdOrcamento
                     ) AS limited
                 """)
             else:
-                cursor_sql.execute("SELECT COUNT(DISTINCT IdOrcamento) FROM ViewOrcamentosLojas WHERE IdClienteLoja IS NOT NULL")
+                # ⚠️ CORRIGIDO: Contar todas as linhas (não DISTINCT IdOrcamento)
+                cursor_sql.execute("SELECT COUNT(*) FROM ViewOrcamentosLojas WHERE IdClienteLoja IS NOT NULL AND NomeClienteLoja IS NOT NULL")
             origem_count = cursor_sql.fetchone()[0]
             cursor_sql.close()
             conn_sql.close()
@@ -3085,7 +3622,11 @@ class ContractsMigration:
             # Contar destino aplicando os mesmos filtros
             schema = get_schema_atual()
             destino_nome = DatabaseConnection.get_destino()
-            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+            if destino_nome == 'PRD':
+                conn_pg = DatabaseConnection.get_postgresql_prd_destino_connection()
+            else:
+                conn_pg = DatabaseConnection.get_postgresql_hml_destino_connection()
             cursor_pg = conn_pg.cursor()
             
             if id_orcamento_list:
@@ -3140,7 +3681,11 @@ class ContractsMigration:
         person_id_map = {}
         try:
             schema_persons = 'gmcore' if destino == 'HML' else 'core'
-            conn_persons = DatabaseConnection.get_postgresql_destino_connection()
+            # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+            if destino == 'PRD':
+                conn_persons = DatabaseConnection.get_postgresql_prd_destino_connection()
+            else:
+                conn_persons = DatabaseConnection.get_postgresql_hml_destino_connection()
             cursor_persons = conn_persons.cursor()
             cursor_persons.execute(f"""
                 SELECT EXISTS (
@@ -3788,6 +4333,7 @@ class ContractsMigration:
         
         try:
             self.step1_migrate_contracts()
+            self.step9_migrate_promoter_tasks()  # Executar antes do step2
             self.step2_migrate_contract_scenarios()
             self.step3_migrate_contract_scenario_stores()
             self.step4_migrate_contract_sellers()
@@ -3809,6 +4355,7 @@ class ContractsMigration:
             print(f"\nDuracao total: {duration}")
             print(f"\nESTATISTICAS FINAIS:")
             print(f"  Contracts: {self.stats['contracts']}")
+            print(f"  Promoter Tasks: {self.stats['promoter_tasks']}")
             print(f"  Contract Scenarios: {self.stats['contract_scenarios']}")
             print(f"  Contract Scenario Stores: {self.stats['contract_scenario_stores']}")
             print(f"  Contract Sellers: {self.stats['contract_sellers']}")
@@ -3816,6 +4363,7 @@ class ContractsMigration:
             print(f"  Contract Contacts: {self.stats['contract_contacts']}")
             print(f"  Contract Partners: {self.stats['contract_partners']}")
             print(f"  Contract Additional Charges: {self.stats['contract_additional_charges']}")
+            print(f"  Promoter Tasks: {self.stats['promoter_tasks']}")
             print(f"  Erros: {len(self.stats['errors'])}")
             
             logger.info(f"Duracao: {duration}")
@@ -3827,6 +4375,7 @@ class ContractsMigration:
             logger.info(f"Contract Contacts: {self.stats['contract_contacts']}")
             logger.info(f"Contract Partners: {self.stats['contract_partners']}")
             logger.info(f"Contract Additional Charges: {self.stats['contract_additional_charges']}")
+            logger.info(f"Promoter Tasks: {self.stats['promoter_tasks']}")
             logger.info(f"Erros: {len(self.stats['errors'])}")
             
             if self.stats['errors']:

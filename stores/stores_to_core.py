@@ -108,9 +108,9 @@ class StoresMigration:
         self.filter_json_path = os.path.join(contracts_dir, 'contracts_filter_main.json')
     
     def should_include_legacy_id(self):
-        """Retorna True se deve incluir legacy_id (apenas em HML)"""
-        destino = DatabaseConnection.get_destino()
-        return destino == 'HML'
+        """Retorna True se deve incluir legacy_id (HML e PRD)"""
+        # legacy_id existe tanto em HML quanto em PRD
+        return True
     
     def load_filter_json(self) -> Optional[Dict]:
         """

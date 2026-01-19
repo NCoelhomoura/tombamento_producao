@@ -154,7 +154,110 @@ A lógica é pegar tudo que pertence ao step1_migrate_contracts, ou seja, pegar 
 Os steps 2 a 8 devem usar o arquivo JSON gerado (contracts/contracts_filter_main.json) para filtrar seus dados, garantindo que apenas dados relacionados aos contratos migrados no step1 sejam processados.
 
 
+-- STEP 9: step9_migrate_promoter_tasks
+
+⚠️ CRÍTICO: Esta etapa DEVE ser executada ANTES do step2_migrate_contract_scenarios, pois contract_scenarios depende de promoter_tasks estar migrado.
+
+Tabela Origem: ViewOrcamentosLojas (IdTarefa, NomeTarefa) + dbo.Tarefa (LEFT JOIN)
+Tabela Destino: pdv.promoter_tasks
+
+LIMPEZA DE DADOS:
+⚠️ ATENÇÃO: promoter_tasks é uma tabela de referência compartilhada. NÃO usar TRUNCATE ou DELETE com filtros.
+- SEMPRE usar UPSERT (INSERT ... ON CONFLICT ... DO UPDATE) baseado no campo `name`
+- NÃO limpar dados existentes (tabela compartilhada, pode ser usada por outros módulos)
+- Apenas inserir/atualizar tarefas encontradas na ViewOrcamentosLojas dos contratos filtrados
+
+FILTRO OBRIGATÓRIO: Coletar tarefas únicas da ViewOrcamentosLojas filtrada pelo step1
+Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento
+
+LÓGICA DE COLETA:
+1. Coletar IdTarefa e NomeTarefa únicos da ViewOrcamentosLojas filtrada:
+   SELECT DISTINCT
+       v.IdTarefa,
+       v.NomeTarefa
+   FROM ViewOrcamentosLojas v
+   INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+   WHERE v.IdOrcamento IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento)
+       AND (v.IdTarefa IS NOT NULL OR v.NomeTarefa IS NOT NULL)
+
+2. Para cada tarefa única, buscar dados complementares de dbo.Tarefa:
+   SELECT 
+       t.Id,
+       t.Nome,
+       t.Ativo,
+       t.DataInclusao,
+       t.DataAlteracao,
+       t.DataInativacao
+   FROM Tarefa t
+   WHERE t.Id = IdTarefa (quando IdTarefa não for NULL)
+   LEFT JOIN quando IdTarefa for NULL (usar apenas NomeTarefa)
+
+LÓGICA DE MAPEAMENTO E TRADUÇÃO:
+1. name (TEXT, NOT NULL):
+   - Se NomeTarefa da ViewOrcamentosLojas não for NULL/vazio: traduzir para inglês em snake_case
+   - Se NomeTarefa for NULL/vazio: usar dbo.Tarefa.Nome (se disponível)
+   - Exemplo de tradução: "REABASTECIMENTO" -> "supply_and_disruption"
+   - Normalizar para snake_case (minúsculas, espaços e caracteres especiais substituídos por underscore)
+
+2. task_type (VARCHAR(50), NOT NULL):
+   - Determinar tipo baseado no nome traduzido ou usar padrão
+   - Padrão: "standard" (se não for possível determinar)
+
+3. is_active (BOOLEAN, NOT NULL):
+   - Mapear dbo.Tarefa.Ativo (bit) para BOOLEAN
+   - Se dbo.Tarefa não disponível: usar padrão true
+
+4. deleted_at (TIMESTAMP WITH TIME ZONE, nullable):
+   - Usar dbo.Tarefa.DataInativacao se existir
+   - Caso contrário: NULL
+
+5. created_at (TIMESTAMP WITH TIME ZONE, NOT NULL):
+   - Usar dbo.Tarefa.DataInclusao se disponível
+   - Caso contrário: datetime atual
+
+6. updated_at (TIMESTAMP WITH TIME ZONE, NOT NULL):
+   - Usar dbo.Tarefa.DataAlteracao se disponível
+   - Caso contrário: usar created_at
+
+ESTRATÉGIA DE UPSERT:
+- Usar campo `name` como chave única para identificar duplicatas
+- INSERT ... ON CONFLICT (name) DO UPDATE SET ...
+- Se tarefa já existir (mesmo name): atualizar campos (task_type, is_active, deleted_at, updated_at)
+- Se tarefa não existir: inserir novo registro com UUID gerado automaticamente
+
+MAPEAMENTO PARA contract_scenarios:
+Após migrar promoter_tasks, criar um mapeamento (promoter_task_map):
+- Chave: (IdTarefa, NomeTarefa) ou apenas NomeTarefa normalizado
+- Valor: UUID de promoter_tasks.id
+- Este mapeamento será usado no step2 para preencher contract_scenarios.promoter_task_id
+
+Query base para coleta:
+SELECT DISTINCT
+    v.IdTarefa,
+    v.NomeTarefa
+FROM ViewOrcamentosLojas v
+INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+WHERE v.IdOrcamento IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento)
+    AND (v.IdTarefa IS NOT NULL OR v.NomeTarefa IS NOT NULL)
+ORDER BY v.IdTarefa, v.NomeTarefa
+
+Query base para dados complementares:
+SELECT 
+    t.Id,
+    t.Nome,
+    t.Ativo,
+    t.DataInclusao,
+    t.DataAlteracao,
+    t.DataInativacao
+FROM Tarefa t
+WHERE t.Id = ? (quando IdTarefa disponível)
+-- OU buscar por Nome quando IdTarefa for NULL
+
+
 -- STEP 2: step2_migrate_contract_scenarios
+
+⚠️ DEPENDÊNCIA CRÍTICA: Este step DEPENDE do step9_migrate_promoter_tasks ter sido executado.
+O campo promoter_task_id (UUID) requer que promoter_tasks já esteja migrado e mapeado.
 
 Tabela Origem: ViewOrcamentosLojas + OrcamentoLojas (LEFT JOIN)
 Tabela Destino: contract_scenarios
@@ -169,6 +272,17 @@ Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdOrcame
 
 Exemplo de uso do filtro:
 WHERE v.IdOrcamento IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento)
+
+LÓGICA DE MAPEAMENTO DE promoter_task_id (UUID):
+1. Antes de inserir contract_scenarios, garantir que promoter_tasks foi migrado (step1.5)
+2. Criar mapeamento promoter_task_map:
+   - Chave: NomeTarefa normalizado (traduzido para inglês, snake_case) OU IdTarefa
+   - Valor: UUID de promoter_tasks.id
+3. Para cada registro de ViewOrcamentosLojas:
+   - Se IdTarefa disponível: buscar UUID por IdTarefa (via JOIN com promoter_tasks ou mapeamento)
+   - Se IdTarefa NULL mas NomeTarefa disponível: buscar UUID por NomeTarefa normalizado
+   - Se nenhum disponível: ERRO (promoter_task_id é NOT NULL)
+4. Preencher contract_scenarios.promoter_task_id com o UUID encontrado
 
 Query base:
 SELECT 
@@ -189,6 +303,21 @@ FROM ViewOrcamentosLojas v
 LEFT JOIN OrcamentoLojas ol ON ol.Id = v.IdOrcamentoLoja
 WHERE v.IdOrcamento IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento)
 ORDER BY v.IdOrcamentoLoja
+
+Query para obter UUID de promoter_task_id (após step9):
+-- Opção 1: Buscar por IdTarefa (quando disponível)
+SELECT pt.id
+FROM pdv.promoter_tasks pt
+WHERE pt.legacy_id = IdTarefa (se houver coluna legacy_id)
+-- OU buscar por name normalizado
+
+-- Opção 2: Buscar por NomeTarefa normalizado (traduzido para inglês, snake_case)
+SELECT pt.id
+FROM pdv.promoter_tasks pt
+WHERE pt.name = NomeTarefa_normalizado
+
+-- Opção 3: Usar mapeamento em memória (promoter_task_map) criado no step9
+-- Mais eficiente: usar dicionário Python com chave (IdTarefa, NomeTarefa) -> UUID
 
 
 -- STEP 3: step3_migrate_contract_scenario_stores
@@ -379,9 +508,17 @@ STEP 1 (step1_migrate_contracts):
 - Gera arquivo: contracts/contracts_filter_main.json
 
 STEP 2 (step2_migrate_contract_scenarios):
-- DEPENDE DE: STEP 1
+- DEPENDE DE: STEP 1 e STEP 9 (promoter_tasks)
 - Filtro: WHERE IdOrcamento IN (do step1)
+- Usa: promoter_task_map do step9 para preencher promoter_task_id (UUID)
 - Gera: contract_scenarios com legacy_id = IdOrcamentoLoja
+
+STEP 9 (step9_migrate_promoter_tasks):
+- DEPENDE DE: STEP 1 (para filtro de IdOrcamento)
+- Filtro: Coletar tarefas únicas da ViewOrcamentosLojas filtrada pelo step1
+- Gera: promoter_tasks com UUID (id) e name normalizado
+- Gera mapeamento: promoter_task_map (NomeTarefa/IdTarefa -> UUID)
+- ⚠️ CRÍTICO: Deve ser executado ANTES do STEP 2 (na ordem de execução: step1 → step9 → step2)
 
 STEP 3 (step3_migrate_contract_scenario_stores):
 - DEPENDE DE: STEP 1 e STEP 2
