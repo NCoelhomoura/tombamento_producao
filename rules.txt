@@ -284,6 +284,22 @@ LÓGICA DE MAPEAMENTO DE promoter_task_id (UUID):
    - Se nenhum disponível: ERRO (promoter_task_id é NOT NULL)
 4. Preencher contract_scenarios.promoter_task_id com o UUID encontrado
 
+LÓGICA DE MAPEAMENTO DE frequency (INT → VARCHAR):
+1. Converter ViewOrcamentosLojas.Frequencia (int) para varchar conforme mapeamento abaixo
+2. Conversão realizada em lote (vetorizada) usando pandas .map() para melhor performance
+3. Mapeamento de valores:
+   - 1 → 'once_per_week'
+   - 2 → 'twice_per_week'
+   - 3 → 'three_times_per_week'
+   - 4 → 'four_times_per_week'
+   - 5 → 'five_times_per_week'
+   - 6 → 'six_times_per_week'
+   - 7 → 'seven_times_per_week'
+   - 15 → 'every_15_days'
+   - 30 → 'once_per_month'
+4. Valores não mapeados: preencher com string vazia ('')
+5. Conversão deve ser feita em lote, não linha a linha, para otimizar performance
+
 Query base:
 SELECT 
     v.IdOrcamentoLoja,

@@ -887,3 +887,157 @@ MIGRACAO: CLIENTE : CONTACTS
     - Cliente.BoletoAutomatico
     - Cliente.Observacoes
     - Cliente.IdBanco
+
+
+====================================================================================================
+TABELA DESTINO: CUSTOMER_BRANDS
+TABELA ORIGEM: ViewOrcamentosLojas
+====================================================================================================
+
+ORIGEM - SQL Server PRD - View: ViewOrcamentosLojas
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   
+----------------------------------------------------------------------------------------------------
+NomeCliente                              nvarchar(255)                  255             NAO        
+IdCliente                                int                            10              NAO        
+IdSegmentoProduto                        int                            10              SIM        
+[NOTA: IdSegmentoProduto pode estar na ViewOrcamentosLojas ou precisar ser buscado via JOIN com Cliente]
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcore.customer_brands
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+name                                     VARCHAR(255)                   255             NAO        NAO  
+customer_segment_id                      UUID                           -               NAO        NAO  
+is_active                                BOOLEAN                        -               NAO        NAO  
+deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+====================================================================================================
+TABELA DESTINO: CUSTOMER_CUSTOMER_BRAND
+TABELA ORIGEM: ViewOrcamentosLojas
+====================================================================================================
+
+ORIGEM - SQL Server PRD - View: ViewOrcamentosLojas
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   
+----------------------------------------------------------------------------------------------------
+IdCliente                                int                            10              NAO        
+[NOTA: customer_brand_id será obtido através do relacionamento com customer_brands baseado em NomeCliente]
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcore.customer_customer_brand
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+customer_id                              UUID                           -               NAO        SIM  
+customer_brand_id                        UUID                           -               NAO        SIM  
+[NOTA: Chave primária composta por customer_id + customer_brand_id]
+
+
+====================================================================================================
+MIGRACAO: VIEWORCAMENTOSLOJAS -> CUSTOMER_BRANDS
+====================================================================================================
+
+ORIGEM: FINANCEIRO.dbo.ViewOrcamentosLojas
+DESTINO: supera_dev_seed.gmcore.customer_brands
+
+----------------------------------------------------------------------------------------------------
+ORIGEM                                             : DESTINO                                           
+----------------------------------------------------------------------------------------------------
+
+CAMPOS DISPONIVEIS NA ORIGEM:
+  FINANCEIRO.dbo.ViewOrcamentosLojas.NomeCliente
+  FINANCEIRO.dbo.ViewOrcamentosLojas.IdCliente
+  FINANCEIRO.dbo.ViewOrcamentosLojas.IdSegmentoProduto (se disponível na view, caso contrário buscar via JOIN com Cliente)
+
+CAMPOS DISPONIVEIS NO DESTINO:
+  supera_dev_seed.gmcore.customer_brands.id
+  supera_dev_seed.gmcore.customer_brands.name
+  supera_dev_seed.gmcore.customer_brands.customer_segment_id
+  supera_dev_seed.gmcore.customer_brands.is_active
+  supera_dev_seed.gmcore.customer_brands.deleted_at
+  supera_dev_seed.gmcore.customer_brands.created_at
+  supera_dev_seed.gmcore.customer_brands.updated_at
+
+MAPEAMENTO SUGERIDO (baseado em nomes similares):
+----------------------------------------------------------------------------------------------------
+[GERADO AUTOMATICAMENTE]                           : supera_dev_seed.gmcore.customer_brands.id
+FINANCEIRO.dbo.ViewOrcamentosLojas.NomeCliente    : supera_dev_seed.gmcore.customer_brands.name     
+[PREENCHIDO PELA LOGICA DE MIGRACAO]               : supera_dev_seed.gmcore.customer_brands.customer_segment_id
+  NOTA: Buscar UUID de core.customer_segments baseado no legacy_id = SegmentoProduto.Id
+        O IdSegmentoProduto deve ser obtido da ViewOrcamentosLojas (se disponível) ou via JOIN com Cliente
+[PREENCHIDO PELA LOGICA DE MIGRACAO]               : supera_dev_seed.gmcore.customer_brands.is_active
+  NOTA: Definir valor padrão (ex: true) ou buscar de alguma fonte de dados
+[PREENCHIDO PELA LOGICA DE MIGRACAO]               : supera_dev_seed.gmcore.customer_brands.created_at
+[PREENCHIDO PELA LOGICA DE MIGRACAO]               : supera_dev_seed.gmcore.customer_brands.updated_at
+
+CAMPOS DE DESTINO NAO MAPEADOS:
+  supera_dev_seed.gmcore.customer_brands.deleted_at : [MAPEAMENTO MANUAL NECESSARIO]
+
+CAMPOS DE ORIGEM NAO MAPEADOS:
+  FINANCEIRO.dbo.ViewOrcamentosLojas.IdCliente      : [NAO MAPEADO - usado apenas para relacionamento]
+  FINANCEIRO.dbo.ViewOrcamentosLojas.IdSegmentoProduto : [NAO MAPEADO - usado apenas para buscar customer_segment_id]
+
+REGRAS ESPECIAIS:
+1. id: UUID gerado automaticamente
+2. name: Usar ViewOrcamentosLojas.NomeCliente
+3. customer_segment_id: Buscar UUID de core.customer_segments onde legacy_id = IdSegmentoProduto
+   - Se IdSegmentoProduto estiver disponível na ViewOrcamentosLojas, usar diretamente
+   - Caso contrário, fazer JOIN com Cliente para obter IdSegmentoProduto
+   - Campo é NOT NULL, então é obrigatório encontrar o segmento
+4. is_active: Campo obrigatório (NOT NULL). Definir valor padrão (ex: true) ou buscar de alguma fonte de dados
+5. created_at e updated_at: Preencher com timestamp atual da migração
+
+
+====================================================================================================
+MIGRACAO: VIEWORCAMENTOSLOJAS -> CUSTOMER_CUSTOMER_BRAND
+====================================================================================================
+
+ORIGEM: FINANCEIRO.dbo.ViewOrcamentosLojas
+DESTINO: supera_dev_seed.gmcore.customer_customer_brand
+
+----------------------------------------------------------------------------------------------------
+ORIGEM                                             : DESTINO                                           
+----------------------------------------------------------------------------------------------------
+
+CAMPOS DISPONIVEIS NA ORIGEM:
+  FINANCEIRO.dbo.ViewOrcamentosLojas.IdCliente
+  FINANCEIRO.dbo.ViewOrcamentosLojas.NomeCliente
+
+CAMPOS DISPONIVEIS NO DESTINO:
+  supera_dev_seed.gmcore.customer_customer_brand.customer_id
+  supera_dev_seed.gmcore.customer_customer_brand.customer_brand_id
+
+MAPEAMENTO SUGERIDO (baseado em nomes similares):
+----------------------------------------------------------------------------------------------------
+[PREENCHIDO PELA LOGICA DE MIGRACAO]               : supera_dev_seed.gmcore.customer_customer_brand.customer_id
+  NOTA: Buscar UUID de core.customers baseado no legacy_id = ViewOrcamentosLojas.IdCliente
+[PREENCHIDO PELA LOGICA DE MIGRACAO]               : supera_dev_seed.gmcore.customer_customer_brand.customer_brand_id
+  NOTA: Buscar UUID de core.customer_brands baseado no name = ViewOrcamentosLojas.NomeCliente
+
+CAMPOS DE ORIGEM NAO MAPEADOS:
+  FINANCEIRO.dbo.ViewOrcamentosLojas.IdCliente      : [NAO MAPEADO DIRETAMENTE - usado para buscar customer_id]
+  FINANCEIRO.dbo.ViewOrcamentosLojas.NomeCliente    : [NAO MAPEADO DIRETAMENTE - usado para buscar customer_brand_id]
+
+REGRAS ESPECIAIS:
+1. DEPENDÊNCIAS OBRIGATÓRIAS:
+   - core.customers deve estar preenchida (step2 de customers deve ter sido executado)
+   - core.customer_brands deve estar preenchida (step anterior deve ter sido executado)
+
+2. customer_id: 
+   - Buscar UUID de core.customers onde legacy_id = ViewOrcamentosLojas.IdCliente
+   - Se não encontrar, registrar warning e pular registro
+
+3. customer_brand_id:
+   - Buscar UUID de core.customer_brands onde name = ViewOrcamentosLojas.NomeCliente
+   - Se não encontrar, registrar warning e pular registro
+
+4. RELACIONAMENTO:
+   - Criar registro de relacionamento entre customer e customer_brand baseado nos legacy_id/name respectivos
+   - Garantir que não haja duplicatas (mesmo customer_id + customer_brand_id)
+   - A chave primária é composta por customer_id + customer_brand_id (ambos fazem parte da PK)

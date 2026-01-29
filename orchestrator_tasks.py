@@ -127,8 +127,37 @@ def run_customers_task(step=None, limit_rows=0, id_orcamento_filter=None,
             cursor_pg.close()
             conn_pg.close()
             migration.step4_migrate_contacts()
+        elif step == '5':
+            # Carregar customer_segments primeiro
+            from utils.database_connection import DatabaseConnection
+            from customers.customers_to_core import get_schema_atual
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.customer_segments")
+            for row in cursor_pg.fetchall():
+                migration.segment_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step5_migrate_customer_brands()
+        elif step == '6':
+            # Carregar customers e customer_brands primeiro
+            from utils.database_connection import DatabaseConnection
+            from customers.customers_to_core import get_schema_atual
+            schema = get_schema_atual()
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.customers")
+            for row in cursor_pg.fetchall():
+                migration.customer_id_map[row[1]] = row[0]
+            cursor_pg.execute(f"SELECT id, name FROM {schema}.customer_brands")
+            for row in cursor_pg.fetchall():
+                migration.customer_brands_id_map[row[1]] = row[0]
+            cursor_pg.close()
+            conn_pg.close()
+            migration.step6_migrate_customer_customer_brand()
         else:
-            print(f"ERRO: Etapa {step} invalida. Use 1, 2, 3 ou 4")
+            print(f"ERRO: Etapa {step} invalida. Use 1, 2, 3, 4, 5 ou 6")
             return
     else:
         # Executar todas as etapas
@@ -442,7 +471,7 @@ def run_users_task(step=None, limit_rows=0):
     Executa a task de migracao de users
     
     Args:
-        step: None para todas as etapas, ou '1' para etapa especifica
+        step: None para todas as etapas, '1' para step1_migrate_users, ou '2' para step2_migrate_user_roles
         limit_rows: 0 para todos os dados, > 0 para limitar quantidade
     """
     print("\n" + "="*80)
@@ -487,13 +516,16 @@ def run_users_task(step=None, limit_rows=0):
         # Executar apenas etapa específica
         if step == '1':
             migration.step1_migrate_users(destino=destino_atual)
+        elif step == '2':
+            migration.step2_migrate_user_roles(destino=destino_atual)
         else:
             print(f"ERRO: Etapa '{step}' invalida para users")
-            print("Etapas disponiveis: 1")
+            print("Etapas disponiveis: 1, 2")
             return
     else:
         # Executar todas as etapas em sequência
         migration.step1_migrate_users(destino=destino_atual)
+        migration.step2_migrate_user_roles(destino=destino_atual)
 
 
 def main():
@@ -703,7 +735,7 @@ def main():
         print("[INFO] Executando dependências automaticamente com os mesmos filtros...")
         print("="*80)
         
-        # 1. Executar Customers steps 1 e 2 (se necessário)
+        # 1. Executar Customers steps 1, 2, 5 e 6 (se necessário)
         print("\n[1/2] Executando Customers (dependência de Contracts)...")
         try:
             # Step 1 de customers (customer_segments) - necessário antes do step 2
@@ -713,8 +745,27 @@ def main():
             
             # Step 2 de customers (customers)
             print("  → Executando Customers step 2 (customers)...")
-            run_customers_task(step='2', limit_rows=limit, id_orcamento_filter=id_orcamento_filter, clear_data=clear_data)
+            run_customers_task(step='2', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
+                              data_aviso_previo_min=data_aviso_previo_min,
+                              data_inicio_operacao_max=data_inicio_operacao_max,
+                              clear_data=clear_data)
             print("  [OK] Customers step 2 concluído")
+            
+            # Step 5 de customers (customer_brands) - necessário porque step2 com CASCADE limpa essa tabela
+            print("  → Executando Customers step 5 (customer_brands)...")
+            run_customers_task(step='5', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
+                              data_aviso_previo_min=data_aviso_previo_min,
+                              data_inicio_operacao_max=data_inicio_operacao_max,
+                              clear_data=clear_data)
+            print("  [OK] Customers step 5 concluído")
+            
+            # Step 6 de customers (customer_customer_brand) - necessário porque step2 com CASCADE limpa essa tabela
+            print("  → Executando Customers step 6 (customer_customer_brand)...")
+            run_customers_task(step='6', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
+                              data_aviso_previo_min=data_aviso_previo_min,
+                              data_inicio_operacao_max=data_inicio_operacao_max,
+                              clear_data=clear_data)
+            print("  [OK] Customers step 6 concluído")
             
             print("[OK] Customers concluído")
         except Exception as e:
@@ -804,7 +855,8 @@ def main():
         print("  python orchestrator_tasks.py users              # Executa apenas users")
         print("  python orchestrator_tasks.py customers 1          # Executa etapa 1 de customers")
         print("  python orchestrator_tasks.py contracts 1          # Executa etapa 1 de contracts")
-        print("  python orchestrator_tasks.py users 1              # Executa etapa 1 de users")
+        print("  python orchestrator_tasks.py users 1              # Executa etapa 1 de users (migrate_users)")
+        print("  python orchestrator_tasks.py users 2              # Executa etapa 2 de users (migrate_user_roles)")
         print("  python orchestrator_tasks.py --limit 100 --destino PRD  # Todas as tasks com limite e destino")
         return
     

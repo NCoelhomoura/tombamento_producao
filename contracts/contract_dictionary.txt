@@ -729,10 +729,10 @@ MIGRACAO: ORCAMENTO (ViewOrcamentosLojas + Orcamento) : CONTRACTS
   [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdCliente -> customers.legacy_id -> customers.id] : supera_dev_seed.gmcommercial.contracts.customer_id
   FINANCEIRO.dbo.ViewOrcamentosLojas.DiaFaturamento : supera_dev_seed.gmcommercial.contracts.billing_day
   FINANCEIRO.dbo.ViewOrcamentosLojas.DiaVencimento : supera_dev_seed.gmcommercial.contracts.due_day
-  [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear ModoFaturamento da tabela Orcamento para billing_type] : supera_dev_seed.gmcommercial.contracts.billing_type
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - billing_type: sempre current] : supera_dev_seed.gmcommercial.contracts.billing_type
   [PREENCHIDO PELA LOGICA DE MIGRACAO - operation_type: sempre shared] : supera_dev_seed.gmcommercial.contracts.operation_type
-  [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear TipoCalculoDecimoTerceiro da tabela Orcamento para thirteenth_salary_type] : supera_dev_seed.gmcommercial.contracts.thirteenth_salary_type
-  [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear TradeMarketing da tabela Orcamento para trade_type] : supera_dev_seed.gmcommercial.contracts.trade_type
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - thirteenth_salary_type: sempre monthly] : supera_dev_seed.gmcommercial.contracts.thirteenth_salary_type
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - trade_type: sempre shared] : supera_dev_seed.gmcommercial.contracts.trade_type
   FINANCEIRO.dbo.ViewOrcamentosLojas.DataInicioOperacao : supera_dev_seed.gmcommercial.contracts.start_date
   [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear StatusPedido da view para status (converter int para string)] : supera_dev_seed.gmcommercial.contracts.status
   FINANCEIRO.dbo.ViewOrcamentosLojas.DataInclusaoOrcamento : supera_dev_seed.gmcommercial.contracts.created_at
@@ -883,7 +883,7 @@ MIGRACAO: ORCAMENTOLOJAS (ViewOrcamentosLojas + OrcamentoLojas) : CONTRACT_SCENA
 ----------------------------------------------------------------------------------------------------
   [GERADO AUTOMATICAMENTE] : gmcoredb.commercial.contract_scenarios.id
   [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdOrcamento -> contracts.legacy_id -> contracts.id] : gmcoredb.commercial.contract_scenarios.contract_id
-  FINANCEIRO.dbo.ViewOrcamentosLojas.Frequencia : gmcoredb.commercial.contract_scenarios.frequency
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - converter ViewOrcamentosLojas.Frequencia (int) para varchar conforme mapeamento: 1=once_per_week, 2=twice_per_week, 3=three_times_per_week, 4=four_times_per_week, 5=five_times_per_week, 6=six_times_per_week, 7=seven_times_per_week, 15=every_15_days, 30=once_per_month] : gmcoredb.commercial.contract_scenarios.frequency
   [PREENCHIDO PELA LOGICA DE MIGRACAO - converter ViewOrcamentosLojas.Horas (nvarchar) para double precision] : gmcoredb.commercial.contract_scenarios.hours
   FINANCEIRO.dbo.ViewOrcamentosLojas.ValorHora : gmcoredb.commercial.contract_scenarios.hour_value
   FINANCEIRO.dbo.ViewOrcamentosLojas.DataInicioOperacao : gmcoredb.commercial.contract_scenarios.start_date
@@ -1236,4 +1236,109 @@ MIGRACAO: ORCAMENTO : CONTRACT_ADDITIONAL_CHARGES
   CAMPOS ORIGEM NAO MAPEADOS:
     - Orcamento.CobrarEPI (usado apenas para determinar se deve criar registro de EPI)
     - Orcamento.MotivoCobrancaOutros (usado apenas como referência, não mapeado diretamente)
+
+
+====================================================================================================
+TABELA DESTINO: PROMOTER_TASKS
+TABELA ORIGEM: ViewOrcamentosLojas
+====================================================================================================
+
+ORIGEM - SQL Server PRD - View: ViewOrcamentosLojas
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   
+----------------------------------------------------------------------------------------------------
+NomeTarefa                               nvarchar(MAX)                  -1              SIM        
+NomeCliente                              nvarchar(255)                  255             NAO        
+
+
+DESTINO - PostgreSQL PRD - Tabela: pdv.promoter_tasks
+DESTINO - PostgreSQL HML - Tabela: gmpdv.promoter_tasks
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM  
+name                                     TEXT                           -               NAO        NAO  
+task_type                                VARCHAR(50)                    50              NAO        NAO  
+is_active                                BOOLEAN                        -               NAO        NAO  
+deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
+
+
+====================================================================================================
+MIGRACAO: VIEWORCAMENTOSLOJAS -> PROMOTER_TASKS
+====================================================================================================
+
+ORIGEM: FINANCEIRO.dbo.ViewOrcamentosLojas
+DESTINO: pdv.promoter_tasks (PRD) / gmpdv.promoter_tasks (HML)
+
+----------------------------------------------------------------------------------------------------
+ORIGEM                                             : DESTINO                                           
+----------------------------------------------------------------------------------------------------
+
+CAMPOS DISPONIVEIS NA ORIGEM:
+  FINANCEIRO.dbo.ViewOrcamentosLojas.NomeTarefa
+  FINANCEIRO.dbo.ViewOrcamentosLojas.NomeCliente
+
+CAMPOS DISPONIVEIS NO DESTINO:
+  pdv.promoter_tasks.id
+  pdv.promoter_tasks.name
+  pdv.promoter_tasks.task_type
+  pdv.promoter_tasks.is_active
+  pdv.promoter_tasks.deleted_at
+  pdv.promoter_tasks.created_at
+  pdv.promoter_tasks.updated_at
+
+MAPEAMENTO SUGERIDO (baseado em nomes similares):
+----------------------------------------------------------------------------------------------------
+[GERADO AUTOMATICAMENTE]                           : pdv.promoter_tasks.id
+[PREENCHIDO PELA LOGICA DE MIGRACAO]               : pdv.promoter_tasks.name
+  NOTA: Concatenar ViewOrcamentosLojas.NomeTarefa + " " + ViewOrcamentosLojas.NomeCliente
+        Se NomeTarefa for NULL, usar "INDEFINIDA" + " " + NomeCliente
+[PREENCHIDO PELA LOGICA DE MIGRACAO]               : pdv.promoter_tasks.task_type
+  NOTA: Mapear baseado em ViewOrcamentosLojas.NomeTarefa usando o dicionário:
+        'CONTAGEM PDV': 'Undefined'
+        'DESRUPTURA': 'disruption'
+        'ESTOQUE': 'Undefined'
+        'GALERIA DE FOTOS': 'Undefined'
+        'MANUTENÇÃO DE PONTO EXTRA': 'extra_point_maintenance'
+        'MONTAGEM PONTO EXTRA': 'extra_point_assembly'
+        'PESQUISA': 'Undefined'
+        'PESQUISA CONCORRENTE': 'Undefined'
+        'PESQUISA DE PREÇO': 'Undefined'
+        'PONTO EXTRA': 'Undefined'
+        'PRODUTO NA LOJA': 'Undefined'
+        'REABASTECIMENTO & RUPTURA': 'supply_and_disruption'
+        'REGISTRO DE FOTOS': 'Undefined'
+        'SHARE GONDOLA': 'Undefined'
+        'VALIDADE': 'Undefined'
+        Se NomeTarefa não estiver no dicionário ou for NULL, usar 'Undefined'
+[PREENCHIDO PELA LOGICA DE MIGRACAO]               : pdv.promoter_tasks.is_active
+  NOTA: Sempre true para todos os registros
+[PREENCHIDO PELA LOGICA DE MIGRACAO]               : pdv.promoter_tasks.created_at
+[PREENCHIDO PELA LOGICA DE MIGRACAO]               : pdv.promoter_tasks.updated_at
+
+CAMPOS DE DESTINO NAO MAPEADOS:
+  pdv.promoter_tasks.deleted_at : [MAPEAMENTO MANUAL NECESSARIO]
+
+CAMPOS DE ORIGEM NAO MAPEADOS:
+  FINANCEIRO.dbo.ViewOrcamentosLojas.IdTarefa      : [NAO MAPEADO - usado apenas para referência]
+  FINANCEIRO.dbo.ViewOrcamentosLojas.IdCliente     : [NAO MAPEADO - usado apenas para construir name]
+
+REGRAS ESPECIAIS:
+1. id: UUID gerado automaticamente
+2. name: 
+   - Se NomeTarefa IS NOT NULL: NomeTarefa + " " + NomeCliente
+   - Se NomeTarefa IS NULL: "INDEFINIDA" + " " + NomeCliente
+   - Garantir que não haja duplicatas (mesmo name)
+3. task_type: 
+   - Mapear baseado em NomeTarefa usando o dicionário fornecido
+   - Comparação case-insensitive
+   - Se NomeTarefa não estiver no dicionário ou for NULL, usar 'Undefined'
+4. is_active: Sempre true para todos os registros
+5. created_at e updated_at: Preencher com timestamp atual da migração
+6. UNICIDADE: Garantir que não haja registros duplicados com o mesmo name
+7. SCHEMA POR AMBIENTE:
+   - PRD: pdv.promoter_tasks
+   - HML: gmpdv.promoter_tasks
 

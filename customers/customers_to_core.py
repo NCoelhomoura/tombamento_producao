@@ -88,10 +88,13 @@ class CustomersMigration:
             'customer_segments': 0,
             'addresses': 0,
             'contacts': 0,
+            'customer_brands': 0,
+            'customer_customer_brand': 0,
             'errors': []
         }
         self.customer_id_map = {}  # Map: legado_id -> uuid
         self.segment_id_map = {}   # Map: legado_id -> uuid
+        self.customer_brands_id_map = {}  # Map: name -> uuid
         self.limit_rows = limit_rows  # 0 = todos, > 0 = limitar quantidade
         self.id_orcamento_filter = id_orcamento_filter  # Lista de IdOrcamento para filtrar
         self.data_aviso_previo_min = data_aviso_previo_min  # Data mínima para DataAvisoPrevio
@@ -2132,6 +2135,502 @@ class CustomersMigration:
                     pass
             raise
     
+    def step5_migrate_customer_brands(self):
+        """ETAPA 5: Migrar customer_brands"""
+        destino = DatabaseConnection.get_destino()
+        schema = get_schema_atual()
+        print("\n" + "="*80)
+        print("ETAPA 5: MIGRANDO CUSTOMER_BRANDS")
+        print("="*80)
+        logger.info("="*80)
+        logger.info("ETAPA 5: Migrando customer_brands")
+        logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
+        logger.info("="*80)
+        
+        try:
+            # Verificar dependência: customer_segments deve estar preenchida
+            if not self.segment_id_map:
+                print("[ETAPA 5] Carregando mapeamento de customer_segments...")
+                logger.info("[ETAPA 5] Carregando mapeamento de customer_segments...")
+                conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+                cursor_pg = conn_pg.cursor()
+                cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.customer_segments")
+                for row in cursor_pg.fetchall():
+                    self.segment_id_map[row[1]] = row[0]
+                cursor_pg.close()
+                conn_pg.close()
+                print(f"[ETAPA 5] {len(self.segment_id_map)} customer_segments carregados")
+                logger.info(f"[ETAPA 5] {len(self.segment_id_map)} customer_segments carregados")
+            
+            if not self.segment_id_map:
+                error_msg = "ERRO: customer_segments não está preenchida. Execute step1 primeiro."
+                logger.error(error_msg)
+                print(f"ERRO - {error_msg}")
+                raise Exception(error_msg)
+            
+            # Limpar tabela (sempre TRUNCATE pois não há legacy_id para filtrar)
+            print("\n[ETAPA 5] Limpando tabela customer_brands...")
+            logger.info("[ETAPA 5] Limpando tabela customer_brands")
+            self.truncate_table('customer_brands')
+            
+            # Buscar dados da ViewOrcamentosLojas com JOIN com Cliente para obter IdSegmentoProduto
+            print("[ETAPA 5] Buscando dados da ViewOrcamentosLojas...")
+            logger.info("[ETAPA 5] Buscando dados da ViewOrcamentosLojas com JOIN Cliente para IdSegmentoProduto")
+            
+            # Construir query com filtros aplicados (mesma lógica do step2)
+            where_conditions = []
+            query_params = []
+            
+            # Carregar filtros do contracts ou buscar da ViewOrcamentosLojas
+            filter_data = None
+            id_cliente_filter_list = []
+            
+            if self.limit_rows == 0:
+                filter_data = self.load_filter_json()
+                if filter_data and 'aggregated_ids' in filter_data:
+                    id_cliente_filter_list = filter_data['aggregated_ids'].get('IdCliente', [])
+            
+            # Se há filtros de IdCliente, aplicar na query
+            if id_cliente_filter_list:
+                placeholders = ','.join(['?' for _ in id_cliente_filter_list])
+                where_conditions.append(f"v.IdCliente IN ({placeholders})")
+                query_params.extend(id_cliente_filter_list)
+            
+            # Filtros de data (mesma lógica do step2)
+            data_aviso_previo_to_use = self.data_aviso_previo_min
+            data_inicio_operacao_to_use = self.data_inicio_operacao_max
+            
+            if data_aviso_previo_to_use is None and filter_data and 'filters_applied' in filter_data:
+                json_filters = filter_data['filters_applied']
+                data_aviso_previo_to_use = json_filters.get('data_aviso_previo_min')
+            
+            if data_inicio_operacao_to_use is None and filter_data and 'filters_applied' in filter_data:
+                json_filters = filter_data['filters_applied']
+                data_inicio_operacao_to_use = json_filters.get('data_inicio_operacao_max')
+            
+            if data_aviso_previo_to_use is not None:
+                if isinstance(data_aviso_previo_to_use, str):
+                    data_aviso_previo_str = data_aviso_previo_to_use
+                else:
+                    data_aviso_previo_str = data_aviso_previo_to_use.strftime('%Y-%m-%d')
+                where_conditions.append("(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)")
+                query_params.append(data_aviso_previo_str)
+            
+            if data_inicio_operacao_to_use is not None:
+                if isinstance(data_inicio_operacao_to_use, str):
+                    data_inicio_str = data_inicio_operacao_to_use
+                else:
+                    data_inicio_str = data_inicio_operacao_to_use.strftime('%Y-%m-%d')
+                where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
+                query_params.append(data_inicio_str)
+            
+            # Filtro IdOrcamento
+            if self.id_orcamento_filter:
+                placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
+                where_conditions.append(f"v.IdOrcamento IN ({placeholders})")
+                query_params.extend(self.id_orcamento_filter)
+            
+            where_clause = ""
+            if where_conditions:
+                where_clause = "WHERE " + " AND ".join(where_conditions)
+            
+            # Query para buscar NomeCliente único
+            # NOTA: Como não há IdSegmentoProduto em Cliente ou Orcamento diretamente,
+            # vamos buscar apenas NomeCliente e depois tentar associar com um segmento padrão
+            # ou buscar através de outra relação se existir
+            sql_query = f"""
+            SELECT DISTINCT
+                v.NomeCliente
+            FROM ViewOrcamentosLojas v
+            INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+            {where_clause}
+            AND v.NomeCliente IS NOT NULL
+            AND LTRIM(RTRIM(v.NomeCliente)) != ''
+            """
+            
+            if self.limit_rows > 0:
+                sql_query = sql_query.replace("SELECT DISTINCT", f"SELECT DISTINCT TOP {self.limit_rows}")
+            
+            conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql = conn_sql.cursor()
+            
+            if query_params:
+                cursor_sql.execute(sql_query, query_params)
+            else:
+                cursor_sql.execute(sql_query)
+            
+            all_rows = cursor_sql.fetchall()
+            cursor_sql.close()
+            conn_sql.close()
+            
+            print(f"[ETAPA 5] {len(all_rows)} registros únicos carregados. Processando...")
+            logger.info(f"[ETAPA 5] {len(all_rows)} registros únicos carregados")
+            
+            # Obter primeiro segmento disponível como padrão (já que não há IdSegmentoProduto em Cliente)
+            default_segment_id = None
+            if self.segment_id_map:
+                # Pegar o primeiro segmento disponível
+                default_segment_id = list(self.segment_id_map.values())[0]
+                print(f"[ETAPA 5] Usando segmento padrão (primeiro disponível): {default_segment_id}")
+                logger.info(f"[ETAPA 5] Usando segmento padrão: {default_segment_id}")
+            else:
+                error_msg = "ERRO: Nenhum customer_segment disponível. Execute step1 primeiro."
+                logger.error(error_msg)
+                print(f"ERRO - {error_msg}")
+                raise Exception(error_msg)
+            
+            # Processar dados e preparar para inserção
+            now = datetime.now()
+            batch_values = []
+            
+            for row in all_rows:
+                nome_cliente = str(row[0]).strip() if row[0] else None
+                
+                if not nome_cliente or len(nome_cliente) == 0:
+                    continue
+                
+                # Usar segmento padrão (já que não há IdSegmentoProduto disponível)
+                customer_segment_id = default_segment_id
+                
+                # Truncar nome se necessário
+                if len(nome_cliente) > 255:
+                    nome_cliente = nome_cliente[:255]
+                
+                batch_values.append((
+                    nome_cliente,  # name
+                    str(customer_segment_id),  # customer_segment_id (usando padrão)
+                    True,  # is_active (padrão)
+                    now,  # created_at
+                    now   # updated_at
+                ))
+            
+            # Remover duplicatas baseado em nome_cliente
+            unique_brands = {}
+            for values in batch_values:
+                nome = values[0]
+                if nome not in unique_brands:
+                    unique_brands[nome] = values
+            
+            batch_values = list(unique_brands.values())
+            print(f"[ETAPA 5] {len(batch_values)} customer_brands únicos para inserir")
+            logger.info(f"[ETAPA 5] {len(batch_values)} customer_brands únicos para inserir")
+            
+            # Inserir em batch
+            if batch_values:
+                insert_query = f"""
+                INSERT INTO {schema}.customer_brands (
+                    id, name, customer_segment_id, is_active, created_at, updated_at
+                ) VALUES %s
+                """
+                insert_template = "(gen_random_uuid(), %s, %s::uuid, %s, %s, %s)"
+                
+                conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+                cursor_pg = conn_pg.cursor()
+                
+                chunk_num = 0
+                for i in range(0, len(batch_values), CHUNK_SIZE):
+                    chunk = batch_values[i:i + CHUNK_SIZE]
+                    chunk_num += 1
+                    execute_values(
+                        cursor_pg,
+                        insert_query,
+                        chunk,
+                        template=insert_template,
+                        page_size=CHUNK_SIZE,
+                        fetch=False
+                    )
+                    conn_pg.commit()
+                    self.stats['customer_brands'] += len(chunk)
+                    print(f"[ETAPA 5] Chunk {chunk_num} inserido: {len(chunk)} customer_brands")
+                
+                # Carregar mapeamento de customer_brands (name -> uuid) para uso no step6
+                print("[ETAPA 5] Carregando mapeamento de customer_brands...")
+                cursor_pg.execute(f"SELECT id, name FROM {schema}.customer_brands")
+                for row in cursor_pg.fetchall():
+                    self.customer_brands_id_map[row[1]] = row[0]
+                print(f"[ETAPA 5] {len(self.customer_brands_id_map)} customer_brands mapeados")
+                logger.info(f"[ETAPA 5] {len(self.customer_brands_id_map)} customer_brands mapeados")
+                
+                cursor_pg.close()
+                conn_pg.close()
+            
+            print(f"\n[ETAPA 5] CONCLUIDA! Total de customer_brands migrados: {self.stats['customer_brands']}")
+            logger.info(f"ETAPA 5 concluida: {self.stats['customer_brands']} registros")
+            
+        except Exception as e:
+            logger.error(f"Erro na ETAPA 5: {e}")
+            if 'conn_pg' in locals():
+                try:
+                    conn_pg.rollback()
+                    if 'cursor_pg' in locals():
+                        cursor_pg.close()
+                    conn_pg.close()
+                except:
+                    pass
+            raise
+    
+    def step6_migrate_customer_customer_brand(self):
+        """ETAPA 6: Migrar customer_customer_brand (relacionamento)"""
+        destino = DatabaseConnection.get_destino()
+        schema = get_schema_atual()
+        print("\n" + "="*80)
+        print("ETAPA 6: MIGRANDO CUSTOMER_CUSTOMER_BRAND")
+        print("="*80)
+        logger.info("="*80)
+        logger.info("ETAPA 6: Migrando customer_customer_brand")
+        logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
+        logger.info("="*80)
+        
+        try:
+            # Verificar dependências: customers e customer_brands devem estar preenchidas
+            if not self.customer_id_map:
+                print("[ETAPA 6] Carregando mapeamento de customers...")
+                logger.info("[ETAPA 6] Carregando mapeamento de customers...")
+                conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+                cursor_pg = conn_pg.cursor()
+                cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.customers")
+                for row in cursor_pg.fetchall():
+                    self.customer_id_map[row[1]] = row[0]
+                cursor_pg.close()
+                conn_pg.close()
+                print(f"[ETAPA 6] {len(self.customer_id_map)} customers carregados")
+                logger.info(f"[ETAPA 6] {len(self.customer_id_map)} customers carregados")
+            
+            if not self.customer_brands_id_map:
+                print("[ETAPA 6] Carregando mapeamento de customer_brands...")
+                logger.info("[ETAPA 6] Carregando mapeamento de customer_brands...")
+                conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+                cursor_pg = conn_pg.cursor()
+                cursor_pg.execute(f"SELECT id, name FROM {schema}.customer_brands")
+                for row in cursor_pg.fetchall():
+                    self.customer_brands_id_map[row[1]] = row[0]
+                cursor_pg.close()
+                conn_pg.close()
+                print(f"[ETAPA 6] {len(self.customer_brands_id_map)} customer_brands carregados")
+                logger.info(f"[ETAPA 6] {len(self.customer_brands_id_map)} customer_brands carregados")
+            
+            if not self.customer_id_map:
+                error_msg = "ERRO: customers não está preenchida. Execute step2 primeiro."
+                logger.error(error_msg)
+                print(f"ERRO - {error_msg}")
+                raise Exception(error_msg)
+            
+            if not self.customer_brands_id_map:
+                error_msg = "ERRO: customer_brands não está preenchida. Execute step5 primeiro."
+                logger.error(error_msg)
+                print(f"ERRO - {error_msg}")
+                raise Exception(error_msg)
+            
+            # Limpar tabela (sempre TRUNCATE pois não há legacy_id para filtrar)
+            print("\n[ETAPA 6] Limpando tabela customer_customer_brand...")
+            logger.info("[ETAPA 6] Limpando tabela customer_customer_brand")
+            self.truncate_table('customer_customer_brand')
+            
+            # Buscar dados da ViewOrcamentosLojas
+            print("[ETAPA 6] Buscando dados da ViewOrcamentosLojas...")
+            logger.info("[ETAPA 6] Buscando dados da ViewOrcamentosLojas")
+            
+            # Construir query com filtros aplicados (mesma lógica do step2)
+            where_conditions = []
+            query_params = []
+            
+            # Carregar filtros do contracts ou buscar da ViewOrcamentosLojas
+            filter_data = None
+            id_cliente_filter_list = []
+            
+            if self.limit_rows == 0:
+                filter_data = self.load_filter_json()
+                if filter_data and 'aggregated_ids' in filter_data:
+                    id_cliente_filter_list = filter_data['aggregated_ids'].get('IdCliente', [])
+            
+            # Se há filtros de IdCliente, aplicar na query
+            if id_cliente_filter_list:
+                placeholders = ','.join(['?' for _ in id_cliente_filter_list])
+                where_conditions.append(f"v.IdCliente IN ({placeholders})")
+                query_params.extend(id_cliente_filter_list)
+            
+            # Filtros de data (mesma lógica do step2)
+            data_aviso_previo_to_use = self.data_aviso_previo_min
+            data_inicio_operacao_to_use = self.data_inicio_operacao_max
+            
+            if data_aviso_previo_to_use is None and filter_data and 'filters_applied' in filter_data:
+                json_filters = filter_data['filters_applied']
+                data_aviso_previo_to_use = json_filters.get('data_aviso_previo_min')
+            
+            if data_inicio_operacao_to_use is None and filter_data and 'filters_applied' in filter_data:
+                json_filters = filter_data['filters_applied']
+                data_inicio_operacao_to_use = json_filters.get('data_inicio_operacao_max')
+            
+            if data_aviso_previo_to_use is not None:
+                if isinstance(data_aviso_previo_to_use, str):
+                    data_aviso_previo_str = data_aviso_previo_to_use
+                else:
+                    data_aviso_previo_str = data_aviso_previo_to_use.strftime('%Y-%m-%d')
+                where_conditions.append("(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)")
+                query_params.append(data_aviso_previo_str)
+            
+            if data_inicio_operacao_to_use is not None:
+                if isinstance(data_inicio_operacao_to_use, str):
+                    data_inicio_str = data_inicio_operacao_to_use
+                else:
+                    data_inicio_str = data_inicio_operacao_to_use.strftime('%Y-%m-%d')
+                where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
+                query_params.append(data_inicio_str)
+            
+            # Filtro IdOrcamento
+            if self.id_orcamento_filter:
+                placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
+                where_conditions.append(f"v.IdOrcamento IN ({placeholders})")
+                query_params.extend(self.id_orcamento_filter)
+            
+            where_clause = ""
+            if where_conditions:
+                where_clause = "WHERE " + " AND ".join(where_conditions)
+            
+            # Query para buscar IdCliente e NomeCliente
+            sql_query = f"""
+            SELECT DISTINCT
+                v.IdCliente,
+                v.NomeCliente
+            FROM ViewOrcamentosLojas v
+            INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+            {where_clause}
+            AND v.IdCliente IS NOT NULL
+            AND v.NomeCliente IS NOT NULL
+            AND LTRIM(RTRIM(v.NomeCliente)) != ''
+            """
+            
+            if self.limit_rows > 0:
+                sql_query = sql_query.replace("SELECT DISTINCT", f"SELECT DISTINCT TOP {self.limit_rows}")
+            
+            conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+            cursor_sql = conn_sql.cursor()
+            
+            if query_params:
+                cursor_sql.execute(sql_query, query_params)
+            else:
+                cursor_sql.execute(sql_query)
+            
+            all_rows = cursor_sql.fetchall()
+            cursor_sql.close()
+            conn_sql.close()
+            
+            print(f"[ETAPA 6] {len(all_rows)} registros carregados. Processando relacionamentos...")
+            logger.info(f"[ETAPA 6] {len(all_rows)} registros carregados")
+            
+            # Processar dados e preparar para inserção
+            batch_values = []
+            skipped_no_customer = 0
+            skipped_no_brand = 0
+            seen_relationships = set()  # Para evitar duplicatas
+            
+            for row in all_rows:
+                id_cliente = row[0]
+                nome_cliente = str(row[1]).strip() if row[1] else None
+                
+                if not nome_cliente or len(nome_cliente) == 0:
+                    continue
+                
+                # Buscar UUID de customers
+                customer_id = self.customer_id_map.get(id_cliente)
+                if not customer_id:
+                    skipped_no_customer += 1
+                    logger.warning(f"[ETAPA 6] Customer não encontrado: IdCliente={id_cliente}. Pulando registro.")
+                    continue
+                
+                # Buscar UUID de customer_brands
+                customer_brand_id = self.customer_brands_id_map.get(nome_cliente)
+                if not customer_brand_id:
+                    skipped_no_brand += 1
+                    logger.warning(f"[ETAPA 6] Customer brand não encontrado: NomeCliente='{nome_cliente}'. Pulando registro.")
+                    continue
+                
+                # Verificar duplicatas (chave primária composta)
+                relationship_key = (str(customer_id), str(customer_brand_id))
+                if relationship_key in seen_relationships:
+                    continue
+                seen_relationships.add(relationship_key)
+                
+                batch_values.append((
+                    str(customer_id),  # customer_id
+                    str(customer_brand_id)  # customer_brand_id
+                ))
+            
+            if skipped_no_customer > 0:
+                print(f"[ETAPA 6] AVISO: {skipped_no_customer} registros pulados por falta de customer")
+                logger.warning(f"[ETAPA 6] {skipped_no_customer} registros pulados por falta de customer")
+            
+            if skipped_no_brand > 0:
+                print(f"[ETAPA 6] AVISO: {skipped_no_brand} registros pulados por falta de customer_brand")
+                logger.warning(f"[ETAPA 6] {skipped_no_brand} registros pulados por falta de customer_brand")
+            
+            print(f"[ETAPA 6] {len(batch_values)} relacionamentos únicos para inserir")
+            logger.info(f"[ETAPA 6] {len(batch_values)} relacionamentos únicos para inserir")
+            
+            # Inserir em batch
+            if batch_values:
+                insert_query = f"""
+                INSERT INTO {schema}.customer_customer_brand (
+                    customer_id, customer_brand_id
+                ) VALUES %s
+                """
+                insert_template = "(%s::uuid, %s::uuid)"
+                
+                conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+                cursor_pg = conn_pg.cursor()
+                
+                chunk_num = 0
+                for i in range(0, len(batch_values), CHUNK_SIZE):
+                    chunk = batch_values[i:i + CHUNK_SIZE]
+                    chunk_num += 1
+                    try:
+                        execute_values(
+                            cursor_pg,
+                            insert_query,
+                            chunk,
+                            template=insert_template,
+                            page_size=CHUNK_SIZE,
+                            fetch=False
+                        )
+                        conn_pg.commit()
+                        self.stats['customer_customer_brand'] += len(chunk)
+                        print(f"[ETAPA 6] Chunk {chunk_num} inserido: {len(chunk)} relacionamentos")
+                    except Exception as chunk_error:
+                        # Se houver erro de duplicata, tentar inserir um por um
+                        logger.warning(f"[ETAPA 6] Erro no chunk {chunk_num}: {chunk_error}. Tentando inserir individualmente...")
+                        conn_pg.rollback()
+                        inserted = 0
+                        for rel in chunk:
+                            try:
+                                cursor_pg.execute(
+                                    f"INSERT INTO {schema}.customer_customer_brand (customer_id, customer_brand_id) VALUES (%s::uuid, %s::uuid) ON CONFLICT DO NOTHING",
+                                    rel
+                                )
+                                inserted += 1
+                            except Exception as e:
+                                logger.warning(f"[ETAPA 6] Erro ao inserir relacionamento: {e}")
+                        conn_pg.commit()
+                        self.stats['customer_customer_brand'] += inserted
+                        print(f"[ETAPA 6] Chunk {chunk_num} inserido individualmente: {inserted}/{len(chunk)} relacionamentos")
+                
+                cursor_pg.close()
+                conn_pg.close()
+            
+            print(f"\n[ETAPA 6] CONCLUIDA! Total de relacionamentos migrados: {self.stats['customer_customer_brand']}")
+            logger.info(f"ETAPA 6 concluida: {self.stats['customer_customer_brand']} registros")
+            
+        except Exception as e:
+            logger.error(f"Erro na ETAPA 6: {e}")
+            if 'conn_pg' in locals():
+                try:
+                    conn_pg.rollback()
+                    if 'cursor_pg' in locals():
+                        cursor_pg.close()
+                    conn_pg.close()
+                except:
+                    pass
+            raise
+    
     def run(self):
         """Executa a migração completa"""
         # Sempre ler o destino dinamicamente (não cachear)
@@ -2172,6 +2671,12 @@ class CustomersMigration:
             # ETAPA 4: Contacts (quarto, referencia customers)
             self.step4_migrate_contacts()
             
+            # ETAPA 5: Customer Brands (quinto, referencia customer_segments)
+            self.step5_migrate_customer_brands()
+            
+            # ETAPA 6: Customer Customer Brand (sexto, referencia customers e customer_brands)
+            self.step6_migrate_customer_customer_brand()
+            
             end_time = datetime.now()
             duration = end_time - start_time
             
@@ -2188,6 +2693,8 @@ class CustomersMigration:
             print(f"  Customers: {self.stats['customers']}")
             print(f"  Addresses: {self.stats['addresses']}")
             print(f"  Contacts: {self.stats['contacts']}")
+            print(f"  Customer Brands: {self.stats['customer_brands']}")
+            print(f"  Customer Customer Brand: {self.stats['customer_customer_brand']}")
             print(f"  Erros: {len(self.stats['errors'])}")
             
             logger.info(f"Duracao: {duration}")
@@ -2195,6 +2702,8 @@ class CustomersMigration:
             logger.info(f"Customers: {self.stats['customers']}")
             logger.info(f"Addresses: {self.stats['addresses']}")
             logger.info(f"Contacts: {self.stats['contacts']}")
+            logger.info(f"Customer Brands: {self.stats['customer_brands']}")
+            logger.info(f"Customer Customer Brand: {self.stats['customer_customer_brand']}")
             logger.info(f"Erros: {len(self.stats['errors'])}")
             
             if self.stats['errors']:

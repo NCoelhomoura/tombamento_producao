@@ -151,4 +151,82 @@ NOTAS IMPORTANTES:
 
 ====================================================================================================
 
+====================================================================================================
+TABELA DESTINO: USER_ROLES
+TABELA ORIGEM: users (já migrada) + role fixa HUNTER
+====================================================================================================
+
+ORIGEM - PostgreSQL (Tabela já migrada: users)
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       uuid                           -               NAO        SIM  
+name                                     text                           -               NAO        NAO  
+user_name                                character varying(256)         256             SIM        NAO  
+email                                    character varying(256)        256             SIM        NAO  
+status                                   character varying(50)         50              NAO        NAO  
+legacy_id                                integer                        -               SIM        NAO  
+
+
+DESTINO - PostgreSQL HML - Tabela: gmcore.user_roles
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+id                                       uuid                           -               NAO        SIM  
+user_id                                  uuid                           -               NAO        NAO  
+role_id                                  uuid                           -               NAO        NAO  
+created_at                               timestamp with time zone       -               NAO        NAO  
+updated_at                               timestamp with time zone       -               NAO        NAO  
+
+
+MAPEAMENTO DE CAMPOS:
+----------------------------------------------------------------------------------------------------
+
+CAMPO DESTINO                            ORIGEM                         TRANSFORMACAO
+----------------------------------------------------------------------------------------------------
+id                                       -                               UUID gerado automaticamente (gen_random_uuid())
+user_id                                  users.id                       UUID de cada usuário migrado da tabela users
+role_id                                  -                               UUID fixo: 019bb283-9894-75e4-9c15-84491fb67224 (role HUNTER)
+created_at                               -                               Data/hora atual da migração (datetime.now())
+updated_at                               -                               Data/hora atual da migração (datetime.now())
+
+
+CAMPOS ORIGEM NAO MAPEADOS:
+----------------------------------------------------------------------------------------------------
+- users.name (text)
+- users.user_name (character varying(256))
+- users.email (character varying(256))
+- users.status (character varying(50))
+- users.legacy_id (integer)
+- Demais campos da tabela users não são utilizados para esta migração
+
+
+CAMPOS DESTINO NAO MAPEADOS:
+----------------------------------------------------------------------------------------------------
+Todos os campos obrigatorios foram mapeados ou preenchidos com valores padrao.
+
+
+NOTAS IMPORTANTES:
+----------------------------------------------------------------------------------------------------
+1. A tabela user_roles cria uma relação muitos-para-muitos entre users e roles.
+
+2. Para cada usuário existente na tabela users (incluindo o usuário manual Sys Admin),
+   será criado um registro em user_roles associando-o à role HUNTER.
+
+3. O UUID da role HUNTER é fixo: 019bb283-9894-75e4-9c15-84491fb67224
+
+4. A migração deve ser executada após a migração da tabela users (ETAPA 1).
+
+5. Se a tabela user_roles já contiver registros, deve ser feita limpeza (TRUNCATE ou DELETE)
+   antes de inserir os novos registros, dependendo da estratégia de migração.
+
+6. Todos os usuários migrados receberão automaticamente a role HUNTER por padrão na primeira carga.
+
+7. A tabela user_roles segue o padrão de auditoria com created_at e updated_at.
+
+8. Se necessário adicionar outras roles posteriormente, isso pode ser feito manualmente ou através
+   de scripts adicionais.
+
+====================================================================================================
+
 

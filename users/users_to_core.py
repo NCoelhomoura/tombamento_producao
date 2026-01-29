@@ -173,6 +173,152 @@ class UsersMigration:
                 conn.close()
             raise
     
+    def insert_manual_user(self, destino: str = None):
+        """
+        Insere o usuário manual (sysadmin) na tabela users após TRUNCATE
+        
+        Args:
+            destino: 'HML' ou 'PRD'. Se None, tenta obter de DatabaseConnection.get_destino()
+        """
+        if destino is None:
+            destino = DatabaseConnection.get_destino()
+        schema = SCHEMA_PRD if destino == 'PRD' else SCHEMA_HML
+        
+        # Dados do usuário manual
+        users_manual_insert = {
+            'id': 'b1d3a1a3-580b-4db4-92e1-0b7cb66ffe9f',
+            'name': 'Sys Admin',
+            'temporary_password': False,
+            'email_confirmed_at': datetime(2025, 11, 2, 21, 0, 0),
+            'created_at': datetime(2025, 11, 2, 21, 0, 0),
+            'updated_at': datetime(2025, 11, 2, 21, 0, 0),
+            'deleted_at': None,
+            'status': 'active',
+            'user_name': 'sysadmin@superaholdings.com.br',
+            'normalized_user_name': 'SYSADMIN@SUPERAHOLDINGS.COM.BR',
+            'email': 'sysadmin@superaholdings.com.br',
+            'normalized_email': 'SYSADMIN@SUPERAHOLDINGS.COM.BR',
+            'email_confirmed': True,
+            'password_hash': 'AQAAAAIAAYagAAAAEGoSbamR81zarXFRUKHMViwspBPUvtVxw+CEvAuu3iV2pC/0nQzbmxX+P6RBr18acw==',
+            'security_stamp': 'Z6EA7HANNVN6UJ4S7HJLRMZJVG5YWQ3G',
+            'concurrency_stamp': 'fb407352-8645-4895-aaad-afd8cad924bc',
+            'phone_number': None,
+            'phone_number_confirmed': False,
+            'two_factor_enabled': False,
+            'lockout_end': None,
+            'lockout_enabled': False,
+            'access_failed_count': 0,
+            'legacy_id': None
+        }
+        
+        conn = None
+        try:
+            print("[ETAPA 1] Inserindo usuário manual (Sys Admin)...")
+            
+            # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+            if destino == 'PRD':
+                conn = DatabaseConnection.get_postgresql_prd_destino_connection()
+            else:
+                conn = DatabaseConnection.get_postgresql_hml_destino_connection()
+            cursor = conn.cursor()
+            
+            # Configurar search_path
+            cursor.execute(f"SET search_path TO {schema}, public")
+            
+            # Verificar se deve incluir legacy_id
+            include_legacy = self.should_include_legacy_id()
+            
+            if include_legacy:
+                insert_query = f"""
+                INSERT INTO "{schema}"."users" (
+                    id, legacy_id, name, user_name, normalized_user_name, email, normalized_email,
+                    phone_number, password_hash, status, created_at, updated_at, deleted_at,
+                    email_confirmed, email_confirmed_at, phone_number_confirmed, temporary_password,
+                    two_factor_enabled, lockout_enabled, lockout_end, access_failed_count,
+                    security_stamp, concurrency_stamp
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                """
+                cursor.execute(insert_query, (
+                    users_manual_insert['id'],
+                    users_manual_insert['legacy_id'],
+                    users_manual_insert['name'],
+                    users_manual_insert['user_name'],
+                    users_manual_insert['normalized_user_name'],
+                    users_manual_insert['email'],
+                    users_manual_insert['normalized_email'],
+                    users_manual_insert['phone_number'],
+                    users_manual_insert['password_hash'],
+                    users_manual_insert['status'],
+                    users_manual_insert['created_at'],
+                    users_manual_insert['updated_at'],
+                    users_manual_insert['deleted_at'],
+                    users_manual_insert['email_confirmed'],
+                    users_manual_insert['email_confirmed_at'],
+                    users_manual_insert['phone_number_confirmed'],
+                    users_manual_insert['temporary_password'],
+                    users_manual_insert['two_factor_enabled'],
+                    users_manual_insert['lockout_enabled'],
+                    users_manual_insert['lockout_end'],
+                    users_manual_insert['access_failed_count'],
+                    users_manual_insert['security_stamp'],
+                    users_manual_insert['concurrency_stamp']
+                ))
+            else:
+                insert_query = f"""
+                INSERT INTO "{schema}"."users" (
+                    id, name, user_name, normalized_user_name, email, normalized_email,
+                    phone_number, password_hash, status, created_at, updated_at, deleted_at,
+                    email_confirmed, email_confirmed_at, phone_number_confirmed, temporary_password,
+                    two_factor_enabled, lockout_enabled, lockout_end, access_failed_count,
+                    security_stamp, concurrency_stamp
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                """
+                cursor.execute(insert_query, (
+                    users_manual_insert['id'],
+                    users_manual_insert['name'],
+                    users_manual_insert['user_name'],
+                    users_manual_insert['normalized_user_name'],
+                    users_manual_insert['email'],
+                    users_manual_insert['normalized_email'],
+                    users_manual_insert['phone_number'],
+                    users_manual_insert['password_hash'],
+                    users_manual_insert['status'],
+                    users_manual_insert['created_at'],
+                    users_manual_insert['updated_at'],
+                    users_manual_insert['deleted_at'],
+                    users_manual_insert['email_confirmed'],
+                    users_manual_insert['email_confirmed_at'],
+                    users_manual_insert['phone_number_confirmed'],
+                    users_manual_insert['temporary_password'],
+                    users_manual_insert['two_factor_enabled'],
+                    users_manual_insert['lockout_enabled'],
+                    users_manual_insert['lockout_end'],
+                    users_manual_insert['access_failed_count'],
+                    users_manual_insert['security_stamp'],
+                    users_manual_insert['concurrency_stamp']
+                ))
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            print("OK - Usuário manual (Sys Admin) inserido com sucesso")
+            logger.info(f"[ETAPA 1] Usuário manual (Sys Admin) inserido: {users_manual_insert['user_name']}")
+            
+        except Exception as e:
+            logger.error(f"Erro ao inserir usuário manual: {e}")
+            if conn:
+                try:
+                    conn.rollback()
+                except:
+                    pass
+                conn.close()
+            raise
+    
     def validate_step1_users(self, destino: str = None):
         """
         Validação e relatório de qualidade - ETAPA 1
@@ -334,6 +480,9 @@ class UsersMigration:
         # Truncate
         print("\n[ETAPA 1] Limpando tabela users...")
         self.truncate_table('users', destino=destino)
+        
+        # Inserir usuário manual (Sys Admin) após TRUNCATE
+        self.insert_manual_user(destino=destino)
         
         # Buscar dados do SQL Server
         print("[ETAPA 1] Buscando dados do SQL Server...")
@@ -572,6 +721,189 @@ class UsersMigration:
             import traceback
             traceback.print_exc()
             if 'conn_pg' in locals():
+                conn_pg.rollback()
+                conn_pg.close()
+            raise
+    
+    def step2_migrate_user_roles(self, destino: str = None):
+        """
+        ETAPA 2: Migrar user_roles
+        
+        Args:
+            destino: 'HML' ou 'PRD'. Se None, tenta obter de DatabaseConnection.get_destino()
+        """
+        # Determinar destino e schema
+        if destino is None:
+            destino = DatabaseConnection.get_destino()
+            logger.info(f"[DESTINO] Destino obtido de DatabaseConnection.get_destino(): {destino}")
+        else:
+            destino = destino.upper()
+            if destino not in ['HML', 'PRD']:
+                raise ValueError(f"Destino invalido: {destino}. Use 'HML' ou 'PRD'")
+            logger.info(f"[DESTINO] Destino recebido como parâmetro: {destino}")
+        
+        if destino == 'PRD':
+            schema = SCHEMA_PRD  # 'core'
+        else:
+            schema = SCHEMA_HML  # 'gmcore'
+        
+        logger.info(f"[DESTINO] Schema determinado: {schema} (baseado em destino={destino})")
+        
+        print("\n" + "="*80)
+        print("ETAPA 2: MIGRANDO USER_ROLES")
+        print("="*80)
+        logger.info("="*80)
+        logger.info("ETAPA 2: Migrando user_roles")
+        logger.info(f"Ambiente: {destino} | Schema: {schema}")
+        logger.info("="*80)
+        
+        # UUID fixo da role HUNTER
+        ROLE_HUNTER_UUID = '019bb283-9894-75e4-9c15-84491fb67224'
+        
+        # Array com registro manual
+        manual_user_role = {
+            'user_id': 'b1d3a1a3-580b-4db4-92e1-0b7cb66ffe9f',
+            'role_id': '10f04eee-b8ff-4aa2-9f8a-0f2531573d32',
+        }
+        
+        conn_pg = None
+        try:
+            # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+            if destino == 'PRD':
+                conn_pg = DatabaseConnection.get_postgresql_prd_destino_connection()
+            else:
+                conn_pg = DatabaseConnection.get_postgresql_hml_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            
+            # Configurar search_path
+            cursor_pg.execute(f"SET search_path TO {schema}, public")
+            
+            # Verificar se a tabela existe
+            cursor_pg.execute("""
+                SELECT EXISTS (
+                    SELECT 1 
+                    FROM information_schema.tables 
+                    WHERE table_schema = %s 
+                    AND table_name = 'user_roles'
+                )
+            """, (schema,))
+            table_exists = cursor_pg.fetchone()[0]
+            
+            if not table_exists:
+                error_msg = f"Tabela '{schema}.user_roles' não existe no banco de dados"
+                logger.error(f"[ERRO] {error_msg}")
+                raise ValueError(error_msg)
+            
+            logger.info(f"[VERIFICAÇÃO] Tabela '{schema}.user_roles' existe e está acessível")
+            
+            # Limpar tabela (TRUNCATE)
+            print("\n[ETAPA 2] Limpando tabela user_roles...")
+            try:
+                cursor_pg.execute(f'TRUNCATE TABLE "{schema}"."user_roles" CASCADE')
+            except Exception as e1:
+                logger.warning(f"[ETAPA 2] Tentativa com aspas falhou: {e1}. Tentando sem aspas...")
+                cursor_pg.execute(f"TRUNCATE TABLE {schema}.user_roles CASCADE")
+            conn_pg.commit()
+            print("OK - Tabela user_roles truncada")
+            logger.info(f"Tabela {schema}.user_roles truncada com sucesso")
+            
+            # 1. Inserir registro manual primeiro
+            print("\n[ETAPA 2] Inserindo registro manual...")
+            manual_insert_query = f"""
+            INSERT INTO "{schema}"."user_roles" (
+                user_id, role_id
+            ) VALUES (
+                %s, %s
+            )
+            """
+            cursor_pg.execute(manual_insert_query, (
+                manual_user_role['user_id'],
+                manual_user_role['role_id']
+            ))
+            conn_pg.commit()
+            print(f"OK - Registro manual inserido: user_id={manual_user_role['user_id']}, role_id={manual_user_role['role_id']}")
+            logger.info(f"[ETAPA 2] Registro manual inserido: user_id={manual_user_role['user_id']}, role_id={manual_user_role['role_id']}")
+            
+            # 2. Buscar todos os usuários da origem (exceto o user_id do array manual)
+            print("\n[ETAPA 2] Buscando usuários da tabela users (excluindo registro manual)...")
+            users_query = f"""
+            SELECT id
+            FROM "{schema}"."users"
+            WHERE id != %s
+            ORDER BY id
+            """
+            cursor_pg.execute(users_query, (manual_user_role['user_id'],))
+            all_users = cursor_pg.fetchall()
+            
+            if not all_users:
+                print("[ETAPA 2] Nenhum usuário encontrado para migrar (exceto o manual)")
+                logger.warning("[ETAPA 2] Nenhum usuário encontrado para migrar")
+                cursor_pg.close()
+                conn_pg.close()
+                return
+            
+            print(f"[ETAPA 2] {len(all_users)} usuários encontrados. Criando registros em user_roles...")
+            
+            # Preparar dados para inserção em lote
+            insert_query = f"""
+            INSERT INTO "{schema}"."user_roles" (
+                user_id, role_id
+            ) VALUES %s
+            """
+            insert_template = f"(%s, %s)"
+            
+            # Criar lista de tuplas com todos os usuários (exceto o manual) associados à role HUNTER
+            processed_tuples = []
+            for (user_id,) in all_users:
+                processed_tuples.append((
+                    str(user_id),
+                    ROLE_HUNTER_UUID
+                ))
+            
+            # Inserir em chunks
+            chunk_num = 0
+            total_processed = 0
+            
+            for i in range(0, len(processed_tuples), CHUNK_SIZE):
+                chunk = processed_tuples[i:i + CHUNK_SIZE]
+                chunk_num += 1
+                
+                if chunk:
+                    try:
+                        # Usar execute_values para inserção otimizada em bulk
+                        execute_values(
+                            cursor_pg,
+                            insert_query,
+                            chunk,
+                            template=insert_template,
+                            page_size=CHUNK_SIZE,
+                            fetch=False
+                        )
+                        
+                        conn_pg.commit()
+                        total_processed += len(chunk)
+                        print(f"[ETAPA 2] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
+                        logger.info(f"[ETAPA 2] Chunk {chunk_num} processado: {total_processed}/{len(processed_tuples)} registros inseridos")
+                        
+                    except Exception as e:
+                        conn_pg.rollback()
+                        logger.error(f"Erro ao inserir batch de user_roles: {e}")
+                        print(f"ERRO ao inserir batch: {e}")
+                        raise
+            
+            cursor_pg.close()
+            conn_pg.close()
+            
+            total_records = len(processed_tuples) + 1  # +1 para o registro manual
+            print(f"\n[ETAPA 2] CONCLUIDA! Total de user_roles migrados: {total_records} (1 manual + {len(processed_tuples)} da origem)")
+            logger.info(f"[ETAPA 2] CONCLUIDA! Total: {total_records} (1 manual + {len(processed_tuples)} da origem)")
+            
+        except Exception as e:
+            logger.error(f"Erro na ETAPA 2: {e}")
+            print(f"ERRO na ETAPA 2: {e}")
+            import traceback
+            traceback.print_exc()
+            if conn_pg:
                 conn_pg.rollback()
                 conn_pg.close()
             raise

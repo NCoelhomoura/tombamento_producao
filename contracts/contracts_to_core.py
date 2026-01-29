@@ -40,6 +40,16 @@ def get_schema_atual():
     else:
         return SCHEMA_HML
 
+# Schema PDV será determinado automaticamente baseado no destino configurado
+# Em HML sempre usa prefixo "gm" antes do schema
+def get_schema_pdv():
+    """Retorna o schema PDV baseado no destino configurado"""
+    destino = DatabaseConnection.get_destino()
+    if destino == 'PRD':
+        return 'pdv'
+    else:
+        return 'gmpdv'  # HML: prefixo "gm" + schema
+
 # Configurar logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -72,6 +82,89 @@ except Exception:
 
 # Tamanho do chunk para processamento
 CHUNK_SIZE = 20000
+
+# ============================================================================
+# FUNÇÕES COMPARTILHADAS PARA PROMOTER_TASKS (UNIFICADAS)
+# ============================================================================
+
+def normalize_promoter_task_name(nome_tarefa, nome_cliente):
+    """
+    Normaliza e constrói o name de promoter_task de forma consistente.
+    Esta função DEVE ser usada tanto no step9 quanto no step2.
+    
+    Args:
+        nome_tarefa: str ou None da ViewOrcamentosLojas.NomeTarefa
+        nome_cliente: str ou None da ViewOrcamentosLojas.NomeCliente
+    
+    Returns:
+        tuple: (name_normalizado, nome_tarefa_clean) ou (None, None) se NomeCliente inválido
+    """
+    # 1. Normalizar NomeTarefa
+    if nome_tarefa:
+        nome_tarefa_clean = str(nome_tarefa).strip().upper()
+        if not nome_tarefa_clean or nome_tarefa_clean in ['NULL', 'NONE', '']:
+            nome_tarefa_clean = None
+    else:
+        nome_tarefa_clean = None
+    
+    # 2. Normalizar NomeCliente (obrigatório)
+    if nome_cliente:
+        nome_cliente_clean = str(nome_cliente).strip()
+        if not nome_cliente_clean or nome_cliente_clean in ['NULL', 'NONE', '']:
+            nome_cliente_clean = None
+    else:
+        nome_cliente_clean = None
+    
+    # 3. Validar NomeCliente (obrigatório)
+    if not nome_cliente_clean:
+        # Se não tem cliente, não pode criar tarefa
+        return None, None
+    
+    # 4. Construir name no formato padrão
+    if nome_tarefa_clean:
+        name = f"{nome_tarefa_clean} {nome_cliente_clean}"
+    else:
+        name = f"INDEFINIDA {nome_cliente_clean}"
+    
+    # 5. Remover espaços extras e normalizar
+    name = ' '.join(name.split())  # Remove espaços múltiplos
+    
+    return name, nome_tarefa_clean
+
+
+def get_task_type_from_nome_tarefa(nome_tarefa_upper):
+    """
+    Mapeia NomeTarefa para task_type usando o dicionário.
+    Esta função DEVE ser usada tanto no step9 quanto no step2.
+    
+    Args:
+        nome_tarefa_upper: str em UPPERCASE (já normalizado) ou None
+    
+    Returns:
+        str: task_type ('undefined' se não encontrado)
+    """
+    task_type_mapping = {
+        'CONTAGEM PDV': 'undefined',
+        'DESRUPTURA': 'disruption',
+        'ESTOQUE': 'undefined',
+        'GALERIA DE FOTOS': 'undefined',
+        'MANUTENÇÃO DE PONTO EXTRA': 'extra_point_maintenance',
+        'MONTAGEM PONTO EXTRA': 'extra_point_assembly',
+        'PESQUISA': 'undefined',
+        'PESQUISA CONCORRENTE': 'undefined',
+        'PESQUISA DE PREÇO': 'undefined',
+        'PONTO EXTRA': 'undefined',
+        'PRODUTO NA LOJA': 'undefined',
+        'REABASTECIMENTO & RUPTURA': 'supply_and_disruption',
+        'REGISTRO DE FOTOS': 'undefined',
+        'SHARE GONDOLA': 'undefined',
+        'VALIDADE': 'undefined'
+    }
+    
+    if nome_tarefa_upper:
+        return task_type_mapping.get(nome_tarefa_upper, 'Undefined')
+    else:
+        return 'Undefined'
 
 
 class ContractsMigration:
@@ -975,7 +1068,9 @@ class ContractsMigration:
                 start_date = row[5] if row[5] is not None else row[6]  # DataInicioOperacao ou DataInclusaoOrcamento como fallback
                 if start_date is None:
                     start_date = datetime.now()  # Se ainda for None, usar data atual
-                status = self.convert_status_pedido(row[4])  # StatusPedido
+                # anterior
+                # status = self.convert_status_pedido(row[4])  # StatusPedido
+                status = 'active'
                 created_at = row[6] if row[6] else datetime.now()  # DataInclusaoOrcamento
                 updated_at = row[7] if row[7] else datetime.now()  # DataAlteracaoOrcamento
                 
@@ -1369,7 +1464,7 @@ class ContractsMigration:
                 """, (
                     task_uuid,
                     DEFAULT_TASK_NAME,
-                    "standard",
+                    "undefined",
                     True,
                     None,
                     now,
@@ -1397,7 +1492,7 @@ class ContractsMigration:
     def step9_migrate_promoter_tasks(self):
         """ETAPA 9: Migrar promoter_tasks (deve ser executado antes do step2)"""
         destino = DatabaseConnection.get_destino()
-        schema_pdv = 'pdv'  # Schema fixo para promoter_tasks
+        schema_pdv = get_schema_pdv()  # pdv (PRD) ou gmpdv (HML)
         print("\n" + "="*80)
         print("ETAPA 9: MIGRANDO PROMOTER_TASKS")
         print("="*80)
@@ -1405,6 +1500,9 @@ class ContractsMigration:
         logger.info("ETAPA 9: Migrando promoter_tasks")
         logger.info(f"Ambiente: {destino} | Schema: {schema_pdv} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
+        
+        # Usar função compartilhada para mapeamento de task_type
+        # (task_type_mapping está dentro da função get_task_type_from_nome_tarefa)
         
         # Carregar filtros do step1 (se existir)
         filter_data = self.load_filter_json()
@@ -1436,31 +1534,109 @@ class ContractsMigration:
             print("[ETAPA 9] Nenhum IdOrcamento encontrado. Pulando migração.")
             return
         
-        # Construir query para coletar tarefas únicas da ViewOrcamentosLojas
+        # Limpar tabela
+        if self.clear_data:
+            print("\n[ETAPA 9] Limpando tabela promoter_tasks (TRUNCATE - flag --clear-data ativo)...")
+            logger.info("[ETAPA 9] Flag --clear-data ativo: usando TRUNCATE")
+            self.truncate_table('promoter_tasks', schema=schema_pdv)
+        else:
+            print("\n[ETAPA 9] Limpando tabela promoter_tasks...")
+            logger.info("[ETAPA 9] Limpando tabela promoter_tasks")
+            # Para promoter_tasks, sempre usar TRUNCATE quando não há filtros específicos
+            # ou fazer DELETE baseado nos names que serão inseridos
+            try:
+                conn_pg_temp = DatabaseConnection.get_postgresql_destino_connection()
+                cursor_pg_temp = conn_pg_temp.cursor()
+                cursor_pg_temp.execute(f"TRUNCATE TABLE {schema_pdv}.promoter_tasks CASCADE")
+                conn_pg_temp.commit()
+                cursor_pg_temp.close()
+                conn_pg_temp.close()
+                logger.info(f"Tabela {schema_pdv}.promoter_tasks truncada com sucesso")
+            except Exception as e:
+                logger.warning(f"Não foi possível truncar tabela: {e}")
+        
+        # Construir query para coletar tarefas únicas da ViewOrcamentosLojas com NomeCliente
         conn_sql = None
         cursor_sql = None
         conn_pg = None
         cursor_pg = None
         
         try:
-            conn_sql = DatabaseConnection.get_sql_server_connection()
+            conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
             
-            # Query para coletar tarefas únicas
-            placeholders = ','.join(['?' for _ in id_orcamento_filter_list])
+            # Construir filtros de data se existirem
+            where_conditions = []
+            query_params = []
+            
+            # Filtro IdOrcamento
+            if id_orcamento_filter_list:
+                placeholders = ','.join(['?' for _ in id_orcamento_filter_list])
+                where_conditions.append(f"v.IdOrcamento IN ({placeholders})")
+                query_params.extend(id_orcamento_filter_list)
+            
+            # Filtros de data (mesma lógica dos outros steps)
+            data_aviso_previo_to_use = self.data_aviso_previo_min
+            data_inicio_operacao_to_use = self.data_inicio_operacao_max
+            
+            if data_aviso_previo_to_use is None and filter_data and 'filters_applied' in filter_data:
+                json_filters = filter_data['filters_applied']
+                data_aviso_previo_to_use = json_filters.get('data_aviso_previo_min')
+            
+            if data_inicio_operacao_to_use is None and filter_data and 'filters_applied' in filter_data:
+                json_filters = filter_data['filters_applied']
+                data_inicio_operacao_to_use = json_filters.get('data_inicio_operacao_max')
+            
+            if data_aviso_previo_to_use is not None:
+                if isinstance(data_aviso_previo_to_use, str):
+                    data_aviso_previo_str = data_aviso_previo_to_use
+                else:
+                    data_aviso_previo_str = data_aviso_previo_to_use.strftime('%Y-%m-%d')
+                where_conditions.append("(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)")
+                query_params.append(data_aviso_previo_str)
+            
+            if data_inicio_operacao_to_use is not None:
+                if isinstance(data_inicio_operacao_to_use, str):
+                    data_inicio_str = data_inicio_operacao_to_use
+                else:
+                    data_inicio_str = data_inicio_operacao_to_use.strftime('%Y-%m-%d')
+                where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
+                query_params.append(data_inicio_str)
+            
+            # Filtro IdOrcamento (se passado diretamente)
+            if self.id_orcamento_filter:
+                placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
+                where_conditions.append(f"v.IdOrcamento IN ({placeholders})")
+                query_params.extend(self.id_orcamento_filter)
+            
+            where_clause = ""
+            if where_conditions:
+                where_clause = "WHERE " + " AND ".join(where_conditions)
+            
+            # Query para coletar NomeTarefa e NomeCliente únicos
             query_tarefas = f"""
             SELECT DISTINCT
-                v.IdTarefa,
-                v.NomeTarefa
+                v.NomeTarefa,
+                v.NomeCliente
             FROM ViewOrcamentosLojas v
             INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
-            WHERE v.IdOrcamento IN ({placeholders})
-                AND (v.IdTarefa IS NOT NULL OR v.NomeTarefa IS NOT NULL)
-            ORDER BY v.IdTarefa, v.NomeTarefa
+            {where_clause}
+            AND v.NomeCliente IS NOT NULL
+            AND LTRIM(RTRIM(v.NomeCliente)) != ''
             """
             
-            print(f"[ETAPA 9] Coletando tarefas únicas da ViewOrcamentosLojas...")
-            cursor_sql.execute(query_tarefas, id_orcamento_filter_list)
+            if self.limit_rows > 0:
+                query_tarefas = query_tarefas.replace("SELECT DISTINCT", f"SELECT DISTINCT TOP {self.limit_rows}")
+            
+            print(f"[ETAPA 9] Coletando tarefas e clientes únicos da ViewOrcamentosLojas...")
+            logger.info(f"[ETAPA 9] Query: {query_tarefas}")
+            logger.info(f"[ETAPA 9] Parâmetros: {len(query_params)} parâmetros")
+            
+            if query_params:
+                cursor_sql.execute(query_tarefas, query_params)
+            else:
+                cursor_sql.execute(query_tarefas)
+            
             tarefas_view = cursor_sql.fetchall()
             
             if not tarefas_view:
@@ -1468,198 +1644,150 @@ class ContractsMigration:
                 print("[ETAPA 9] Nenhuma tarefa encontrada.")
                 return
             
-            print(f"[ETAPA 9] Encontradas {len(tarefas_view)} tarefas únicas")
-            logger.info(f"[ETAPA 9] Encontradas {len(tarefas_view)} tarefas únicas")
-            
-            # Coletar dados complementares de dbo.Tarefa
-            tarefas_completas = []
-            id_tarefas_unicos = set()
-            
-            for row in tarefas_view:
-                id_tarefa = row[0]
-                nome_tarefa_view = row[1]
-                
-                if id_tarefa and id_tarefa not in id_tarefas_unicos:
-                    id_tarefas_unicos.add(id_tarefa)
-                    # Buscar dados de dbo.Tarefa
-                    query_tarefa = """
-                    SELECT 
-                        Id,
-                        Nome,
-                        Ativo,
-                        DataInclusao,
-                        DataAlteracao,
-                        DataInativacao
-                    FROM Tarefa
-                    WHERE Id = ?
-                    """
-                    cursor_sql.execute(query_tarefa, (id_tarefa,))
-                    tarefa_row = cursor_sql.fetchone()
-                    
-                    if tarefa_row:
-                        tarefas_completas.append({
-                            'IdTarefa': id_tarefa,
-                            'NomeTarefa': nome_tarefa_view or tarefa_row[1],  # Preferir NomeTarefa da view
-                            'Nome': tarefa_row[1],
-                            'Ativo': tarefa_row[2],
-                            'DataInclusao': tarefa_row[3],
-                            'DataAlteracao': tarefa_row[4],
-                            'DataInativacao': tarefa_row[5]
-                        })
-                    else:
-                        # Se não encontrou na tabela Tarefa, usar apenas dados da view
-                        tarefas_completas.append({
-                            'IdTarefa': id_tarefa,
-                            'NomeTarefa': nome_tarefa_view,
-                            'Nome': None,
-                            'Ativo': True,  # Padrão
-                            'DataInclusao': None,
-                            'DataAlteracao': None,
-                            'DataInativacao': None
-                        })
-                elif nome_tarefa_view and not any(t.get('NomeTarefa') == nome_tarefa_view for t in tarefas_completas):
-                    # Tarefa sem IdTarefa, mas com NomeTarefa
-                    tarefas_completas.append({
-                        'IdTarefa': None,
-                        'NomeTarefa': nome_tarefa_view,
-                        'Nome': None,
-                        'Ativo': True,  # Padrão
-                        'DataInclusao': None,
-                        'DataAlteracao': None,
-                        'DataInativacao': None
-                    })
-            
-            print(f"[ETAPA 9] Processando {len(tarefas_completas)} tarefas para migração...")
-            logger.info(f"[ETAPA 9] Processando {len(tarefas_completas)} tarefas")
+            print(f"[ETAPA 9] Encontradas {len(tarefas_view)} combinações únicas de tarefa+cliente")
+            logger.info(f"[ETAPA 9] Encontradas {len(tarefas_view)} combinações únicas")
             
             # Conectar ao PostgreSQL
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
             
-            # Preparar dados para UPSERT
+            # Preparar dados para inserção
             records_to_insert = []
             now = datetime.now()
+            seen_names = set()  # Para evitar duplicatas por name
             
-            for tarefa in tarefas_completas:
-                # Traduzir nome para inglês em snake_case
-                nome_original = tarefa.get('NomeTarefa') or tarefa.get('Nome') or ''
-                name_normalized = self.translate_task_name_to_english(nome_original)
+            for row in tarefas_view:
+                nome_tarefa_raw = row[0]
+                nome_cliente_raw = row[1]
                 
-                # Determinar task_type (padrão: "standard")
-                task_type = "standard"
-                name_lower = name_normalized.lower()
-                if 'supply' in name_lower or 'disruption' in name_lower:
-                    task_type = "supply"
-                elif 'replenishment' in name_lower or 'reposição' in name_lower:
-                    task_type = "replenishment"
-                elif 'merchandising' in name_lower:
-                    task_type = "merchandising"
-                elif 'promotion' in name_lower or 'promoção' in name_lower:
-                    task_type = "promotion"
-                elif 'facing' in name_lower:
-                    task_type = "facing"
-                elif 'cleaning' in name_lower or 'limpeza' in name_lower:
-                    task_type = "cleaning"
-                elif 'audit' in name_lower or 'auditoria' in name_lower:
-                    task_type = "audit"
-                elif 'inventory' in name_lower or 'inventário' in name_lower:
-                    task_type = "inventory"
+                # Usar função compartilhada para normalização (mesma lógica do step2)
+                name, nome_tarefa_clean = normalize_promoter_task_name(nome_tarefa_raw, nome_cliente_raw)
                 
-                # Mapear campos
-                is_active = bool(tarefa.get('Ativo', True))
-                deleted_at = tarefa.get('DataInativacao') if tarefa.get('DataInativacao') else None
-                created_at = tarefa.get('DataInclusao') if tarefa.get('DataInclusao') else now
-                updated_at = tarefa.get('DataAlteracao') if tarefa.get('DataAlteracao') else created_at
+                # Se name é None, pular (NomeCliente obrigatório)
+                if not name:
+                    continue
                 
+                # Evitar duplicatas
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
+                
+                # Mapear task_type usando função compartilhada (mesma lógica do step2)
+                task_type = get_task_type_from_nome_tarefa(nome_tarefa_clean)
+                
+                # Preparar registro
                 records_to_insert.append({
-                    'name': name_normalized,
+                    'name': name,
                     'task_type': task_type,
-                    'is_active': is_active,
-                    'deleted_at': deleted_at,
-                    'created_at': created_at,
-                    'updated_at': updated_at,
-                    'id_tarefa_original': tarefa.get('IdTarefa'),
-                    'nome_tarefa_original': nome_original
+                    'is_active': True,  # Sempre true conforme especificado
+                    'created_at': now,
+                    'updated_at': now,
+                    'nome_tarefa_original': nome_tarefa_raw
                 })
             
-            # Executar UPSERT (INSERT ... ON CONFLICT ... DO UPDATE)
-            print(f"[ETAPA 9] Executando UPSERT de {len(records_to_insert)} tarefas...")
-            logger.info(f"[ETAPA 9] Executando UPSERT de {len(records_to_insert)} tarefas")
+            print(f"[ETAPA 9] Processando {len(records_to_insert)} promoter_tasks únicos para inserção...")
+            logger.info(f"[ETAPA 9] Processando {len(records_to_insert)} promoter_tasks únicos")
             
-            inserted_count = 0
-            updated_count = 0
-            
-            for record in records_to_insert:
-                try:
-                    # Verificar se já existe (por name)
-                    cursor_pg.execute("""
-                        SELECT id FROM pdv.promoter_tasks WHERE name = %s
-                    """, (record['name'],))
-                    existing = cursor_pg.fetchone()
+            # Inserir em batch (verificando duplicatas antes, já que não há constraint UNIQUE)
+            if records_to_insert:
+                # Primeiro, verificar quais names já existem
+                print("[ETAPA 9] Verificando names existentes...")
+                existing_names = set()
+                all_names = [record['name'] for record in records_to_insert]
+                
+                # Buscar em chunks para não sobrecarregar a query
+                for i in range(0, len(all_names), CHUNK_SIZE):
+                    chunk_names = all_names[i:i + CHUNK_SIZE]
+                    placeholders = ','.join(['%s' for _ in chunk_names])
+                    cursor_pg.execute(
+                        f"SELECT name FROM {schema_pdv}.promoter_tasks WHERE name IN ({placeholders})",
+                        chunk_names
+                    )
+                    existing_names.update([row[0] for row in cursor_pg.fetchall()])
+                
+                # Filtrar apenas os que não existem
+                records_to_insert_new = [
+                    record for record in records_to_insert 
+                    if record['name'] not in existing_names
+                ]
+                
+                print(f"[ETAPA 9] {len(records_to_insert_new)} novos promoter_tasks para inserir (de {len(records_to_insert)} únicos)")
+                logger.info(f"[ETAPA 9] {len(records_to_insert_new)} novos promoter_tasks para inserir")
+                
+                if records_to_insert_new:
+                    insert_query = f"""
+                    INSERT INTO {schema_pdv}.promoter_tasks (
+                        id, name, task_type, is_active, created_at, updated_at
+                    ) VALUES %s
+                    """
+                    insert_template = "(gen_random_uuid(), %s, %s, %s, %s, %s)"
                     
-                    if existing:
-                        # UPDATE
-                        cursor_pg.execute("""
-                            UPDATE pdv.promoter_tasks
-                            SET task_type = %s,
-                                is_active = %s,
-                                deleted_at = %s,
-                                updated_at = %s
-                            WHERE name = %s
-                        """, (
-                            record['task_type'],
-                            record['is_active'],
-                            record['deleted_at'],
-                            record['updated_at'],
-                            record['name']
-                        ))
-                        updated_count += 1
-                        task_uuid = str(existing[0])  # Converter UUID para string
-                    else:
-                        # INSERT
-                        task_uuid_obj = uuid.uuid4()
-                        task_uuid = str(task_uuid_obj)  # Converter UUID para string
-                        cursor_pg.execute("""
-                            INSERT INTO pdv.promoter_tasks 
-                            (id, name, task_type, is_active, deleted_at, created_at, updated_at)
-                            VALUES (%s::uuid, %s, %s, %s, %s, %s, %s)
-                        """, (
-                            task_uuid,
+                    batch_values = [
+                        (
                             record['name'],
                             record['task_type'],
                             record['is_active'],
-                            record['deleted_at'],
                             record['created_at'],
                             record['updated_at']
-                        ))
-                        inserted_count += 1
+                        )
+                        for record in records_to_insert_new
+                    ]
                     
-                    # Criar mapeamento para uso no step2
-                    # Chave: (IdTarefa, NomeTarefa_normalizado) -> UUID (string)
-                    if record['id_tarefa_original'] is not None:
-                        key = (int(record['id_tarefa_original']), record['name'])
-                        self.promoter_task_map[key] = task_uuid
-                    
-                    # Sempre criar mapeamento apenas por nome normalizado (para casos sem IdTarefa ou como fallback)
-                    self.promoter_task_map[record['name']] = task_uuid
-                    
-                except Exception as e:
-                    logger.error(f"Erro ao inserir/atualizar promoter_task '{record['name']}': {e}")
-                    print(f"ERRO ao processar tarefa '{record['name']}': {e}")
-                    self.stats['errors'].append(f"promoter_task '{record['name']}': {e}")
+                    chunk_num = 0
+                    inserted_count = 0
+                    for i in range(0, len(batch_values), CHUNK_SIZE):
+                        chunk = batch_values[i:i + CHUNK_SIZE]
+                        chunk_num += 1
+                        try:
+                            execute_values(
+                                cursor_pg,
+                                insert_query,
+                                chunk,
+                                template=insert_template,
+                                page_size=CHUNK_SIZE,
+                                fetch=False
+                            )
+                            conn_pg.commit()
+                            inserted_count += len(chunk)
+                            print(f"[ETAPA 9] Chunk {chunk_num} processado: {len(chunk)} promoter_tasks inseridos")
+                        except Exception as chunk_error:
+                            logger.error(f"Erro no chunk {chunk_num}: {chunk_error}")
+                            conn_pg.rollback()
+                            # Tentar inserir um por um para identificar o problema
+                            for record in records_to_insert_new[i:i + CHUNK_SIZE]:
+                                try:
+                                    cursor_pg.execute(
+                                        f"INSERT INTO {schema_pdv}.promoter_tasks (id, name, task_type, is_active, created_at, updated_at) VALUES (gen_random_uuid(), %s, %s, %s, %s, %s)",
+                                        (record['name'], record['task_type'], record['is_active'], record['created_at'], record['updated_at'])
+                                    )
+                                    inserted_count += 1
+                                except Exception as e:
+                                    logger.error(f"Erro ao inserir promoter_task '{record['name']}': {e}")
+                                    self.stats['errors'].append(f"promoter_task '{record['name']}': {e}")
+                            conn_pg.commit()
+                else:
+                    inserted_count = 0
+                    print("[ETAPA 9] Todos os promoter_tasks já existem. Nenhum novo registro para inserir.")
+                    logger.info("[ETAPA 9] Todos os promoter_tasks já existem")
+                
+                # Carregar mapeamento de promoter_tasks (name -> uuid) para uso no step2
+                print("[ETAPA 9] Carregando mapeamento de promoter_tasks...")
+                cursor_pg.execute(f"SELECT id, name FROM {schema_pdv}.promoter_tasks")
+                for row in cursor_pg.fetchall():
+                    self.promoter_task_map[row[1]] = str(row[0])  # name -> uuid (string)
+                print(f"[ETAPA 9] {len(self.promoter_task_map)} promoter_tasks mapeados")
+                logger.info(f"[ETAPA 9] {len(self.promoter_task_map)} promoter_tasks mapeados")
+                
+                self.stats['promoter_tasks'] = inserted_count
             
-            conn_pg.commit()
-            
-            self.stats['promoter_tasks'] = inserted_count + updated_count
-            
-            print(f"[ETAPA 9] Concluído: {inserted_count} inseridos, {updated_count} atualizados")
-            logger.info(f"[ETAPA 9] Concluído: {inserted_count} inseridos, {updated_count} atualizados")
-            logger.info(f"[ETAPA 9] Mapeamento criado: {len(self.promoter_task_map)} entradas")
-            print(f"[ETAPA 9] Mapeamento criado: {len(self.promoter_task_map)} entradas")
+            print(f"\n[ETAPA 9] CONCLUIDA! Total de promoter_tasks migrados: {self.stats['promoter_tasks']}")
+            logger.info(f"ETAPA 9 concluida: {self.stats['promoter_tasks']} registros")
             
         except Exception as e:
             logger.error(f"ERRO CRITICO na ETAPA 9: {e}")
             print(f"ERRO CRITICO: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             if conn_pg:
                 conn_pg.rollback()
             raise
@@ -1806,6 +1934,7 @@ class ContractsMigration:
             v.IdOrcamento,
             v.IdEstabelecimento,
             v.NomeTarefa,
+            v.NomeCliente,
             v.Frequencia,
             v.Horas,
             v.ValorHora,
@@ -1859,11 +1988,24 @@ class ContractsMigration:
         print(f"[ETAPA 2] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
         
         # Processar conversões em massa usando DataFrame (vetorizado)
-        df = pd.DataFrame.from_records(all_rows, columns=[
-            'IdOrcamentoLoja', 'IdOrcamento', 'IdEstabelecimento', 'NomeTarefa', 
-            'Frequencia', 'Horas', 'ValorHora', 'DataInicioOperacao', 'StatusPedido',
-            'DataInclusaoOrcamentoLojas', 'DataAlteracaoOrcamentoLojas', 'IdTarefa', 'Ativo'
-        ])
+        try:
+            df = pd.DataFrame.from_records(all_rows, columns=[
+                'IdOrcamentoLoja', 'IdOrcamento', 'IdEstabelecimento', 'NomeTarefa', 'NomeCliente',
+                'Frequencia', 'Horas', 'ValorHora', 'DataInicioOperacao', 'StatusPedido',
+                'DataInclusaoOrcamentoLojas', 'DataAlteracaoOrcamentoLojas', 'IdTarefa', 'Ativo'
+            ])
+            
+            # Log dos tipos de dados inferidos pelo pandas
+            print(f"[ETAPA 2] Tipos de dados inferidos pelo pandas:")
+            print(f"  IdTarefa: {df['IdTarefa'].dtype} (NULLs: {df['IdTarefa'].isna().sum()})")
+            print(f"  Frequencia: {df['Frequencia'].dtype} (NULLs: {df['Frequencia'].isna().sum()})")
+            print(f"  StatusPedido: {df['StatusPedido'].dtype} (NULLs: {df['StatusPedido'].isna().sum()})")
+            print(f"  Ativo: {df['Ativo'].dtype} (NULLs: {df['Ativo'].isna().sum()})")
+            logger.info(f"[ETAPA 2] Tipos inferidos - IdTarefa: {df['IdTarefa'].dtype}, Frequencia: {df['Frequencia'].dtype}, StatusPedido: {df['StatusPedido'].dtype}, Ativo: {df['Ativo'].dtype}")
+        except Exception as e:
+            logger.error(f"[ETAPA 2] ERRO ao criar DataFrame: {e}")
+            print(f"[ETAPA 2] ERRO ao criar DataFrame: {e}")
+            raise
         
         # Aplicar transformações vetorizadas
         df['legacy_id'] = df['IdOrcamentoLoja']
@@ -1885,36 +2027,81 @@ class ContractsMigration:
         # Filtrar apenas linhas válidas
         df = df[mask_valid].copy()
         
-        # Preparar promoter_task_id usando o mapeamento do step9
-        def get_promoter_task_id(row):
-            """Obtém UUID do promoter_task baseado em IdTarefa ou NomeTarefa"""
-            id_tarefa = row['IdTarefa'] if pd.notna(row.get('IdTarefa')) else None
-            nome_tarefa = row['NomeTarefa'] if pd.notna(row.get('NomeTarefa')) else None
-            
-            # Tentar buscar por (IdTarefa, nome_normalizado)
-            if id_tarefa is not None:
-                nome_normalized = self.translate_task_name_to_english(nome_tarefa)
-                key = (int(id_tarefa), nome_normalized)
-                if key in self.promoter_task_map:
-                    return str(self.promoter_task_map[key])
-            
-            # Tentar buscar apenas por nome normalizado (mesmo se nome_tarefa for None, translate retorna "standard_task")
-            nome_normalized = self.translate_task_name_to_english(nome_tarefa)
-            if nome_normalized in self.promoter_task_map:
-                return str(self.promoter_task_map[nome_normalized])
-            
-            # Se não encontrou, usar tarefa padrão (garantida pelo _ensure_default_promoter_task)
-            DEFAULT_TASK_NAME = "standard_task"
-            if DEFAULT_TASK_NAME in self.promoter_task_map:
-                logger.warning(f"[ETAPA 2] Tarefa não encontrada para IdTarefa={id_tarefa}, NomeTarefa={nome_tarefa}. Usando tarefa padrão.")
-                return str(self.promoter_task_map[DEFAULT_TASK_NAME])
-            
-            # Se nem a tarefa padrão existe (não deveria acontecer), retornar None
-            logger.error(f"[ETAPA 2] ERRO CRÍTICO: Tarefa padrão não disponível!")
-            return None
+        # Preparar promoter_task_id usando vetorização (otimizado - mesma lógica do step9)
+        print("[ETAPA 2] Normalizando e mapeando promoter_task_id (vetorizado)...")
+        logger.info("[ETAPA 2] Normalizando promoter_task names usando função compartilhada")
         
-        # Aplicar função para obter promoter_task_id
-        df['promoter_task_id'] = df.apply(get_promoter_task_id, axis=1)
+        # Normalização vetorizada usando pandas (mais rápido que apply)
+        # 1. Normalizar NomeTarefa
+        df['nome_tarefa_clean'] = df['NomeTarefa'].fillna('').astype(str).str.strip().str.upper()
+        df.loc[df['nome_tarefa_clean'].isin(['NULL', 'NONE', '']), 'nome_tarefa_clean'] = None
+        
+        # 2. Normalizar NomeCliente
+        df['nome_cliente_clean'] = df['NomeCliente'].fillna('').astype(str).str.strip()
+        df.loc[df['nome_cliente_clean'].isin(['NULL', 'NONE', '']), 'nome_cliente_clean'] = None
+        
+        # 3. Construir name usando operações vetorizadas
+        # Primeiro validar: se nome_cliente_clean é None, name deve ser None
+        mask_valid_cliente = df['nome_cliente_clean'].notna()
+        df['name'] = None
+        
+        # Apenas construir name para registros com cliente válido
+        if mask_valid_cliente.sum() > 0:
+            # Se nome_tarefa_clean não é None e não é vazio: "{nome_tarefa_clean} {nome_cliente_clean}"
+            # Senão: "INDEFINIDA {nome_cliente_clean}"
+            mask_has_tarefa = df['nome_tarefa_clean'].notna() & (df['nome_tarefa_clean'] != '') & mask_valid_cliente
+            
+            df.loc[mask_has_tarefa, 'name'] = (
+                df.loc[mask_has_tarefa, 'nome_tarefa_clean'] + ' ' + 
+                df.loc[mask_has_tarefa, 'nome_cliente_clean']
+            )
+            
+            mask_indefinida = ~mask_has_tarefa & mask_valid_cliente
+            df.loc[mask_indefinida, 'name'] = 'INDEFINIDA ' + df.loc[mask_indefinida, 'nome_cliente_clean']
+            
+            # 4. Remover espaços extras (vetorizado) apenas onde name não é None
+            df.loc[df['name'].notna(), 'name'] = (
+                df.loc[df['name'].notna(), 'name']
+                .str.replace(r'\s+', ' ', regex=True)
+                .str.strip()
+            )
+        
+        # Preencher valores None com tarefa padrão
+        DEFAULT_TASK_NAME = "standard_task"
+        default_task_id = self.promoter_task_map.get(DEFAULT_TASK_NAME)
+        
+        if default_task_id:
+            default_task_id = str(default_task_id)
+        else:
+            logger.error("[ETAPA 2] ERRO CRÍTICO: Tarefa padrão não disponível!")
+            raise Exception("Tarefa padrão 'standard_task' não encontrada no promoter_task_map")
+        
+        # Mapear usando .map() (vetorizado - muito mais rápido que apply)
+        df['promoter_task_id'] = df['name'].map(self.promoter_task_map)
+        
+        # Preencher valores None ou não encontrados com tarefa padrão (vetorizado)
+        missing_mask = df['promoter_task_id'].isna() | df['name'].isna()
+        missing_count = missing_mask.sum()
+        
+        if missing_count > 0:
+            # Logar combinações não encontradas (apenas primeiras 10 para não sobrecarregar log)
+            missing_names = df[missing_mask & df['name'].notna()]['name'].unique()[:10]
+            for missing_name in missing_names:
+                logger.warning(f"[ETAPA 2] Tarefa não encontrada para name='{missing_name}'. Usando tarefa padrão.")
+            if len(df[missing_mask & df['name'].notna()]['name'].unique()) > 10:
+                logger.warning(f"[ETAPA 2] ... e mais {len(df[missing_mask & df['name'].notna()]['name'].unique()) - 10} combinações não encontradas")
+            
+            # Preencher com tarefa padrão (vetorizado)
+            df.loc[missing_mask, 'promoter_task_id'] = default_task_id
+        
+        # Converter para string
+        df['promoter_task_id'] = df['promoter_task_id'].astype(str)
+        
+        # Remover colunas temporárias
+        df = df.drop(columns=['name', 'nome_tarefa_clean', 'nome_cliente_clean'], errors='ignore')
+        
+        print(f"[ETAPA 2] Mapeamento de promoter_task_id concluído. {missing_count} registros usaram tarefa padrão.")
+        logger.info(f"[ETAPA 2] Mapeamento concluído: {missing_count} registros usaram tarefa padrão de {len(df)} total")
         
         # Verificar se há valores None (erro crítico - não deveria acontecer)
         if df['promoter_task_id'].isna().any():
@@ -1923,15 +2110,82 @@ class ContractsMigration:
             print(f"[ETAPA 2] ERRO CRÍTICO: {missing_count} registros sem promoter_task_id válido")
             raise Exception(f"Não foi possível atribuir promoter_task_id para {missing_count} registros")
         
-        df['frequency'] = self.clean_string_vectorized(df['Frequencia'], max_length=50)
+        # Mapear frequency de inteiro para varchar (conversão em lote vetorizada)
+        frequency_map = {
+            1: 'once_per_week',
+            2: 'twice_per_week',
+            3: 'three_times_per_week',
+            4: 'four_times_per_week',
+            5: 'five_times_per_week',
+            6: 'six_times_per_week',
+            7: 'seven_times_per_week',
+            15: 'every_15_days',
+            30: 'once_per_month'
+        }
+        # Converter para inteiro primeiro (caso venha como string) e depois mapear
+        try:
+            print("[ETAPA 2] Convertendo Frequencia...")
+            # Converter para numérico primeiro, tratar NaN, depois converter para Int64 de forma segura
+            frequencia_numeric = pd.to_numeric(df['Frequencia'], errors='coerce')
+            print(f"[ETAPA 2] Frequencia após to_numeric: tipo={frequencia_numeric.dtype}, NULLs={frequencia_numeric.isna().sum()}")
+            # Converter para Int64 de forma segura usando apply para tratar cada valor individualmente
+            # Primeiro arredondar valores não inteiros, depois converter
+            frequencia_int = frequencia_numeric.apply(lambda x: pd.NA if pd.isna(x) else int(round(float(x))) if pd.notna(x) else pd.NA)
+            frequencia_int = frequencia_int.astype('Int64')
+            print(f"[ETAPA 2] Frequencia após conversão para Int64: tipo={frequencia_int.dtype}, NULLs={frequencia_int.isna().sum()}")
+            df['frequency'] = frequencia_int.map(frequency_map)
+            # Preencher valores não mapeados com None ou valor padrão se necessário
+            df['frequency'] = df['frequency'].fillna('')
+            print("[ETAPA 2] Frequencia convertida com sucesso")
+        except Exception as e:
+            logger.error(f"[ETAPA 2] ERRO ao converter Frequencia: {e}")
+            print(f"[ETAPA 2] ERRO ao converter Frequencia: {e}")
+            print(f"[ETAPA 2] Tipo original: {df['Frequencia'].dtype}")
+            print(f"[ETAPA 2] Valores únicos (primeiros 10): {df['Frequencia'].unique()[:10]}")
+            raise
         df['hours'] = self.convert_hours_to_float_vectorized(df['Horas'])
         df['hour_value'] = df['ValorHora'].fillna(0.0)
         df['start_date'] = df['DataInicioOperacao'].fillna(df['DataInclusaoOrcamentoLojas'])
         df.loc[df['start_date'].isna(), 'start_date'] = datetime.now()
         
-        # Status: usar StatusPedido se disponível, senão usar Ativo
-        df['status'] = df['StatusPedido'].fillna(df['Ativo'].astype(int))
-        df['status'] = df['status'].fillna(0).astype(int)
+        # Status: usar StatusPedido se disponível, senão usar Ativo, depois converter para varchar
+        # Converter status de inteiro para varchar: 11 → 'closed', 0 → 'inactive', qualquer outro → 'active' (conversão em lote vetorizada)
+        try:
+            print("[ETAPA 2] Convertendo Ativo...")
+            # Converter Ativo para numérico primeiro (tratando NaN e valores não numéricos)
+            ativo_numeric = pd.to_numeric(df['Ativo'], errors='coerce')
+            print(f"[ETAPA 2] Ativo após to_numeric: tipo={ativo_numeric.dtype}, NULLs={ativo_numeric.isna().sum()}")
+            ativo_numeric = ativo_numeric.fillna(0)
+            # Converter para int usando apply para evitar problemas de conversão direta
+            ativo_int = ativo_numeric.apply(lambda x: int(x) if pd.notna(x) else 0)
+            print(f"[ETAPA 2] Ativo convertido com sucesso: tipo={ativo_int.dtype}")
+        except Exception as e:
+            logger.error(f"[ETAPA 2] ERRO ao converter Ativo: {e}")
+            print(f"[ETAPA 2] ERRO ao converter Ativo: {e}")
+            print(f"[ETAPA 2] Tipo original: {df['Ativo'].dtype}")
+            print(f"[ETAPA 2] Valores únicos: {df['Ativo'].unique()}")
+            raise
+        
+        try:
+            print("[ETAPA 2] Convertendo StatusPedido...")
+            status_pedido_numeric = pd.to_numeric(df['StatusPedido'], errors='coerce')
+            print(f"[ETAPA 2] StatusPedido após to_numeric: tipo={status_pedido_numeric.dtype}, NULLs={status_pedido_numeric.isna().sum()}")
+            # Usar fillna com ativo_int já convertido
+            status_temp = status_pedido_numeric.fillna(ativo_int)
+            status_temp = status_temp.fillna(0)
+            # Converter para int usando apply para evitar problemas de conversão direta
+            status_temp = status_temp.apply(lambda x: int(x) if pd.notna(x) else 0)
+            print(f"[ETAPA 2] StatusPedido convertido com sucesso: tipo={status_temp.dtype}")
+        except Exception as e:
+            logger.error(f"[ETAPA 2] ERRO ao converter StatusPedido: {e}")
+            print(f"[ETAPA 2] ERRO ao converter StatusPedido: {e}")
+            print(f"[ETAPA 2] Tipo original: {df['StatusPedido'].dtype}")
+            print(f"[ETAPA 2] Valores únicos: {df['StatusPedido'].unique()}")
+            raise
+        # Mapear em lote vetorizado: 1 para 'active', 0 para qualquer outro valor (int)
+        df['status'] = pd.Series(1, index=df.index, dtype=int)  # 1 = active por padrão
+        # Se status_temp == 11 (closed) OU status_temp == 0 (inactive) → status = 0
+        df.loc[(status_temp == 11) | (status_temp == 0), 'status'] = 0
         
         df['created_at'] = df['DataInclusaoOrcamentoLojas'].fillna(datetime.now())
         df['updated_at'] = df['DataAlteracaoOrcamentoLojas'].fillna(df['created_at'])
@@ -2758,7 +3012,7 @@ class ContractsMigration:
                 batch_values.append((
                     str(contract_uuid),
                     str(user_uuid),
-                    'main',  # seller_type para Orcamento
+                    'hunter',  # seller_type para Orcamento
                     datetime.now(),
                     datetime.now()
                 ))
@@ -2819,10 +3073,10 @@ class ContractsMigration:
         # Query de insert usando gen_random_uuid() - formato para execute_values
         insert_query = f"""
         INSERT INTO {schema}.contract_sellers (
-            id, contract_id, user_id, seller_type, created_at, updated_at
+            id, contract_id, user_id, seller_type, created_at, updated_at, status
         ) VALUES %s
         """
-        insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s)"
+        insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, 'active')"
         
         chunk_num = 0
         total_processed = 0
@@ -3142,7 +3396,7 @@ class ContractsMigration:
                 batch_values.append((
                     str(contract_uuid),
                     str(user_uuid),
-                    'seller',  # position sempre "seller" na primeira carga
+                    'analyst',  # position sempre "analyst" na primeira carga
                     row[2] if row[2] else datetime.now(),  # DataInclusaoOrcamento
                     row[3] if row[3] else datetime.now()  # DataAlteracaoOrcamento
                 ))
@@ -3677,35 +3931,7 @@ class ContractsMigration:
         logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
-        print("[ETAPA 7] Carregando mapeamento de persons...")
-        person_id_map = {}
-        try:
-            schema_persons = 'gmcore' if destino == 'HML' else 'core'
-            # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
-            if destino == 'PRD':
-                conn_persons = DatabaseConnection.get_postgresql_prd_destino_connection()
-            else:
-                conn_persons = DatabaseConnection.get_postgresql_hml_destino_connection()
-            cursor_persons = conn_persons.cursor()
-            cursor_persons.execute(f"""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables 
-                    WHERE table_schema = '{schema_persons}' 
-                    AND table_name = 'persons'
-                )
-            """)
-            if cursor_persons.fetchone()[0]:
-                cursor_persons.execute(f"SELECT id, legacy_id FROM {schema_persons}.persons WHERE legacy_id IS NOT NULL")
-                for row in cursor_persons.fetchall():
-                    if row[1] is not None:
-                        person_id_map[row[1]] = row[0]
-            cursor_persons.close()
-            conn_persons.close()
-            print(f"OK - {len(person_id_map)} persons carregados")
-            logger.info(f"Carregados {len(person_id_map)} persons para mapeamento")
-        except Exception as e:
-            logger.warning(f"Erro ao carregar persons: {e}")
-            print(f"AVISO - Nao foi possivel carregar persons: {e}")
+        # NOTA: Tabela persons não existe em PRD. Campo person_id será sempre preenchido com UUID do Sys Admin.
         
         # Carregar filtros do contracts (se existir)
         filter_data = self.load_filter_json()
@@ -3811,14 +4037,9 @@ class ContractsMigration:
                     missing_contracts.append(legado_id_orcamento)
                     continue
                 
-                person_uuid = person_id_map.get(legado_id_cliente_loja) if person_id_map else None
-                
-                # Pular se não encontrou person_id (coluna é NOT NULL)
-                if not person_uuid:
-                    error_msg = f"Person nao encontrado: IdClienteLoja={legado_id_cliente_loja} para Orcamento={legado_id_orcamento}"
-                    logger.warning(error_msg)
-                    self.stats['errors'].append(error_msg)
-                    continue
+                # person_id sempre usa UUID do Sys Admin (tabela persons não existe em PRD)
+                SYS_ADMIN_USER_UUID = 'b1d3a1a3-580b-4db4-92e1-0b7cb66ffe9f'
+                person_uuid = SYS_ADMIN_USER_UUID
                 
                 batch_values.append((
                     str(contract_uuid),
@@ -4156,11 +4377,18 @@ class ContractsMigration:
                 # REGISTRO 1: EPI
                 if (row[1] and row[1] > 0) or (row[4] is True):
                     # billing_model: se tem InicioCobrancaEPI, é recurring (cobrança recorrente), senão one_time
-                    billing_model_epi = 'recurring' if row[5] else 'one_time'
+                    # # Anterior
+                    # billing_model_epi = 'recurring' if row[5] else 'one_time'
+
+                    #Novo = enum
+                    billing_model_epi = 'monthly'
+
                     batch_values.append((
                         str(contract_uuid),
                         row[1] if row[1] else 0.0,
-                        'epi',
+                        # anterior
+                        # 'epi',
+                        'other',
                         billing_model_epi,
                         row[5] if row[5] else created_at_base,  # InicioCobrancaEPI ou DataInclusao
                         updated_at_base
@@ -4171,8 +4399,12 @@ class ContractsMigration:
                     batch_values.append((
                         str(contract_uuid),
                         row[2],
-                        'trade_marketing',
-                        'recurring',
+                        # anterior
+                        # 'trade_marketing',
+                        'other',
+                        # anterior
+                        # 'recurring',
+                        'monthly',
                         created_at_base,
                         updated_at_base
                     ))
@@ -4182,8 +4414,12 @@ class ContractsMigration:
                     batch_values.append((
                         str(contract_uuid),
                         row[3],
-                        'others',
-                        'one_time',
+                        # anterior
+                        # 'others',
+                        'other',
+                        # anterior
+                        # 'one_time',
+                        'monthly',
                         created_at_base,
                         updated_at_base
                     ))
@@ -4193,8 +4429,12 @@ class ContractsMigration:
                     batch_values.append((
                         str(contract_uuid),
                         row[6],
-                        'interest',
-                        'recurring',
+                        # anterior
+                        # 'interest',
+                        'other',
+                        # anterior
+                        # 'recurring',
+                        'monthly',
                         created_at_base,
                         updated_at_base
                     ))
@@ -4204,8 +4444,12 @@ class ContractsMigration:
                     batch_values.append((
                         str(contract_uuid),
                         row[7],
-                        'discount',
-                        'one_time',
+                        # anterior
+                        # 'discount',
+                        'other',
+                        # anterior
+                        # 'one_time',
+                        'monthly',
                         created_at_base,
                         updated_at_base
                     ))
@@ -4215,8 +4459,12 @@ class ContractsMigration:
                     batch_values.append((
                         str(contract_uuid),
                         row[8],
-                        'fine',
-                        'one_time',
+                        # anterior
+                        # 'fine',
+                        'other',
+                        # anterior
+                        # 'one_time',
+                        'monthly',
                         created_at_base,
                         updated_at_base
                     ))
