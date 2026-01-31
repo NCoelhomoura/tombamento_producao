@@ -417,7 +417,6 @@ hour_value                               NUMERIC                        -       
 start_date                               DATE                           -               NAO        NAO  
 status                                   INTEGER                        32              NAO        NAO  
 deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
-store_id                                 UUID                           -               SIM        NAO  
 created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
 updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
 end_date                                 DATE                           -               SIM        NAO  
@@ -426,11 +425,36 @@ legacy_id                                INTEGER                        32      
 
 
 CAMPOS DISPONIVEIS:
-  Origem (ViewOrcamentosLojas + OrcamentoLojas): IdOrcamentoLoja, IdOrcamento, IdTarefa, NomeTarefa, Frequencia, Horas, HorasReal, ValorHora, ValorHoraVisita, ValorLoja, ValorNegociado, DataInicioOperacao, Ativo, DataInclusao, DataAlteracao, DataExclusao, StatusPedido (da view)
-  Destino (contract_scenarios): id, contract_id, frequency, hours, hour_value, start_date, status, deleted_at, store_id, created_at, updated_at, end_date, promoter_task_id, legacy_id
+  Origem (ViewOrcamentosLojas + OrcamentoLojas): IdOrcamentoLoja, IdOrcamento, IdTarefa, NomeTarefa, Frequencia, Horas, HorasReal, ValorHora, ValorHoraVisita, ValorLoja, ValorNegociado, DataInicioOperacao, DataAvisoPrevio, Ativo, DataInclusao, DataAlteracao, DataExclusao, StatusPedido (da view)
+  Destino (contract_scenarios): id, contract_id, frequency, hours, hour_value, start_date, status, deleted_at, created_at, updated_at, end_date, promoter_task_id, legacy_id
   
-NOTA: A coluna "task" foi removida da tabela contract_scenarios em PRD e substituída por "promoter_task_id" (UUID).
+NOTA: A coluna "store_id" foi removida da tabela contract_scenarios. A associação entre cenários e lojas agora é feita através da tabela contract_scenario_stores.
+      A coluna "task" foi removida da tabela contract_scenarios em PRD e substituída por "promoter_task_id" (UUID).
       A tabela também possui "end_date" (DATE, nullable) e "legacy_id" (INTEGER, nullable).
+      
+LÓGICA DE CRIAÇÃO DOS CENÁRIOS:
+  Os cenários são criados usando DISTINCT baseado nos seguintes campos da ViewOrcamentosLojas:
+  - IdOrcamento
+  - Frequencia
+  - Horas
+  - ValorHora
+  - DataInicioOperacao
+  - DataAvisoPrevio
+  
+  Query base para gerar os cenários únicos:
+  SELECT DISTINCT 
+      v.IdOrcamento,
+      v.Frequencia,
+      v.Horas,
+      v.ValorHora,
+      v.DataInicioOperacao,
+      v.DataAvisoPrevio
+  FROM ViewOrcamentosLojas v
+  INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+  WHERE v.IdOrcamento IN (lista de IdOrcamento do filtro)
+      AND (CONVERT(DATE, v.DataAvisoPrevio) >= data_minima OR v.DataAvisoPrevio IS NULL)
+      AND CONVERT(DATE, v.DataInicioOperacao) <= data_maxima
+      AND v.IdCliente IS NOT NULL
 
 
 ====================================================================================================
@@ -467,7 +491,7 @@ id                                       UUID                           -       
 store_id                                 UUID                           -               NAO        NAO  
 scenario_id                              UUID                           -               NAO        NAO  
 start_date                               DATE                           -               NAO        NAO  
-status                                   INTEGER                        32              NAO        NAO  
+status                                   VARCHAR(50)                    50              NAO        NAO  
 removed_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO  
 created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
 updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
@@ -481,7 +505,7 @@ id                                       UUID                           -       
 store_id                                 UUID                           -               NAO        NAO  
 scenario_id                              UUID                           -               NAO        NAO  
 start_date                               DATE                           -               NAO        NAO  
-status                                   INTEGER                        32              NAO        NAO  
+status                                   VARCHAR(50)                    50              NAO        NAO  
 created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
 updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO  
 closed_at                                DATE                           -               SIM        NAO  
@@ -489,12 +513,38 @@ legacy_id                                INTEGER                        32      
 
 
 CAMPOS DISPONIVEIS:
-  Origem (ViewOrcamentosLojas + OrcamentoLojas): IdOrcamentoLoja, IdEstabelecimento, DataInicioOperacao, Ativo, DataExclusao
+  Origem (ViewOrcamentosLojas + OrcamentoLojas): 
+    - IdOrcamentoLoja (usado para legacy_id e para buscar o scenario_id correspondente)
+    - IdOrcamento (usado para buscar o scenario_id correspondente)
+    - IdEstabelecimento (mapeado para store_id)
+    - Frequencia (usado para buscar o scenario_id correspondente)
+    - Horas (usado para buscar o scenario_id correspondente)
+    - ValorHora (usado para buscar o scenario_id correspondente)
+    - DataInicioOperacao (mapeado para start_date e usado para buscar o scenario_id correspondente)
+    - DataAvisoPrevio (usado para buscar o scenario_id correspondente)
+    - Ativo (mapeado para status)
+    - DataExclusao (mapeado para closed_at/removed_at)
+    - DataInclusaoOrcamentoLojas (mapeado para created_at)
+    - DataAlteracaoOrcamentoLojas (mapeado para updated_at)
+    
   Destino HML (contract_scenario_stores): id, store_id, scenario_id, start_date, status, removed_at, created_at, updated_at
   Destino PRD (contract_scenario_stores): id, store_id, scenario_id, start_date, status, created_at, updated_at, closed_at, legacy_id
 
 NOTA: Em PRD, a coluna é 'closed_at' (DATE) em vez de 'removed_at' (TIMESTAMP WITH TIME ZONE) como em HML.
       A tabela também possui 'legacy_id' (INTEGER, nullable) em PRD.
+      O campo 'status' é VARCHAR(50) em ambos os ambientes (não INTEGER).
+      
+LÓGICA DE ASSOCIAÇÃO:
+  Para cada registro de ViewOrcamentosLojas/OrcamentoLojas, buscar o scenario_id correspondente em contract_scenarios
+  baseado na combinação única de:
+  - IdOrcamento (via contract_id)
+  - Frequencia
+  - Horas
+  - ValorHora
+  - DataInicioOperacao
+  - DataAvisoPrevio
+  
+  O scenario_id será obtido através de um JOIN ou lookup usando esses campos como chave de busca.
 
 
 ====================================================================================================
@@ -881,25 +931,28 @@ MIGRACAO: ORCAMENTO (ViewOrcamentosLojas + Orcamento) : CONTRACTS
 
 MIGRACAO: ORCAMENTOLOJAS (ViewOrcamentosLojas + OrcamentoLojas) : CONTRACT_SCENARIOS
 ----------------------------------------------------------------------------------------------------
+  ⚠️ IMPORTANTE: Esta migração cria CENÁRIOS ÚNICOS usando DISTINCT baseado em IdOrcamento, Frequencia, Horas, ValorHora, DataInicioOperacao e DataAvisoPrevio.
+  A associação entre cenários e lojas é feita posteriormente na tabela contract_scenario_stores.
+  
   [GERADO AUTOMATICAMENTE] : gmcoredb.commercial.contract_scenarios.id
   [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdOrcamento -> contracts.legacy_id -> contracts.id] : gmcoredb.commercial.contract_scenarios.contract_id
   [PREENCHIDO PELA LOGICA DE MIGRACAO - converter ViewOrcamentosLojas.Frequencia (int) para varchar conforme mapeamento: 1=once_per_week, 2=twice_per_week, 3=three_times_per_week, 4=four_times_per_week, 5=five_times_per_week, 6=six_times_per_week, 7=seven_times_per_week, 15=every_15_days, 30=once_per_month] : gmcoredb.commercial.contract_scenarios.frequency
   [PREENCHIDO PELA LOGICA DE MIGRACAO - converter ViewOrcamentosLojas.Horas (nvarchar) para double precision] : gmcoredb.commercial.contract_scenarios.hours
-  FINANCEIRO.dbo.ViewOrcamentosLojas.ValorHora : gmcoredb.commercial.contract_scenarios.hour_value
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - converter ViewOrcamentosLojas.ValorHora (decimal) para NUMERIC, preencher com 0.0 se vazio/NULL (campo NOT NULL)] : gmcoredb.commercial.contract_scenarios.hour_value
   FINANCEIRO.dbo.ViewOrcamentosLojas.DataInicioOperacao : gmcoredb.commercial.contract_scenarios.start_date
   [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear StatusPedido ou Ativo para status (converter para integer)] : gmcoredb.commercial.contract_scenarios.status
   FINANCEIRO.dbo.ViewOrcamentosLojas.DataInclusaoOrcamentoLojas : gmcoredb.commercial.contract_scenarios.created_at
   FINANCEIRO.dbo.ViewOrcamentosLojas.DataAlteracaoOrcamentoLojas : gmcoredb.commercial.contract_scenarios.updated_at
-  [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdEstabelecimento -> stores.legacy_id -> stores.id] : gmcoredb.commercial.contract_scenarios.store_id
   [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear IdTarefa ou NomeTarefa para promoter_task_id (UUID)] : gmcoredb.commercial.contract_scenarios.promoter_task_id
-  [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdOrcamentoLoja] : gmcoredb.commercial.contract_scenarios.legacy_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre preencher com 0] : gmcoredb.commercial.contract_scenarios.legacy_id
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataAvisoPrevio (pode ser NULL se não tiver valor) : gmcoredb.commercial.contract_scenarios.end_date
 
   CAMPOS DESTINO NAO MAPEADOS:
     - contract_scenarios.deleted_at
-    - contract_scenarios.end_date
 
-  CAMPOS ORIGEM NAO MAPEADOS:
-    - ViewOrcamentosLojas.IdOrcamentoLoja
+  CAMPOS ORIGEM NAO MAPEADOS (serão mapeados em contract_scenario_stores):
+    - ViewOrcamentosLojas.IdOrcamentoLoja (usado em contract_scenario_stores.legacy_id)
+    - ViewOrcamentosLojas.IdEstabelecimento (usado em contract_scenario_stores.store_id)
     - ViewOrcamentosLojas.IdOrcamentoLojaComplemento
     - ViewOrcamentosLojas.QtdeSku
     - ViewOrcamentosLojas.ValorLoja
@@ -907,7 +960,6 @@ MIGRACAO: ORCAMENTOLOJAS (ViewOrcamentosLojas + OrcamentoLojas) : CONTRACT_SCENA
     - ViewOrcamentosLojas.DecimoTerceiroSalario
     - ViewOrcamentosLojas.Viabilidade
     - ViewOrcamentosLojas.TipoViabilidade
-    - ViewOrcamentosLojas.DataAvisoPrevio
     - OrcamentoLojas.HorasReal
     - OrcamentoLojas.Comissao
     - OrcamentoLojas.HoraAbastecimento
@@ -951,15 +1003,19 @@ MIGRACAO: ORCAMENTOLOJAS (ViewOrcamentosLojas + OrcamentoLojas) : CONTRACT_SCENA
 
 MIGRACAO: ORCAMENTOLOJAS (ViewOrcamentosLojas + OrcamentoLojas) : CONTRACT_SCENARIO_STORES
 ----------------------------------------------------------------------------------------------------
-  [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcommercial.contract_scenario_stores.id
-  FINANCEIRO.dbo.ViewOrcamentosLojas.IdOrcamentoLoja : supera_dev_seed.gmcommercial.contract_scenario_stores.legacy_id
-  [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdEstabelecimento -> stores.legacy_id -> stores.id] : supera_dev_seed.gmcommercial.contract_scenario_stores.store_id
-  [PREENCHIDO PELA LOGICA DE MIGRACAO - contract_scenarios.id criado na etapa anterior] : supera_dev_seed.gmcommercial.contract_scenario_stores.scenario_id
-  FINANCEIRO.dbo.ViewOrcamentosLojas.DataInicioOperacao : supera_dev_seed.gmcommercial.contract_scenario_stores.start_date
-  [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear Ativo de OrcamentoLojas para status (1=ativo, 0=inativo)] : supera_dev_seed.gmcommercial.contract_scenario_stores.status
-  [PREENCHIDO PELA LOGICA DE MIGRACAO - DataExclusao de OrcamentoLojas, se existir] : supera_dev_seed.gmcommercial.contract_scenario_stores.removed_at
-  FINANCEIRO.dbo.ViewOrcamentosLojas.DataInclusaoOrcamentoLojas : supera_dev_seed.gmcommercial.contract_scenario_stores.created_at
-  FINANCEIRO.dbo.ViewOrcamentosLojas.DataAlteracaoOrcamentoLojas : supera_dev_seed.gmcommercial.contract_scenario_stores.updated_at
+  ⚠️ IMPORTANTE: Esta migração associa os cenários únicos (criados em contract_scenarios) com as lojas específicas.
+  Cada registro de ViewOrcamentosLojas/OrcamentoLojas deve ser associado ao cenário correspondente baseado na combinação:
+  IdOrcamento + Frequencia + Horas + ValorHora + DataInicioOperacao + DataAvisoPrevio
+  
+  [GERADO AUTOMATICAMENTE] : gmcoredb.commercial.contract_scenario_stores.id
+  FINANCEIRO.dbo.ViewOrcamentosLojas.IdOrcamentoLoja : gmcoredb.commercial.contract_scenario_stores.legacy_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdEstabelecimento -> stores.legacy_id -> stores.id] : gmcoredb.commercial.contract_scenario_stores.store_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - buscar contract_scenarios.id baseado na combinação de IdOrcamento+Frequencia+Horas+ValorHora+DataInicioOperacao+DataAvisoPrevio que foi criada na etapa anterior (step2_migrate_contract_scenarios)] : gmcoredb.commercial.contract_scenario_stores.scenario_id
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataInicioOperacao : gmcoredb.commercial.contract_scenario_stores.start_date
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear Ativo de OrcamentoLojas para status (converter para VARCHAR: 'active'=ativo, 'inactive'=inativo ou valores conforme regra de negócio)] : gmcoredb.commercial.contract_scenario_stores.status
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre preencher com NULL] : gmcoredb.commercial.contract_scenario_stores.closed_at 
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataInclusaoOrcamentoLojas : gmcoredb.commercial.contract_scenario_stores.created_at
+  FINANCEIRO.dbo.ViewOrcamentosLojas.DataAlteracaoOrcamentoLojas : gmcoredb.commercial.contract_scenario_stores.updated_at
 
   CAMPOS ORIGEM NAO MAPEADOS:
     - ViewOrcamentosLojas.IdOrcamento

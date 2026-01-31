@@ -171,13 +171,14 @@ class ContractsMigration:
     """Classe para executar a migração de dados de contracts"""
     
     def __init__(self, limit_rows=0, id_orcamento_filter=None, data_aviso_previo_min=None, 
-                 data_inicio_operacao_max=None, clear_data=False):
+                 data_inicio_operacao_max=None, status_pedido_filter=None, clear_data=False):
         """
         Args:
             limit_rows: 0 = todos, > 0 = limitar quantidade
             id_orcamento_filter: Lista de IdOrcamento para filtrar (ex: [6192, 6193])
             data_aviso_previo_min: Data mínima para DataAvisoPrevio (datetime ou string 'YYYY-MM-DD')
             data_inicio_operacao_max: Data máxima para DataInicioOperacao (datetime ou string 'YYYY-MM-DD')
+            status_pedido_filter: Lista de StatusPedido para filtrar (ex: [6, 7, 8])
             clear_data: Se True, força TRUNCATE mesmo com filtros aplicados
         """
         self.stats = {
@@ -203,6 +204,7 @@ class ContractsMigration:
         self.id_orcamento_filter = id_orcamento_filter if id_orcamento_filter else []
         self.data_aviso_previo_min = data_aviso_previo_min
         self.data_inicio_operacao_max = data_inicio_operacao_max
+        self.status_pedido_filter = status_pedido_filter if status_pedido_filter else []
         self.clear_data = clear_data
         
         # Caminho do arquivo JSON de filtros
@@ -229,6 +231,7 @@ class ContractsMigration:
         return (len(self.id_orcamento_filter) > 0 or 
                 self.data_aviso_previo_min is not None or 
                 self.data_inicio_operacao_max is not None or
+                len(self.status_pedido_filter) > 0 or
                 self.limit_rows > 0)
     
     def truncate_table(self, table_name: str, schema: str = None):
@@ -331,6 +334,7 @@ class ContractsMigration:
                     'id_orcamento': self.id_orcamento_filter,
                     'data_aviso_previo_min': str(self.data_aviso_previo_min) if self.data_aviso_previo_min else None,
                     'data_inicio_operacao_max': str(self.data_inicio_operacao_max) if self.data_inicio_operacao_max else None,
+                    'status_pedido': self.status_pedido_filter if self.status_pedido_filter else None,
                     'limit_rows': self.limit_rows,
                     'clear_data': self.clear_data
                 },
@@ -510,6 +514,12 @@ class ContractsMigration:
                 where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
                 query_params.append(data_inicio_str)
             
+            # Filtro StatusPedido
+            if len(self.status_pedido_filter) > 0:
+                placeholders = ','.join(['?' for _ in self.status_pedido_filter])
+                where_conditions.append(f"v.StatusPedido IN ({placeholders})")
+                query_params.extend(self.status_pedido_filter)
+            
             if where_conditions:
                 count_query += " WHERE " + " AND ".join(where_conditions)
             
@@ -632,11 +642,12 @@ class ContractsMigration:
                 logger.warning(f"Nao foi possivel criar/verificar coluna legacy_id: {e}")
         
         # Buscar dados do SQL Server primeiro para identificar quais customers são necessários
+        # ⚠️ IMPORTANTE: Usar SELECT DISTINCT para garantir que todos os IdOrcamento únicos sejam coletados
         print("[ETAPA 1] Buscando dados do SQL Server para identificar customers necessários...")
         sql_query_preview = """
-        SELECT 
+        SELECT DISTINCT
             v.IdOrcamento,
-            MAX(v.IdCliente) AS IdCliente
+            v.IdCliente
         FROM ViewOrcamentosLojas v
         INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
         """
@@ -645,10 +656,23 @@ class ContractsMigration:
         where_conditions_preview = []
         query_params_preview = []
         
+        # ⚠️ CRÍTICO: Log dos filtros aplicados na query preview
+        print(f"[ETAPA 1] Preview - Filtros recebidos:")
+        print(f"  - id_orcamento_filter: {self.id_orcamento_filter}")
+        print(f"  - data_aviso_previo_min: {self.data_aviso_previo_min}")
+        print(f"  - data_inicio_operacao_max: {self.data_inicio_operacao_max}")
+        print(f"  - status_pedido_filter: {self.status_pedido_filter}")
+        logger.info(f"[ETAPA 1] Preview - Filtros: id_orcamento={self.id_orcamento_filter}, "
+                   f"data_aviso={self.data_aviso_previo_min}, data_inicio={self.data_inicio_operacao_max}, "
+                   f"status_pedido={self.status_pedido_filter}")
+        
         if len(self.id_orcamento_filter) > 0:
             placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
             where_conditions_preview.append(f"v.IdOrcamento IN ({placeholders})")
             query_params_preview.extend(self.id_orcamento_filter)
+            print(f"[ETAPA 1] Preview - Aplicando filtro IdOrcamento: {self.id_orcamento_filter}")
+        else:
+            print(f"[ETAPA 1] Preview - SEM filtro IdOrcamento (buscando TODOS os orçamentos que atendem aos outros filtros)")
         
         if self.data_aviso_previo_min is not None:
             if isinstance(self.data_aviso_previo_min, str):
@@ -666,12 +690,28 @@ class ContractsMigration:
             where_conditions_preview.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
             query_params_preview.append(data_inicio_str)
         
+        # ⚠️ IMPORTANTE: Aplicar filtro StatusPedido também na query preview
+        if len(self.status_pedido_filter) > 0:
+            placeholders = ','.join(['?' for _ in self.status_pedido_filter])
+            where_conditions_preview.append(f"v.StatusPedido IN ({placeholders})")
+            query_params_preview.extend(self.status_pedido_filter)
+            print(f"[ETAPA 1] Preview - Aplicando filtro StatusPedido: {self.status_pedido_filter}")
+        else:
+            print(f"[ETAPA 1] Preview - SEM filtro StatusPedido")
+        
+        # Filtro IdCliente (obrigatório conforme query base)
+        where_conditions_preview.append("v.IdCliente IS NOT NULL")
+        
         if where_conditions_preview:
             sql_query_preview += " WHERE " + " AND ".join(where_conditions_preview)
         
-        sql_query_preview += """
-        GROUP BY v.IdOrcamento
-        """
+        print(f"[ETAPA 1] Preview - Query WHERE clause: {where_conditions_preview}")
+        print(f"[ETAPA 1] Preview - Query params: {query_params_preview}")
+        logger.info(f"[ETAPA 1] Preview - WHERE conditions: {where_conditions_preview}")
+        logger.info(f"[ETAPA 1] Preview - Query params: {query_params_preview}")
+        
+        # ⚠️ IMPORTANTE: Remover GROUP BY já que estamos usando SELECT DISTINCT
+        # GROUP BY não é necessário com SELECT DISTINCT e pode causar problemas
         
         if self.limit_rows > 0:
             sql_query_preview += f" ORDER BY v.IdOrcamento OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY"
@@ -692,6 +732,13 @@ class ContractsMigration:
         id_cliente_necessarios = list(set([row[1] for row in preview_rows if row[1] is not None]))
         id_orcamento_preview = [row[0] for row in preview_rows]
         
+        print(f"[ETAPA 1] Preview: Encontrados {len(id_orcamento_preview)} IdOrcamento únicos na query preview")
+        logger.info(f"[ETAPA 1] Preview: Encontrados {len(id_orcamento_preview)} IdOrcamento únicos na query preview")
+        if len(id_orcamento_preview) > 0 and len(id_orcamento_preview) <= 10:
+            print(f"[ETAPA 1] Preview: IdOrcamento encontrados: {id_orcamento_preview}")
+        elif len(id_orcamento_preview) > 10:
+            print(f"[ETAPA 1] Preview: IdOrcamento encontrados (primeiros 10): {id_orcamento_preview[:10]}...")
+        
         # Preparar aggregated_ids para gerar JSON antes de executar customers
         aggregated_ids_preview = {
             'IdOrcamento': sorted(id_orcamento_preview),
@@ -707,6 +754,7 @@ class ContractsMigration:
                 'id_orcamento': self.id_orcamento_filter,
                 'data_aviso_previo_min': str(self.data_aviso_previo_min) if self.data_aviso_previo_min else None,
                 'data_inicio_operacao_max': str(self.data_inicio_operacao_max) if self.data_inicio_operacao_max else None,
+                'status_pedido': self.status_pedido_filter if self.status_pedido_filter else None,
                 'limit_rows': self.limit_rows,
                 'clear_data': self.clear_data
             },
@@ -839,6 +887,12 @@ class ContractsMigration:
             where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
             query_params.append(data_inicio_str)
         
+        # Filtro StatusPedido
+        if len(self.status_pedido_filter) > 0:
+            placeholders = ','.join(['?' for _ in self.status_pedido_filter])
+            where_conditions.append(f"v.StatusPedido IN ({placeholders})")
+            query_params.extend(self.status_pedido_filter)
+        
         # Adicionar WHERE se houver condições
         if where_conditions:
             sql_query += " WHERE " + " AND ".join(where_conditions)
@@ -858,10 +912,12 @@ class ContractsMigration:
             logger.info(f"Filtros aplicados: IdOrcamento={self.id_orcamento_filter}, "
                        f"DataAvisoPrevio_min={self.data_aviso_previo_min}, "
                        f"DataInicioOperacao_max={self.data_inicio_operacao_max}, "
+                       f"StatusPedido={self.status_pedido_filter}, "
                        f"limit_rows={self.limit_rows}, clear_data={self.clear_data}")
             print(f"[ETAPA 1] Filtros aplicados: IdOrcamento={self.id_orcamento_filter}, "
                   f"DataAvisoPrevio_min={self.data_aviso_previo_min}, "
-                  f"DataInicioOperacao_max={self.data_inicio_operacao_max}")
+                  f"DataInicioOperacao_max={self.data_inicio_operacao_max}, "
+                  f"StatusPedido={self.status_pedido_filter}")
         
         conn_sql = DatabaseConnection.get_sql_server_prd_connection()
         cursor_sql = conn_sql.cursor()
@@ -913,6 +969,12 @@ class ContractsMigration:
                         data_inicio_str = self.data_inicio_operacao_max.strftime('%Y-%m-%d')
                     where_conditions_ids.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
                     query_params_ids.append(data_inicio_str)
+                
+                # Filtro StatusPedido
+                if len(self.status_pedido_filter) > 0:
+                    placeholders = ','.join(['?' for _ in self.status_pedido_filter])
+                    where_conditions_ids.append(f"v.StatusPedido IN ({placeholders})")
+                    query_params_ids.extend(self.status_pedido_filter)
                 
                 where_clause_ids = "WHERE " + " AND ".join(where_conditions_ids)
                 print(f"[ETAPA 1] Coletando TODOS os IDs únicos para {len(id_orcamento_migrados)} contratos: {id_orcamento_migrados[:5]}{'...' if len(id_orcamento_migrados) > 5 else ''}")
@@ -1303,32 +1365,101 @@ class ContractsMigration:
             filter_ids = self._get_filter_ids_for_validation()
             id_orcamento_list = filter_ids.get('IdOrcamento', [])
             
-            # Contar origem aplicando os mesmos filtros do step1
+            # Contar origem aplicando os mesmos filtros do step1 e step2
+            # ⚠️ IMPORTANTE: Contar CENÁRIOS ÚNICOS usando DISTINCT (mesma lógica do step2)
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
             
+            # Construir WHERE clause com filtros opcionais (mesmo padrão do step2)
+            where_conditions = []
+            query_params = []
+            
             if id_orcamento_list:
-                # Aplicar filtro de IdOrcamento - contar TODOS os registros (não apenas DISTINCT)
                 placeholders = ','.join(['?' for _ in id_orcamento_list])
+                where_conditions.append(f"v.IdOrcamento IN ({placeholders})")
+                query_params.extend(id_orcamento_list)
+            
+            # Filtro DataAvisoPrevio (data mínima)
+            if self.data_aviso_previo_min is not None:
+                if isinstance(self.data_aviso_previo_min, str):
+                    data_aviso_previo_str = self.data_aviso_previo_min
+                else:
+                    data_aviso_previo_str = self.data_aviso_previo_min.strftime('%Y-%m-%d')
+                where_conditions.append("(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)")
+                query_params.append(data_aviso_previo_str)
+            
+            # Filtro DataInicioOperacao (data máxima)
+            if self.data_inicio_operacao_max is not None:
+                if isinstance(self.data_inicio_operacao_max, str):
+                    data_inicio_str = self.data_inicio_operacao_max
+                else:
+                    data_inicio_str = self.data_inicio_operacao_max.strftime('%Y-%m-%d')
+                where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
+                query_params.append(data_inicio_str)
+            
+            # Filtro StatusPedido
+            if len(self.status_pedido_filter) > 0:
+                placeholders = ','.join(['?' for _ in self.status_pedido_filter])
+                where_conditions.append(f"v.StatusPedido IN ({placeholders})")
+                query_params.extend(self.status_pedido_filter)
+            
+            # Filtro IdCliente (obrigatório conforme query base)
+            where_conditions.append("v.IdCliente IS NOT NULL")
+            
+            # Construir query de contagem com DISTINCT
+            if where_conditions:
                 count_query = f"""
-                SELECT COUNT(*)
+                SELECT COUNT(DISTINCT 
+                    CAST(v.IdOrcamento AS VARCHAR) + '|' + 
+                    ISNULL(CAST(v.Frequencia AS VARCHAR), '') + '|' + 
+                    ISNULL(CAST(v.Horas AS VARCHAR), '') + '|' + 
+                    ISNULL(CAST(v.ValorHora AS VARCHAR), '0.0') + '|' + 
+                    ISNULL(CONVERT(VARCHAR, v.DataInicioOperacao, 120), '') + '|' + 
+                    ISNULL(CONVERT(VARCHAR, v.DataAvisoPrevio, 120), '')
+                )
                 FROM ViewOrcamentosLojas v
-                LEFT JOIN OrcamentoLojas ol ON ol.Id = v.IdOrcamentoLoja
-                WHERE v.IdOrcamento IN ({placeholders})
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                WHERE {' AND '.join(where_conditions)}
                 """
-                cursor_sql.execute(count_query, id_orcamento_list)
+                cursor_sql.execute(count_query, query_params)
             elif self.limit_rows > 0:
-                cursor_sql.execute(f"""
-                    SELECT COUNT(*) 
-                    FROM (
-                        SELECT TOP {self.limit_rows} v.IdOrcamentoLoja
-                        FROM ViewOrcamentosLojas v
-                        LEFT JOIN OrcamentoLojas ol ON ol.Id = v.IdOrcamentoLoja
-                        ORDER BY v.IdOrcamentoLoja
-                    ) AS limited
-                """)
+                # Contar cenários únicos com LIMIT
+                count_query = f"""
+                SELECT COUNT(DISTINCT 
+                    CAST(v.IdOrcamento AS VARCHAR) + '|' + 
+                    ISNULL(CAST(v.Frequencia AS VARCHAR), '') + '|' + 
+                    ISNULL(CAST(v.Horas AS VARCHAR), '') + '|' + 
+                    ISNULL(CAST(v.ValorHora AS VARCHAR), '0.0') + '|' + 
+                    ISNULL(CONVERT(VARCHAR, v.DataInicioOperacao, 120), '') + '|' + 
+                    ISNULL(CONVERT(VARCHAR, v.DataAvisoPrevio, 120), '')
+                )
+                FROM (
+                    SELECT DISTINCT TOP {self.limit_rows}
+                        v.IdOrcamento, v.Frequencia, v.Horas, v.ValorHora, 
+                        v.DataInicioOperacao, v.DataAvisoPrevio
+                    FROM ViewOrcamentosLojas v
+                    INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                    WHERE v.IdCliente IS NOT NULL
+                    ORDER BY v.IdOrcamento, v.Frequencia, v.Horas, v.ValorHora, v.DataInicioOperacao, v.DataAvisoPrevio
+                ) AS limited
+                """
+                cursor_sql.execute(count_query)
             else:
-                cursor_sql.execute("SELECT COUNT(*) FROM ViewOrcamentosLojas v LEFT JOIN OrcamentoLojas ol ON ol.Id = v.IdOrcamentoLoja")
+                # Contar todos os cenários únicos
+                count_query = """
+                SELECT COUNT(DISTINCT 
+                    CAST(v.IdOrcamento AS VARCHAR) + '|' + 
+                    ISNULL(CAST(v.Frequencia AS VARCHAR), '') + '|' + 
+                    ISNULL(CAST(v.Horas AS VARCHAR), '') + '|' + 
+                    ISNULL(CAST(v.ValorHora AS VARCHAR), '0.0') + '|' + 
+                    ISNULL(CONVERT(VARCHAR, v.DataInicioOperacao, 120), '') + '|' + 
+                    ISNULL(CONVERT(VARCHAR, v.DataAvisoPrevio, 120), '')
+                )
+                FROM ViewOrcamentosLojas v
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                WHERE v.IdCliente IS NOT NULL
+                """
+                cursor_sql.execute(count_query)
             origem_count = cursor_sql.fetchone()[0]
             cursor_sql.close()
             conn_sql.close()
@@ -1353,8 +1484,8 @@ class ContractsMigration:
             cursor_pg.close()
             conn_pg.close()
             
-            print(f"\nORIGEM (SQL Server PRD - ViewOrcamentosLojas):")
-            print(f"  Total de registros: {origem_count}")
+            print(f"\nORIGEM (SQL Server PRD - ViewOrcamentosLojas - CENÁRIOS ÚNICOS):")
+            print(f"  Total de cenários únicos: {origem_count}")
             
             print(f"\nDESTINO (PostgreSQL {destino_nome} - {schema}.contract_scenarios):")
             print(f"  Total de registros: {destino_count}")
@@ -1362,7 +1493,7 @@ class ContractsMigration:
             diferenca = origem_count - destino_count
             
             if diferenca == 0:
-                print(f"\nOK - Todos os registros foram migrados com sucesso!")
+                print(f"\nOK - Todos os cenários únicos foram migrados com sucesso!")
                 logger.info(f"VALIDACAO ETAPA 2: OK - Origem: {origem_count}, Destino: {destino_count}")
             else:
                 print(f"\nAVISO - Diferenca encontrada: {diferenca} registros")
@@ -1854,47 +1985,9 @@ class ContractsMigration:
                 logger.warning(f"Nao foi possivel criar/verificar coluna legacy_id: {e}")
                 include_legacy = False
         
-        # Carregar mapeamento de stores
-        # Buscar do banco usando legacy_id (disponível tanto em HML quanto em PRD)
-        print("[ETAPA 2] Carregando mapeamento de stores...")
-        try:
-            if self.should_include_legacy_id():
-                # Buscar do banco usando legacy_id
-                destino = DatabaseConnection.get_destino()
-                schema_stores = 'gmcore' if destino == 'HML' else 'core'
-                # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
-                if destino == 'PRD':
-                    conn_stores = DatabaseConnection.get_postgresql_prd_destino_connection()
-                else:
-                    conn_stores = DatabaseConnection.get_postgresql_hml_destino_connection()
-                cursor_stores = conn_stores.cursor()
-                
-                # Verificar se a coluna legacy_id existe
-                cursor_stores.execute(f"""
-                    SELECT COUNT(*) 
-                    FROM information_schema.columns 
-                    WHERE table_schema = %s 
-                    AND table_name = 'stores' 
-                    AND column_name = 'legacy_id'
-                """, (schema_stores,))
-                has_legacy_id = cursor_stores.fetchone()[0] > 0
-                
-                if has_legacy_id:
-                    cursor_stores.execute(f"SELECT id, legacy_id FROM {schema_stores}.stores WHERE legacy_id IS NOT NULL")
-                    for row in cursor_stores.fetchall():
-                        if row[1] is not None:
-                            self.store_id_map[row[1]] = row[0]
-                    print(f"OK - {len(self.store_id_map)} stores carregados")
-                    logger.info(f"Carregados {len(self.store_id_map)} stores para mapeamento")
-                else:
-                    logger.warning(f"Coluna legacy_id não existe em {schema_stores}.stores. Mapeamento de stores não será carregado.")
-                    print(f"AVISO - Coluna legacy_id não existe em {schema_stores}.stores. Certifique-se de que stores foi migrado antes de contracts.")
-                
-                cursor_stores.close()
-                conn_stores.close()
-        except Exception as e:
-            logger.warning(f"Erro ao carregar stores: {e}")
-            print(f"AVISO - Nao foi possivel carregar stores: {e}")
+        # ⚠️ IMPORTANTE: store_id foi removido da tabela contract_scenarios
+        # Não precisamos mais carregar mapeamento de stores para step2
+        # (será usado apenas no step3 para contract_scenario_stores)
         
         # Carregar filtros do step1 (se existir)
         filter_data = self.load_filter_json()
@@ -1927,40 +2020,121 @@ class ContractsMigration:
             print("\n[ETAPA 2] Preparando limpeza de contract_scenarios...")
         
         # Buscar dados do SQL Server usando ViewOrcamentosLojas
-        print("[ETAPA 2] Buscando dados do SQL Server...")
+        # ⚠️ IMPORTANTE: Criar CENÁRIOS ÚNICOS usando DISTINCT baseado em IdOrcamento, Frequencia, Horas, ValorHora, DataInicioOperacao e DataAvisoPrevio
+        # Usar GROUP BY com MAX() para colunas datetime (DataInclusaoOrcamentoLojas e DataAlteracaoOrcamentoLojas) 
+        # que podem ter valores diferentes para o mesmo cenário único, interferindo no DISTINCT
+        print("[ETAPA 2] Buscando dados do SQL Server para criar cenários únicos...")
+        # ⚠️ IMPORTANTE: Criar CENÁRIOS ÚNICOS usando GROUP BY baseado em IdOrcamento, Frequencia, Horas, ValorHora, DataInicioOperacao e DataAvisoPrevio
+        # MAX() usado APENAS para colunas datetime (DataInclusaoOrcamentoLojas, DataAlteracaoOrcamentoLojas)
+        print("[ETAPA 2] Buscando dados do SQL Server para criar cenários únicos...")
         sql_query = """
         SELECT 
-            v.IdOrcamentoLoja,
             v.IdOrcamento,
-            v.IdEstabelecimento,
-            v.NomeTarefa,
-            v.NomeCliente,
             v.Frequencia,
             v.Horas,
             v.ValorHora,
-            v.DataInicioOperacao,
+            CONVERT(DATE,v.DataInicioOperacao) AS DataInicioOperacao,
+            CONVERT(DATE,v.DataAvisoPrevio) AS DataAvisoPrevio,
+            v.NomeTarefa,
+            v.NomeCliente,
             v.StatusPedido,
-            v.DataInclusaoOrcamentoLojas,
-            v.DataAlteracaoOrcamentoLojas,
+            MAX(v.DataInclusaoOrcamentoLojas) AS DataInclusaoOrcamentoLojas,
+            MAX(v.DataAlteracaoOrcamentoLojas) AS DataAlteracaoOrcamentoLojas,
             v.IdTarefa,
-            ol.Ativo
+            v.IdCliente
         FROM ViewOrcamentosLojas v
-        LEFT JOIN OrcamentoLojas ol ON ol.Id = v.IdOrcamentoLoja
+        INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
         """
         
-        # Aplicar filtro de IdOrcamento se houver
+        # Construir WHERE clause com filtros opcionais (mesmo padrão do step1)
+        where_conditions = []
         query_params = []
+        
+        # Filtro IdOrcamento
         if id_orcamento_filter_list:
             placeholders = ','.join(['?' for _ in id_orcamento_filter_list])
-            sql_query += f" WHERE v.IdOrcamento IN ({placeholders})"
+            where_conditions.append(f"v.IdOrcamento IN ({placeholders})")
             query_params.extend(id_orcamento_filter_list)
         
-        sql_query += " ORDER BY v.IdOrcamentoLoja"
+        # Filtro DataAvisoPrevio (data mínima)
+        if self.data_aviso_previo_min is not None:
+            if isinstance(self.data_aviso_previo_min, str):
+                data_aviso_previo_str = self.data_aviso_previo_min
+            else:
+                data_aviso_previo_str = self.data_aviso_previo_min.strftime('%Y-%m-%d')
+            where_conditions.append("(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)")
+            query_params.append(data_aviso_previo_str)
+        
+        # Filtro DataInicioOperacao (data máxima)
+        if self.data_inicio_operacao_max is not None:
+            if isinstance(self.data_inicio_operacao_max, str):
+                data_inicio_str = self.data_inicio_operacao_max
+            else:
+                data_inicio_str = self.data_inicio_operacao_max.strftime('%Y-%m-%d')
+            where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
+            query_params.append(data_inicio_str)
+        
+        # Filtro StatusPedido
+        if len(self.status_pedido_filter) > 0:
+            placeholders = ','.join(['?' for _ in self.status_pedido_filter])
+            where_conditions.append(f"v.StatusPedido IN ({placeholders})")
+            query_params.extend(self.status_pedido_filter)
+        
+        # Filtro IdCliente (obrigatório conforme query base)
+        where_conditions.append("v.IdCliente IS NOT NULL")
+        
+        # Adicionar WHERE se houver condições
+        if where_conditions:
+            sql_query += " WHERE " + " AND ".join(where_conditions)
+        
+        # ⚠️ IMPORTANTE: Adicionar GROUP BY com todas as colunas não agregadas
+        # Isso garante que apenas cenários únicos sejam retornados, usando MAX() para as datas datetime
+        sql_query += """
+        GROUP BY 
+            v.IdOrcamento,
+            v.Frequencia,
+            v.Horas,
+            v.ValorHora,
+            CONVERT(DATE,v.DataInicioOperacao),
+            CONVERT(DATE,v.DataAvisoPrevio),
+            v.NomeTarefa,
+            v.NomeCliente,
+            v.StatusPedido,
+            v.IdTarefa,
+            v.IdCliente
+        ORDER BY 
+            v.IdOrcamento, 
+            v.Frequencia, 
+            v.Horas, 
+            v.ValorHora, 
+            CONVERT(DATE,v.DataInicioOperacao), 
+            CONVERT(DATE,v.DataAvisoPrevio)
+        """
         
         # Adicionar LIMIT se especificado
         if self.limit_rows > 0:
-            sql_query = sql_query.replace("ORDER BY v.IdOrcamentoLoja", 
-                f"ORDER BY v.IdOrcamentoLoja OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
+            # Substituir ORDER BY completo incluindo GROUP BY
+            sql_query = sql_query.replace(
+                "ORDER BY \n            v.IdOrcamento, \n            v.Frequencia, \n            v.Horas, \n            v.ValorHora, \n            CONVERT(DATE,v.DataInicioOperacao), \n            CONVERT(DATE,v.DataAvisoPrevio)\n        ",
+                f"ORDER BY \n            v.IdOrcamento, \n            v.Frequencia, \n            v.Horas, \n            v.ValorHora, \n            CONVERT(DATE,v.DataInicioOperacao), \n            CONVERT(DATE,v.DataAvisoPrevio)\n        OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY"
+            )
+        
+        # Log da query completa para debug/teste no SSMS
+        print("\n" + "="*80)
+        print("[ETAPA 2] QUERY SQL COMPLETA PARA TESTE NO SSMS")
+        print("="*80)
+        # Substituir placeholders pelos valores reais para facilitar teste
+        query_for_log = sql_query
+        if query_params:
+            for i, param in enumerate(query_params):
+                if isinstance(param, (int, float)):
+                    query_for_log = query_for_log.replace('?', str(param), 1)
+                else:
+                    query_for_log = query_for_log.replace('?', f"'{param}'", 1)
+        print(query_for_log)
+        print("="*80 + "\n")
+        logger.info(f"[ETAPA 2] Query SQL completa: {sql_query}")
+        logger.info(f"[ETAPA 2] Parâmetros: {query_params}")
         
         conn_sql = DatabaseConnection.get_sql_server_prd_connection()
         cursor_sql = conn_sql.cursor()
@@ -1979,50 +2153,113 @@ class ContractsMigration:
         
         # Se há filtros e não é clear_data: fazer DELETE antes de inserir
         if id_orcamento_filter_list and not self.clear_data:
-            # Buscar IdOrcamentoLoja que serão deletados
-            id_orcamento_loja_to_delete = [row[0] for row in all_rows]  # IdOrcamentoLoja
-            if id_orcamento_loja_to_delete:
+            # Buscar contract_id que serão deletados (baseado nos IdOrcamento filtrados)
+            id_orcamento_to_delete = list(set([row[0] for row in all_rows]))  # IdOrcamento únicos
+            if id_orcamento_to_delete:
                 print("\n[ETAPA 2] Limpando registros filtrados da tabela contract_scenarios...")
-                self.delete_table_with_filter('contract_scenarios', id_orcamento_loja_to_delete)
+                # Buscar contract_id correspondentes aos IdOrcamento
+                contract_ids_to_delete = []
+                for id_orc in id_orcamento_to_delete:
+                    if id_orc in self.contract_id_map:
+                        contract_ids_to_delete.append(str(self.contract_id_map[id_orc]))
+                if contract_ids_to_delete:
+                    try:
+                        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+                        cursor_pg = conn_pg.cursor()
+                        placeholders = ','.join(['%s' for _ in contract_ids_to_delete])
+                        delete_query = f"DELETE FROM {schema}.contract_scenarios WHERE contract_id IN ({placeholders})"
+                        cursor_pg.execute(delete_query, contract_ids_to_delete)
+                        deleted_count = cursor_pg.rowcount
+                        conn_pg.commit()
+                        cursor_pg.close()
+                        conn_pg.close()
+                        print(f"[ETAPA 2] {deleted_count} registros deletados de contract_scenarios")
+                        logger.info(f"[ETAPA 2] {deleted_count} registros deletados de contract_scenarios")
+                    except Exception as e:
+                        logger.error(f"[ETAPA 2] Erro ao deletar contract_scenarios: {e}")
+                        print(f"[ETAPA 2] Erro ao deletar contract_scenarios: {e}")
         
         print(f"[ETAPA 2] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
         
         # Processar conversões em massa usando DataFrame (vetorizado)
         try:
             df = pd.DataFrame.from_records(all_rows, columns=[
-                'IdOrcamentoLoja', 'IdOrcamento', 'IdEstabelecimento', 'NomeTarefa', 'NomeCliente',
-                'Frequencia', 'Horas', 'ValorHora', 'DataInicioOperacao', 'StatusPedido',
-                'DataInclusaoOrcamentoLojas', 'DataAlteracaoOrcamentoLojas', 'IdTarefa', 'Ativo'
+                'IdOrcamento', 'Frequencia', 'Horas', 'ValorHora', 'DataInicioOperacao', 'DataAvisoPrevio',
+                'NomeTarefa', 'NomeCliente', 'StatusPedido', 'DataInclusaoOrcamentoLojas', 
+                'DataAlteracaoOrcamentoLojas', 'IdTarefa', 'IdCliente'
             ])
+            
+            # ⚠️ IMPORTANTE: Garantir que apenas CENÁRIOS ÚNICOS sejam processados
+            # Fazer DISTINCT no DataFrame baseado na combinação única (mesma lógica do SQL)
+            # Isso garante que mesmo se o SQL DISTINCT não funcionar perfeitamente, teremos apenas únicos
+            print(f"[ETAPA 2] Registros carregados do SQL: {len(df)}")
+            print(f"[ETAPA 2] Aplicando DISTINCT no DataFrame para garantir cenários únicos...")
+            logger.info(f"[ETAPA 2] Registros carregados do SQL: {len(df)}")
+            
+            # Colunas para fazer DISTINCT (combinação única)
+            distinct_cols = ['IdOrcamento', 'Frequencia', 'Horas', 'ValorHora', 'DataInicioOperacao', 'DataAvisoPrevio']
+            
+            # Normalizar valores antes de fazer DISTINCT para garantir match correto
+            # Criar colunas temporárias normalizadas para comparação (no próprio df)
+            total_before = len(df)
+            for col in distinct_cols:
+                if col in ['DataInicioOperacao', 'DataAvisoPrevio']:
+                    # Para datas, converter para string no formato YYYY-MM-DD (tratando NULL)
+                    df[f'{col}_norm'] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d')
+                    df[f'{col}_norm'] = df[f'{col}_norm'].fillna('')
+                elif col == 'ValorHora':
+                    # Para ValorHora, converter para float e depois string para normalização
+                    df[f'{col}_norm'] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).astype(float).astype(str)
+                elif col == 'Horas':
+                    # Para Horas, converter para string (pode vir como nvarchar)
+                    df[f'{col}_norm'] = df[col].astype(str).fillna('')
+                else:
+                    # Para outros campos, converter para string
+                    df[f'{col}_norm'] = df[col].astype(str).fillna('')
+            
+            # Criar lista de colunas normalizadas para DISTINCT
+            distinct_cols_norm = [f'{col}_norm' for col in distinct_cols]
+            
+            # Fazer DISTINCT baseado nas colunas normalizadas da combinação única
+            # Manter o primeiro registro de cada combinação única
+            df = df.drop_duplicates(subset=distinct_cols_norm, keep='first')
+            
+            # Remover colunas temporárias normalizadas
+            df = df.drop(columns=distinct_cols_norm, errors='ignore')
+            
+            print(f"[ETAPA 2] Registros únicos após DISTINCT: {len(df)} (de {total_before} carregados)")
+            logger.info(f"[ETAPA 2] Registros únicos após DISTINCT: {len(df)} (de {total_before} carregados)")
+            
+            # ⚠️ IMPORTANTE: Criar cópia do DataFrame original ANTES das conversões para criar o mapa depois
+            df_original = df.copy()
             
             # Log dos tipos de dados inferidos pelo pandas
             print(f"[ETAPA 2] Tipos de dados inferidos pelo pandas:")
             print(f"  IdTarefa: {df['IdTarefa'].dtype} (NULLs: {df['IdTarefa'].isna().sum()})")
             print(f"  Frequencia: {df['Frequencia'].dtype} (NULLs: {df['Frequencia'].isna().sum()})")
+            print(f"  ValorHora: {df['ValorHora'].dtype} (NULLs: {df['ValorHora'].isna().sum()})")
             print(f"  StatusPedido: {df['StatusPedido'].dtype} (NULLs: {df['StatusPedido'].isna().sum()})")
-            print(f"  Ativo: {df['Ativo'].dtype} (NULLs: {df['Ativo'].isna().sum()})")
-            logger.info(f"[ETAPA 2] Tipos inferidos - IdTarefa: {df['IdTarefa'].dtype}, Frequencia: {df['Frequencia'].dtype}, StatusPedido: {df['StatusPedido'].dtype}, Ativo: {df['Ativo'].dtype}")
+            print(f"  DataAvisoPrevio: {df['DataAvisoPrevio'].dtype} (NULLs: {df['DataAvisoPrevio'].isna().sum()})")
+            logger.info(f"[ETAPA 2] Tipos inferidos - IdTarefa: {df['IdTarefa'].dtype}, Frequencia: {df['Frequencia'].dtype}, ValorHora: {df['ValorHora'].dtype}, StatusPedido: {df['StatusPedido'].dtype}, DataAvisoPrevio: {df['DataAvisoPrevio'].dtype}")
         except Exception as e:
             logger.error(f"[ETAPA 2] ERRO ao criar DataFrame: {e}")
             print(f"[ETAPA 2] ERRO ao criar DataFrame: {e}")
             raise
         
         # Aplicar transformações vetorizadas
-        df['legacy_id'] = df['IdOrcamentoLoja']
+        # ⚠️ IMPORTANTE: legacy_id sempre preenchido com 0 (conforme dictionary)
+        df['legacy_id'] = 0
         
-        # Mapear contract_id e store_id usando .map() (vetorizado)
+        # Mapear contract_id usando .map() (vetorizado)
+        # ⚠️ IMPORTANTE: Não usar store_id mais (foi removido da tabela)
         df['contract_id'] = df['IdOrcamento'].map(self.contract_id_map)
-        df['store_id'] = df['IdEstabelecimento'].map(self.store_id_map)
         
-        # Filtrar linhas onde contract_id ou store_id são None (coletar warnings em batch)
-        mask_valid = df['contract_id'].notna() & df['store_id'].notna()
+        # Filtrar linhas onde contract_id é None (coletar warnings em batch)
+        mask_valid = df['contract_id'].notna()
         missing_contracts = df[~mask_valid & df['contract_id'].isna()]['IdOrcamento'].unique()
-        missing_stores = df[~mask_valid & df['store_id'].isna()]['IdEstabelecimento'].unique()
         
         if len(missing_contracts) > 0:
             logger.warning(f"Contract nao encontrado para {len(missing_contracts)} IdOrcamento(s): {missing_contracts[:10].tolist()}{'...' if len(missing_contracts) > 10 else ''}")
-        if len(missing_stores) > 0:
-            logger.warning(f"Store nao encontrado para {len(missing_stores)} IdEstabelecimento(s): {missing_stores[:10].tolist()}{'...' if len(missing_stores) > 10 else ''}")
         
         # Filtrar apenas linhas válidas
         df = df[mask_valid].copy()
@@ -2111,7 +2348,9 @@ class ContractsMigration:
             raise Exception(f"Não foi possível atribuir promoter_task_id para {missing_count} registros")
         
         # Mapear frequency de inteiro para varchar (conversão em lote vetorizada)
+        # Mapa de frequência incluindo valores decimais
         frequency_map = {
+            # Valores inteiros
             1: 'once_per_week',
             2: 'twice_per_week',
             3: 'three_times_per_week',
@@ -2120,22 +2359,47 @@ class ContractsMigration:
             6: 'six_times_per_week',
             7: 'seven_times_per_week',
             15: 'every_15_days',
-            30: 'once_per_month'
+            30: 'once_per_month',
+            # Valores decimais
+            0.25: 'once_per_month',
+            0.5: 'every_15_days',
+            1.5: 'once_per_week',
+            2.5: 'twice_per_week'
         }
-        # Converter para inteiro primeiro (caso venha como string) e depois mapear
+        # Converter Frequencia mantendo valores decimais quando necessário
         try:
             print("[ETAPA 2] Convertendo Frequencia...")
-            # Converter para numérico primeiro, tratar NaN, depois converter para Int64 de forma segura
+            # Converter para numérico primeiro, tratar NaN
             frequencia_numeric = pd.to_numeric(df['Frequencia'], errors='coerce')
             print(f"[ETAPA 2] Frequencia após to_numeric: tipo={frequencia_numeric.dtype}, NULLs={frequencia_numeric.isna().sum()}")
-            # Converter para Int64 de forma segura usando apply para tratar cada valor individualmente
-            # Primeiro arredondar valores não inteiros, depois converter
-            frequencia_int = frequencia_numeric.apply(lambda x: pd.NA if pd.isna(x) else int(round(float(x))) if pd.notna(x) else pd.NA)
-            frequencia_int = frequencia_int.astype('Int64')
-            print(f"[ETAPA 2] Frequencia após conversão para Int64: tipo={frequencia_int.dtype}, NULLs={frequencia_int.isna().sum()}")
-            df['frequency'] = frequencia_int.map(frequency_map)
-            # Preencher valores não mapeados com None ou valor padrão se necessário
+            
+            # Mapear diretamente os valores numéricos (incluindo decimais) para o frequency_map
+            # Usar função que tenta mapear o valor exato primeiro, depois tenta como inteiro arredondado
+            def map_frequency(value):
+                if pd.isna(value):
+                    return pd.NA
+                try:
+                    value_float = float(value)
+                    # Tentar mapear o valor exato primeiro (inclui decimais)
+                    if value_float in frequency_map:
+                        return frequency_map[value_float]
+                    # Se não encontrar, tentar como inteiro arredondado
+                    value_int = int(round(value_float))
+                    if value_int in frequency_map:
+                        return frequency_map[value_int]
+                    # Se não encontrar, retornar None
+                    return None
+                except (ValueError, TypeError):
+                    return None
+            
+            df['frequency'] = frequencia_numeric.apply(map_frequency)
+            # Preencher valores não mapeados com string vazia
             df['frequency'] = df['frequency'].fillna('')
+            
+            # Log de valores únicos mapeados
+            valores_unicos = frequencia_numeric.dropna().unique()
+            print(f"[ETAPA 2] Valores únicos de Frequencia encontrados: {sorted(valores_unicos)}")
+            print(f"[ETAPA 2] Frequencia após conversão: tipo={df['frequency'].dtype}, NULLs/vazios={(df['frequency'] == '').sum()}")
             print("[ETAPA 2] Frequencia convertida com sucesso")
         except Exception as e:
             logger.error(f"[ETAPA 2] ERRO ao converter Frequencia: {e}")
@@ -2144,35 +2408,45 @@ class ContractsMigration:
             print(f"[ETAPA 2] Valores únicos (primeiros 10): {df['Frequencia'].unique()[:10]}")
             raise
         df['hours'] = self.convert_hours_to_float_vectorized(df['Horas'])
-        df['hour_value'] = df['ValorHora'].fillna(0.0)
+        
+        # Converter ValorHora para numérico e garantir que seja 0.0 se vazio (campo NOT NULL)
+        try:
+            print("[ETAPA 2] Convertendo ValorHora...")
+            # Converter para numérico primeiro (tratando NaN e valores não numéricos)
+            valor_hora_numeric = pd.to_numeric(df['ValorHora'], errors='coerce')
+            print(f"[ETAPA 2] ValorHora após to_numeric: tipo={valor_hora_numeric.dtype}, NULLs={valor_hora_numeric.isna().sum()}")
+            # Preencher NaN com 0.0 (campo NOT NULL na tabela destino)
+            df['hour_value'] = valor_hora_numeric.fillna(0.0)
+            # Garantir que seja float
+            df['hour_value'] = df['hour_value'].astype(float)
+            print(f"[ETAPA 2] ValorHora convertido com sucesso: tipo={df['hour_value'].dtype}, NULLs={df['hour_value'].isna().sum()}")
+            logger.info(f"[ETAPA 2] ValorHora convertido - tipo: {df['hour_value'].dtype}, NULLs: {df['hour_value'].isna().sum()}")
+        except Exception as e:
+            logger.error(f"[ETAPA 2] ERRO ao converter ValorHora: {e}")
+            print(f"[ETAPA 2] ERRO ao converter ValorHora: {e}")
+            print(f"[ETAPA 2] Tipo original: {df['ValorHora'].dtype}")
+            print(f"[ETAPA 2] Valores únicos (primeiros 10): {df['ValorHora'].unique()[:10]}")
+            # Em caso de erro, usar 0.0 como fallback
+            df['hour_value'] = 0.0
+            print("[ETAPA 2] Usando valor padrão 0.0 para hour_value devido ao erro")
+        
         df['start_date'] = df['DataInicioOperacao'].fillna(df['DataInclusaoOrcamentoLojas'])
         df.loc[df['start_date'].isna(), 'start_date'] = datetime.now()
         
-        # Status: usar StatusPedido se disponível, senão usar Ativo, depois converter para varchar
-        # Converter status de inteiro para varchar: 11 → 'closed', 0 → 'inactive', qualquer outro → 'active' (conversão em lote vetorizada)
-        try:
-            print("[ETAPA 2] Convertendo Ativo...")
-            # Converter Ativo para numérico primeiro (tratando NaN e valores não numéricos)
-            ativo_numeric = pd.to_numeric(df['Ativo'], errors='coerce')
-            print(f"[ETAPA 2] Ativo após to_numeric: tipo={ativo_numeric.dtype}, NULLs={ativo_numeric.isna().sum()}")
-            ativo_numeric = ativo_numeric.fillna(0)
-            # Converter para int usando apply para evitar problemas de conversão direta
-            ativo_int = ativo_numeric.apply(lambda x: int(x) if pd.notna(x) else 0)
-            print(f"[ETAPA 2] Ativo convertido com sucesso: tipo={ativo_int.dtype}")
-        except Exception as e:
-            logger.error(f"[ETAPA 2] ERRO ao converter Ativo: {e}")
-            print(f"[ETAPA 2] ERRO ao converter Ativo: {e}")
-            print(f"[ETAPA 2] Tipo original: {df['Ativo'].dtype}")
-            print(f"[ETAPA 2] Valores únicos: {df['Ativo'].unique()}")
-            raise
+        # ⚠️ IMPORTANTE: end_date mapeado de DataAvisoPrevio (pode ser NULL)
+        df['end_date'] = pd.to_datetime(df['DataAvisoPrevio'], errors='coerce')
+        # Converter para date apenas onde não é NaT/None
+        mask_not_null = df['end_date'].notna()
+        df.loc[mask_not_null, 'end_date'] = df.loc[mask_not_null, 'end_date'].dt.date
+        df.loc[~mask_not_null, 'end_date'] = None
         
+        # Status: usar StatusPedido (conforme dictionary: mapear StatusPedido ou Ativo para status)
+        # Converter status de inteiro: 11 → 0 (closed), 0 → 0 (inactive), qualquer outro → 1 (active)
         try:
             print("[ETAPA 2] Convertendo StatusPedido...")
             status_pedido_numeric = pd.to_numeric(df['StatusPedido'], errors='coerce')
             print(f"[ETAPA 2] StatusPedido após to_numeric: tipo={status_pedido_numeric.dtype}, NULLs={status_pedido_numeric.isna().sum()}")
-            # Usar fillna com ativo_int já convertido
-            status_temp = status_pedido_numeric.fillna(ativo_int)
-            status_temp = status_temp.fillna(0)
+            status_temp = status_pedido_numeric.fillna(0)
             # Converter para int usando apply para evitar problemas de conversão direta
             status_temp = status_temp.apply(lambda x: int(x) if pd.notna(x) else 0)
             print(f"[ETAPA 2] StatusPedido convertido com sucesso: tipo={status_temp.dtype}")
@@ -2181,7 +2455,9 @@ class ContractsMigration:
             print(f"[ETAPA 2] ERRO ao converter StatusPedido: {e}")
             print(f"[ETAPA 2] Tipo original: {df['StatusPedido'].dtype}")
             print(f"[ETAPA 2] Valores únicos: {df['StatusPedido'].unique()}")
-            raise
+            # Em caso de erro, usar valor padrão 'active' (1)
+            status_temp = pd.Series(1, index=df.index, dtype=int)
+            print("[ETAPA 2] Usando valor padrão 'active' (1) para status devido ao erro")
         # Mapear em lote vetorizado: 1 para 'active', 0 para qualquer outro valor (int)
         df['status'] = pd.Series(1, index=df.index, dtype=int)  # 1 = active por padrão
         # Se status_temp == 11 (closed) OU status_temp == 0 (inactive) → status = 0
@@ -2192,14 +2468,25 @@ class ContractsMigration:
         
         # Converter UUIDs para string
         df['contract_id'] = df['contract_id'].astype(str)
-        df['store_id'] = df['store_id'].astype(str)
         df['promoter_task_id'] = df['promoter_task_id'].astype(str)
         
+        # Converter end_date (pode ser None) para lista tratando NaT/NaN
+        def convert_nat_to_none(val):
+            if val is None:
+                return None
+            if pd.isna(val) or val is pd.NaT or str(val) == 'NaT':
+                return None
+            # Se for objeto date do Python, manter como está
+            return val
+        
+        end_date_list = [convert_nat_to_none(x) for x in df['end_date']]
+        
         # Converter DataFrame diretamente para lista de tuplas (otimizado)
+        # ⚠️ IMPORTANTE: store_id foi removido da tabela, sempre inserir sem store_id
+        # ⚠️ IMPORTANTE: end_date é adicionado agora (pode ser NULL)
         if include_legacy:
             processed_tuples = list(zip(
                 df['contract_id'].tolist(),
-                df['store_id'].tolist(),
                 df['promoter_task_id'].tolist(),
                 df['frequency'].tolist(),
                 df['hours'].tolist(),
@@ -2208,12 +2495,12 @@ class ContractsMigration:
                 df['status'].tolist(),
                 df['created_at'].tolist(),
                 df['updated_at'].tolist(),
+                end_date_list,
                 df['legacy_id'].tolist()
             ))
         else:
             processed_tuples = list(zip(
                 df['contract_id'].tolist(),
-                df['store_id'].tolist(),
                 df['promoter_task_id'].tolist(),
                 df['frequency'].tolist(),
                 df['hours'].tolist(),
@@ -2221,7 +2508,8 @@ class ContractsMigration:
                 df['start_date'].tolist(),
                 df['status'].tolist(),
                 df['created_at'].tolist(),
-                df['updated_at'].tolist()
+                df['updated_at'].tolist(),
+                end_date_list
             ))
         legacy_ids_list = df['legacy_id'].tolist()
         
@@ -2232,19 +2520,20 @@ class ContractsMigration:
         cursor_pg = conn_pg.cursor()
         
         # Query de insert usando gen_random_uuid() - formato para execute_values
+        # ⚠️ IMPORTANTE: store_id foi removido da tabela, end_date foi adicionado
         if include_legacy:
             insert_query = f"""
             INSERT INTO {schema}.contract_scenarios (
-                id, contract_id, store_id, promoter_task_id, frequency, hours, hour_value,
-                start_date, status, created_at, updated_at, legacy_id
+                id, contract_id, promoter_task_id, frequency, hours, hour_value,
+                start_date, status, created_at, updated_at, end_date, legacy_id
             ) VALUES %s
             """
             insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
         else:
             insert_query = f"""
             INSERT INTO {schema}.contract_scenarios (
-                id, contract_id, store_id, promoter_task_id, frequency, hours, hour_value,
-                start_date, status, created_at, updated_at
+                id, contract_id, promoter_task_id, frequency, hours, hour_value,
+                start_date, status, created_at, updated_at, end_date
             ) VALUES %s
             """
             insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
@@ -2294,37 +2583,198 @@ class ContractsMigration:
                             logger.error(f"Erro ao fazer rollback: {rollback_error}")
                         continue
             
-            # Buscar UUIDs gerados para mapeamento (uma única query após todas as inserções)
-            print(f"[ETAPA 2] DEBUG: include_legacy={include_legacy}, all_legacy_ids_inserted={len(all_legacy_ids_inserted) if all_legacy_ids_inserted else 0}")
-            if include_legacy and all_legacy_ids_inserted:
-                print(f"[ETAPA 2] Buscando UUIDs gerados para {len(all_legacy_ids_inserted)} registros...")
-                cursor_pg.execute(f"""
-                    SELECT id, legacy_id 
-                    FROM {schema}.contract_scenarios 
-                    WHERE legacy_id = ANY(%s)
-                """, (all_legacy_ids_inserted,))
-                for uuid_row, leg_id in cursor_pg.fetchall():
-                    self.scenario_id_map[leg_id] = uuid_row
-                print(f"[ETAPA 2] {len(self.scenario_id_map)} UUIDs mapeados")
-                logger.info(f"[ETAPA 2] {len(self.scenario_id_map)} UUIDs mapeados no scenario_id_map")
-            elif not include_legacy and all_legacy_ids_inserted:
-                # Sem legacy_id, usar ordem de created_at (menos confiável)
-                print(f"[ETAPA 2] Buscando UUIDs gerados para mapeamento (sem legacy_id)...")
-                cursor_pg.execute(f"""
-                    SELECT id, created_at 
-                    FROM {schema}.contract_scenarios 
-                    ORDER BY created_at
-                    LIMIT %s
-                """, (len(all_legacy_ids_inserted),))
-                uuid_rows = cursor_pg.fetchall()
-                for idx, (uuid_row, created_at) in enumerate(uuid_rows):
-                    if idx < len(all_legacy_ids_inserted):
-                        leg_id = all_legacy_ids_inserted[idx]
-                        self.scenario_id_map[leg_id] = uuid_row
-                print(f"[ETAPA 2] {len(self.scenario_id_map)} UUIDs mapeados")
-                logger.info(f"[ETAPA 2] {len(self.scenario_id_map)} UUIDs mapeados no scenario_id_map (sem legacy_id)")
-            else:
-                logger.warning(f"[ETAPA 2] Nao foi possivel mapear UUIDs: include_legacy={include_legacy}, all_legacy_ids_inserted={len(all_legacy_ids_inserted) if all_legacy_ids_inserted else 0}")
+            # ⚠️ IMPORTANTE: Criar mapa de cenários baseado na combinação única
+            # Chave: (IdOrcamento, Frequencia, Horas, ValorHora, DataInicioOperacao, DataAvisoPrevio)
+            # Valor: UUID do scenario
+            # ⚠️ IMPORTANTE: Usar os valores brutos do DataFrame original ANTES das conversões para garantir normalização idêntica ao step3
+            print(f"[ETAPA 2] Criando mapa de cenários baseado na combinação única...")
+            logger.info(f"[ETAPA 2] Criando mapa de cenários para step3...")
+            
+            # Função auxiliar para normalizar frequência de forma consistente (usada em step2 e step3)
+            def normalize_frequency(freq_value):
+                """
+                Normaliza frequência para string de forma consistente.
+                Garante que valores decimais (0.25, 0.5, 1.5, 2.5) tenham formatação consistente.
+                Usada tanto na criação de chaves quanto na reconstrução a partir do banco.
+                """
+                # Verificar se é None, NaN ou string vazia
+                if freq_value is None or freq_value == '':
+                    return ''
+                try:
+                    # Tentar usar pd.isna() se for valor do pandas, senão verificar None diretamente
+                    if hasattr(freq_value, '__iter__') and not isinstance(freq_value, str):
+                        if pd.isna(freq_value):
+                            return ''
+                    freq_float = float(freq_value)
+                    # Usar formatação controlada para evitar problemas de precisão
+                    # Para valores decimais conhecidos, garantir formato exato
+                    if freq_float == 0.25:
+                        return '0.25'
+                    elif freq_float == 0.5:
+                        return '0.5'
+                    elif freq_float == 1.5:
+                        return '1.5'
+                    elif freq_float == 2.5:
+                        return '2.5'
+                    else:
+                        # Para outros valores, converter normalmente
+                        return str(int(freq_float)) if freq_float.is_integer() else str(freq_float)
+                except (ValueError, TypeError):
+                    return str(freq_value) if freq_value else ''
+            
+            # Criar chave única para cada linha do DataFrame original (valores brutos)
+            def create_scenario_key_from_df(row):
+                """Cria chave única baseada nos valores brutos (mesma normalização do step3)"""
+                # Normalização idêntica ao step3
+                # ⚠️ IMPORTANTE: Usar função auxiliar para normalizar Frequencia de forma consistente
+                freq_str = normalize_frequency(row['Frequencia'])
+                # ⚠️ CRÍTICO: Converter Horas para float primeiro, depois para string (mesmo do step3)
+                # Isso garante que '1' e 1.0 virem ambos '1.0'
+                try:
+                    horas_float = float(row['Horas']) if pd.notna(row['Horas']) else 0.0
+                    horas_str = str(horas_float)
+                except (ValueError, TypeError):
+                    horas_str = ''
+                # ⚠️ IMPORTANTE: Converter para float primeiro, depois para string (mesmo do step3)
+                try:
+                    valor_hora_float = float(row['ValorHora']) if pd.notna(row['ValorHora']) else 0.0
+                    valor_hora_str = str(valor_hora_float)
+                except (ValueError, TypeError):
+                    valor_hora_str = '0.0'
+                start_date_str = row['DataInicioOperacao'].strftime('%Y-%m-%d') if pd.notna(row['DataInicioOperacao']) else ''
+                # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do step3)
+                end_date_str = row['DataAvisoPrevio'].strftime('%Y-%m-%d') if pd.notna(row['DataAvisoPrevio']) else None
+                
+                return (
+                    int(row['IdOrcamento']),
+                    freq_str,
+                    horas_str,
+                    valor_hora_str,
+                    start_date_str,
+                    end_date_str
+                )
+            
+            # Criar chaves únicas usando o DataFrame original (valores brutos)
+            scenario_keys_list = df_original.apply(create_scenario_key_from_df, axis=1).tolist()
+            
+            print(f"[ETAPA 2] Criando mapa de scenarios: {len(scenario_keys_list)} chaves únicas")
+            logger.info(f"[ETAPA 2] Criando mapa de scenarios: {len(scenario_keys_list)} chaves únicas")
+            
+            # ⚠️ IMPORTANTE: Buscar UUIDs do banco usando os valores reais para garantir correspondência exata
+            # Em vez de confiar apenas na ordem, vamos buscar cada scenario individualmente usando os valores
+            # Primeiro, vamos buscar todos os scenarios recém-inseridos ordenados por created_at
+            
+            # Mapa reverso: frequency enum -> lista de valores possíveis (inteiros e decimais como string)
+            # Um enum pode ter múltiplos valores de origem (ex: once_per_week pode vir de 1 ou 1.5)
+            frequency_enum_to_values = {
+                'once_per_week': ['1', '1.5'],
+                'twice_per_week': ['2', '2.5'],
+                'three_times_per_week': ['3'],
+                'four_times_per_week': ['4'],
+                'five_times_per_week': ['5'],
+                'six_times_per_week': ['6'],
+                'seven_times_per_week': ['7'],
+                'every_15_days': ['15', '0.5'],
+                'once_per_month': ['30', '0.25']
+            }
+            
+            cursor_pg.execute(f"""
+                SELECT 
+                    id,
+                    frequency,
+                    hours,
+                    hour_value,
+                    start_date,
+                    end_date,
+                    contract_id
+                FROM {schema}.contract_scenarios
+                ORDER BY created_at DESC
+                LIMIT %s
+            """, (len(scenario_keys_list),))
+            
+            scenario_rows = cursor_pg.fetchall()
+            
+            # Criar mapa reverso: contract_id -> IdOrcamento
+            contract_to_id_orcamento = {}
+            for id_orc, contract_uuid in self.contract_id_map.items():
+                contract_to_id_orcamento[str(contract_uuid)] = id_orc
+            
+            # Mapear cada scenario do banco para sua chave única
+            scenarios_mapped = 0
+            for scenario_uuid, frequency, hours, hour_value, start_date, end_date, contract_uuid in scenario_rows:
+                # Buscar IdOrcamento do contract_id
+                contract_uuid_str = str(contract_uuid) if contract_uuid else None
+                id_orcamento = contract_to_id_orcamento.get(contract_uuid_str)
+                
+                if not id_orcamento:
+                    logger.warning(f"[ETAPA 2] Nao foi possivel encontrar IdOrcamento para contract_id={contract_uuid_str}")
+                    continue
+                
+                # Criar chave única baseada nos valores do banco (mesma normalização do create_scenario_key_from_df)
+                # ⚠️ IMPORTANTE: Converter frequency de enum para lista de valores possíveis
+                # Um enum pode ter múltiplos valores de origem (ex: once_per_week pode vir de 1 ou 1.5)
+                freq_enum_str = str(frequency) if frequency else ''
+                freq_values_list = frequency_enum_to_values.get(freq_enum_str, [freq_enum_str])
+                
+                # ⚠️ CRÍTICO: Converter hours para float primeiro, depois para string (mesmo do create_scenario_key_from_df)
+                # Isso garante que 1.0 vire '1.0' (mesmo formato que será usado no step3)
+                try:
+                    horas_float = float(hours) if hours is not None else 0.0
+                    horas_str = str(horas_float)
+                except (ValueError, TypeError):
+                    horas_str = ''
+                # ⚠️ IMPORTANTE: Converter para float primeiro, depois para string (mesmo do create_scenario_key_from_df)
+                try:
+                    valor_hora_float = float(hour_value) if hour_value is not None else 0.0
+                    valor_hora_str = str(valor_hora_float)
+                except (ValueError, TypeError):
+                    valor_hora_str = '0.0'
+                start_date_str = start_date.strftime('%Y-%m-%d') if start_date else ''
+                # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do create_scenario_key_from_df)
+                end_date_str = end_date.strftime('%Y-%m-%d') if end_date else None
+                
+                # Tentar mapear para cada valor de frequência possível
+                # Se encontrar match com qualquer valor, adicionar ao mapa
+                # ⚠️ IMPORTANTE: Normalizar cada valor da lista usando a mesma função de normalização
+                mapped = False
+                for freq_value in freq_values_list:
+                    # Normalizar frequência usando a mesma função auxiliar
+                    freq_str_normalized = normalize_frequency(freq_value)
+                    scenario_key = (
+                        int(id_orcamento),
+                        freq_str_normalized,
+                        horas_str,
+                        valor_hora_str,
+                        start_date_str,
+                        end_date_str
+                    )
+                    
+                    # Verificar se esta chave está na lista de chaves esperadas
+                    if scenario_key in scenario_keys_list:
+                        self.scenario_id_map[scenario_key] = str(scenario_uuid)
+                        scenarios_mapped += 1
+                        mapped = True
+                        break  # Encontrou match, não precisa tentar outros valores
+                
+                if not mapped:
+                    logger.warning(
+                        f"[ETAPA 2] Scenario do banco nao corresponde a nenhuma chave esperada: "
+                        f"scenario_id={scenario_uuid}, IdOrcamento={id_orcamento}, "
+                        f"frequency={freq_enum_str}, freq_values_list={freq_values_list}, hours={horas_str}, hour_value={valor_hora_str}, "
+                        f"start_date={start_date_str}, end_date={end_date_str}"
+                    )
+            
+            print(f"[ETAPA 2] {scenarios_mapped} cenários mapeados para step3 (de {len(scenario_keys_list)} esperados)")
+            logger.info(f"[ETAPA 2] {scenarios_mapped} cenários mapeados no scenario_id_map (de {len(scenario_keys_list)} esperados)")
+            
+            # Verificar se há chaves não mapeadas
+            unmapped_keys = [key for key in scenario_keys_list if key not in self.scenario_id_map]
+            if unmapped_keys:
+                logger.warning(f"[ETAPA 2] AVISO: {len(unmapped_keys)} chaves nao foram mapeadas para scenarios")
+                print(f"[ETAPA 2] AVISO: {len(unmapped_keys)} chaves nao foram mapeadas para scenarios")
+                # Logar algumas chaves não mapeadas para debug
+                for key in unmapped_keys[:5]:
+                    logger.warning(f"[ETAPA 2] Chave nao mapeada: {key}")
             
             cursor_pg.close()
             conn_pg.close()
@@ -2357,16 +2807,51 @@ class ContractsMigration:
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
             
+            # Construir WHERE clause com filtros opcionais (mesmo padrão do step3)
+            where_conditions = []
+            query_params = []
+            
             if id_orcamento_list:
-                # Aplicar filtro de IdOrcamento - contar TODOS os registros (não apenas DISTINCT)
                 placeholders = ','.join(['?' for _ in id_orcamento_list])
+                where_conditions.append(f"v.IdOrcamento IN ({placeholders})")
+                query_params.extend(id_orcamento_list)
+            
+            # Filtro DataAvisoPrevio (data mínima)
+            if self.data_aviso_previo_min is not None:
+                if isinstance(self.data_aviso_previo_min, str):
+                    data_aviso_previo_str = self.data_aviso_previo_min
+                else:
+                    data_aviso_previo_str = self.data_aviso_previo_min.strftime('%Y-%m-%d')
+                where_conditions.append("(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)")
+                query_params.append(data_aviso_previo_str)
+            
+            # Filtro DataInicioOperacao (data máxima)
+            if self.data_inicio_operacao_max is not None:
+                if isinstance(self.data_inicio_operacao_max, str):
+                    data_inicio_str = self.data_inicio_operacao_max
+                else:
+                    data_inicio_str = self.data_inicio_operacao_max.strftime('%Y-%m-%d')
+                where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
+                query_params.append(data_inicio_str)
+            
+            # Filtro StatusPedido
+            if len(self.status_pedido_filter) > 0:
+                placeholders = ','.join(['?' for _ in self.status_pedido_filter])
+                where_conditions.append(f"v.StatusPedido IN ({placeholders})")
+                query_params.extend(self.status_pedido_filter)
+            
+            # Filtro IdCliente (obrigatório conforme query base)
+            where_conditions.append("v.IdCliente IS NOT NULL")
+            
+            # Contar origem: todos os registros de ViewOrcamentosLojas (não DISTINCT, pois cada registro vira uma linha em contract_scenario_stores)
+            if where_conditions:
                 count_query = f"""
                 SELECT COUNT(*)
                 FROM ViewOrcamentosLojas v
-                LEFT JOIN OrcamentoLojas ol ON ol.Id = v.IdOrcamentoLoja
-                WHERE v.IdOrcamento IN ({placeholders})
+                INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
+                WHERE {' AND '.join(where_conditions)}
                 """
-                cursor_sql.execute(count_query, id_orcamento_list)
+                cursor_sql.execute(count_query, query_params)
             elif self.limit_rows > 0:
                 cursor_sql.execute(f"""
                     SELECT COUNT(*) 
@@ -2439,27 +2924,73 @@ class ContractsMigration:
         logger.info("="*80)
         
         # Carregar mapeamentos necessários (scenarios e stores)
-        print("[ETAPA 3] Carregando mapeamentos de scenarios e stores...")
-        try:
-            schema_scenarios = schema
-            # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
-            if destino == 'PRD':
-                conn_scenarios = DatabaseConnection.get_postgresql_prd_destino_connection()
-            else:
-                conn_scenarios = DatabaseConnection.get_postgresql_hml_destino_connection()
-            cursor_scenarios = conn_scenarios.cursor()
-            if self.should_include_legacy_id():
-                cursor_scenarios.execute(f"SELECT id, legacy_id FROM {schema_scenarios}.contract_scenarios WHERE legacy_id IS NOT NULL")
-                for row in cursor_scenarios.fetchall():
-                    if row[1] is not None:
-                        self.scenario_id_map[row[1]] = row[0]
-            cursor_scenarios.close()
-            conn_scenarios.close()
-            print(f"OK - {len(self.scenario_id_map)} scenarios carregados")
-            logger.info(f"Carregados {len(self.scenario_id_map)} scenarios para mapeamento")
-        except Exception as e:
-            logger.warning(f"Erro ao carregar scenarios: {e}")
-            print(f"AVISO - Nao foi possivel carregar scenarios: {e}")
+        # ⚠️ IMPORTANTE: scenario_id_map já foi criado no step2 baseado na combinação única
+        # Se não existe, criar agora buscando do banco
+        print("[ETAPA 3] Verificando mapeamento de scenarios...")
+        if not self.scenario_id_map:
+            logger.warning("[ETAPA 3] scenario_id_map vazio. Buscando cenários do banco...")
+            try:
+                schema_scenarios = schema
+                # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
+                if destino == 'PRD':
+                    conn_scenarios = DatabaseConnection.get_postgresql_prd_destino_connection()
+                else:
+                    conn_scenarios = DatabaseConnection.get_postgresql_hml_destino_connection()
+                cursor_scenarios = conn_scenarios.cursor()
+                
+                # Buscar cenários com suas combinações únicas
+                cursor_scenarios.execute(f"""
+                    SELECT 
+                        id,
+                        contract_id,
+                        frequency,
+                        hours,
+                        hour_value,
+                        start_date,
+                        end_date
+                    FROM {schema_scenarios}.contract_scenarios
+                """)
+                
+                # Criar mapa: buscar contract_id -> IdOrcamento primeiro
+                # ⚠️ IMPORTANTE: contract_id_map armazena UUID como string, mas pode vir como UUID do banco
+                contract_to_id_orcamento = {}
+                for id_orc, contract_uuid in self.contract_id_map.items():
+                    # Garantir que ambos sejam strings para comparação
+                    contract_to_id_orcamento[str(contract_uuid)] = id_orc
+                
+                scenario_rows = cursor_scenarios.fetchall()
+                for scenario_uuid, contract_uuid, frequency, hours, hour_value, start_date, end_date in scenario_rows:
+                    # Buscar IdOrcamento do contract_id (contract_uuid pode vir como UUID ou string)
+                    contract_uuid_str = str(contract_uuid) if contract_uuid else None
+                    id_orcamento = contract_to_id_orcamento.get(contract_uuid_str)
+                    if id_orcamento:
+                        # Criar chave única baseada na combinação
+                        freq_str = str(frequency) if frequency else ''
+                        horas_str = str(hours) if hours else ''
+                        valor_hora_str = str(float(hour_value)) if hour_value else '0.0'
+                        start_date_str = start_date.strftime('%Y-%m-%d') if start_date else ''
+                        end_date_str = end_date.strftime('%Y-%m-%d') if end_date else None
+                        
+                        scenario_key = (
+                            int(id_orcamento),
+                            freq_str,
+                            horas_str,
+                            valor_hora_str,
+                            start_date_str,
+                            end_date_str
+                        )
+                        self.scenario_id_map[scenario_key] = str(scenario_uuid)
+                
+                cursor_scenarios.close()
+                conn_scenarios.close()
+                print(f"OK - {len(self.scenario_id_map)} scenarios carregados")
+                logger.info(f"Carregados {len(self.scenario_id_map)} scenarios para mapeamento")
+            except Exception as e:
+                logger.warning(f"Erro ao carregar scenarios: {e}")
+                print(f"AVISO - Nao foi possivel carregar scenarios: {e}")
+        else:
+            print(f"OK - {len(self.scenario_id_map)} scenarios já mapeados do step2")
+            logger.info(f"Usando {len(self.scenario_id_map)} scenarios já mapeados do step2")
         
         try:
             if self.should_include_legacy_id():
@@ -2528,25 +3059,85 @@ class ContractsMigration:
                 logger.warning(f"Nao foi possivel criar/verificar coluna legacy_id: {e}")
                 include_legacy = False
         
-        # Truncate
-        print("\n[ETAPA 3] Limpando tabela contract_scenario_stores...")
-        self.truncate_table('contract_scenario_stores')
+        # Carregar filtros do step1 (se existir)
+        filter_data = self.load_filter_json()
+        id_orcamento_filter_list = []
+        
+        if filter_data and 'aggregated_ids' in filter_data:
+            id_orcamento_filter_list = filter_data['aggregated_ids'].get('IdOrcamento', [])
+            logger.info(f"[ETAPA 3] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
+            print(f"[ETAPA 3] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
+        
+        # Limpar tabela (TRUNCATE ou DELETE baseado em filtros)
+        if not id_orcamento_filter_list or self.clear_data:
+            print("\n[ETAPA 3] Limpando tabela contract_scenario_stores...")
+            self.truncate_table('contract_scenario_stores')
+        else:
+            print("\n[ETAPA 3] Preparando limpeza de contract_scenario_stores...")
         
         # Buscar dados do SQL Server usando ViewOrcamentosLojas + OrcamentoLojas
+        # ⚠️ IMPORTANTE: Precisamos buscar todos os campos para criar a chave única e buscar o scenario_id
         print("[ETAPA 3] Buscando dados do SQL Server...")
         sql_query = """
         SELECT 
             v.IdOrcamentoLoja,
+            v.IdOrcamento,
             v.IdEstabelecimento,
+            v.Frequencia,
+            v.Horas,
+            v.ValorHora,
             v.DataInicioOperacao,
+            v.DataAvisoPrevio,
             v.DataInclusaoOrcamentoLojas,
             v.DataAlteracaoOrcamentoLojas,
-            ol.Ativo,
-            ol.DataExclusao
+            ol.Ativo
         FROM ViewOrcamentosLojas v
+        INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
         LEFT JOIN OrcamentoLojas ol ON ol.Id = v.IdOrcamentoLoja
-        ORDER BY v.IdOrcamentoLoja
         """
+        
+        # Construir WHERE clause com filtros opcionais (mesmo padrão do step1 e step2)
+        where_conditions = []
+        query_params = []
+        
+        # Filtro IdOrcamento
+        if id_orcamento_filter_list:
+            placeholders = ','.join(['?' for _ in id_orcamento_filter_list])
+            where_conditions.append(f"v.IdOrcamento IN ({placeholders})")
+            query_params.extend(id_orcamento_filter_list)
+        
+        # Filtro DataAvisoPrevio (data mínima)
+        if self.data_aviso_previo_min is not None:
+            if isinstance(self.data_aviso_previo_min, str):
+                data_aviso_previo_str = self.data_aviso_previo_min
+            else:
+                data_aviso_previo_str = self.data_aviso_previo_min.strftime('%Y-%m-%d')
+            where_conditions.append("(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)")
+            query_params.append(data_aviso_previo_str)
+        
+        # Filtro DataInicioOperacao (data máxima)
+        if self.data_inicio_operacao_max is not None:
+            if isinstance(self.data_inicio_operacao_max, str):
+                data_inicio_str = self.data_inicio_operacao_max
+            else:
+                data_inicio_str = self.data_inicio_operacao_max.strftime('%Y-%m-%d')
+            where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
+            query_params.append(data_inicio_str)
+        
+        # Filtro StatusPedido
+        if len(self.status_pedido_filter) > 0:
+            placeholders = ','.join(['?' for _ in self.status_pedido_filter])
+            where_conditions.append(f"v.StatusPedido IN ({placeholders})")
+            query_params.extend(self.status_pedido_filter)
+        
+        # Filtro IdCliente (obrigatório conforme query base)
+        where_conditions.append("v.IdCliente IS NOT NULL")
+        
+        # Adicionar WHERE se houver condições
+        if where_conditions:
+            sql_query += " WHERE " + " AND ".join(where_conditions)
+        
+        sql_query += " ORDER BY v.IdOrcamentoLoja"
         
         # Adicionar LIMIT se especificado
         if self.limit_rows > 0:
@@ -2555,7 +3146,12 @@ class ContractsMigration:
         
         conn_sql = DatabaseConnection.get_sql_server_prd_connection()
         cursor_sql = conn_sql.cursor()
-        cursor_sql.execute(sql_query)
+        
+        # Executar query com parâmetros se houver
+        if query_params:
+            cursor_sql.execute(sql_query, query_params)
+        else:
+            cursor_sql.execute(sql_query)
         
         # Carregar TODOS os dados na memória de uma vez (otimizado)
         print("[ETAPA 3] Carregando dados na memória...")
@@ -2567,42 +3163,281 @@ class ContractsMigration:
         
         # Processar conversões em massa usando DataFrame (vetorizado)
         df = pd.DataFrame.from_records(all_rows, columns=[
-            'IdOrcamentoLoja', 'IdEstabelecimento', 'DataInicioOperacao',
-            'DataInclusaoOrcamentoLojas', 'DataAlteracaoOrcamentoLojas', 'Ativo', 'DataExclusao'
+            'IdOrcamentoLoja', 'IdOrcamento', 'IdEstabelecimento', 'Frequencia', 'Horas', 
+            'ValorHora', 'DataInicioOperacao', 'DataAvisoPrevio',
+            'DataInclusaoOrcamentoLojas', 'DataAlteracaoOrcamentoLojas', 'Ativo'
         ])
         
         # Aplicar transformações vetorizadas
         df['legacy_id'] = df['IdOrcamentoLoja']
         
-        # Mapear scenario_id e store_id usando .map() (vetorizado)
-        df['scenario_id'] = df['IdOrcamentoLoja'].map(self.scenario_id_map)
+        # Função auxiliar para normalizar frequência de forma consistente (mesma do step2)
+        def normalize_frequency(freq_value):
+            """
+            Normaliza frequência para string de forma consistente.
+            Garante que valores decimais (0.25, 0.5, 1.5, 2.5) tenham formatação consistente.
+            """
+            # Verificar se é None, NaN ou string vazia
+            if freq_value is None or freq_value == '':
+                return ''
+            try:
+                # Tentar usar pd.isna() se for valor do pandas, senão verificar None diretamente
+                if hasattr(freq_value, '__iter__') and not isinstance(freq_value, str):
+                    if pd.isna(freq_value):
+                        return ''
+                freq_float = float(freq_value)
+                # Usar formatação controlada para evitar problemas de precisão
+                # Para valores decimais conhecidos, garantir formato exato
+                if freq_float == 0.25:
+                    return '0.25'
+                elif freq_float == 0.5:
+                    return '0.5'
+                elif freq_float == 1.5:
+                    return '1.5'
+                elif freq_float == 2.5:
+                    return '2.5'
+                else:
+                    # Para outros valores, converter normalmente
+                    return str(int(freq_float)) if freq_float.is_integer() else str(freq_float)
+            except (ValueError, TypeError):
+                return str(freq_value) if freq_value else ''
+        
+        # ⚠️ IMPORTANTE: Buscar scenario_id baseado na combinação única
+        # Criar chave única para cada registro baseada na combinação
+        # ⚠️ CRÍTICO: Usar EXATAMENTE a mesma normalização do step2 (create_scenario_key_from_df)
+        def create_scenario_key(row):
+            """Cria chave única baseada na combinação de campos (mesma normalização do step2)"""
+            # Normalização idêntica ao step2
+            # ⚠️ IMPORTANTE: Usar função auxiliar para normalizar Frequencia de forma consistente
+            freq_str = normalize_frequency(row['Frequencia'])
+            # ⚠️ CRÍTICO: Converter Horas para float primeiro, depois para string (mesmo do step2)
+            # Isso garante que '1' e 1.0 virem ambos '1.0'
+            try:
+                horas_float = float(row['Horas']) if pd.notna(row['Horas']) else 0.0
+                horas_str = str(horas_float)
+            except (ValueError, TypeError):
+                horas_str = ''
+            # ⚠️ IMPORTANTE: Converter para float primeiro, depois para string (mesmo do step2)
+            try:
+                valor_hora_float = float(row['ValorHora']) if pd.notna(row['ValorHora']) else 0.0
+                valor_hora_str = str(valor_hora_float)
+            except (ValueError, TypeError):
+                valor_hora_str = '0.0'
+            start_date_str = row['DataInicioOperacao'].strftime('%Y-%m-%d') if pd.notna(row['DataInicioOperacao']) else ''
+            # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do step2)
+            end_date_str = row['DataAvisoPrevio'].strftime('%Y-%m-%d') if pd.notna(row['DataAvisoPrevio']) else None
+            
+            return (
+                int(row['IdOrcamento']),
+                freq_str,
+                horas_str,
+                valor_hora_str,
+                start_date_str,
+                end_date_str
+            )
+        
+        # Criar chaves únicas para cada registro
+        df['scenario_key'] = df.apply(create_scenario_key, axis=1)
+        
+        # Log detalhado: mostrar alguns exemplos de scenario_key criados
+        if len(df) > 0:
+            sample_keys = df['scenario_key'].head(5).tolist()
+            print(f"[ETAPA 3] Exemplos de scenario_key criados (primeiros 5): {sample_keys}")
+            logger.info(f"[ETAPA 3] Total de scenario_keys únicos criados: {df['scenario_key'].nunique()}")
+            logger.info(f"[ETAPA 3] Total de scenario_keys no mapa: {len(self.scenario_id_map)}")
+        
+        # Mapear scenario_id usando a chave única
+        df['scenario_id'] = df['scenario_key'].map(self.scenario_id_map)
         df['store_id'] = df['IdEstabelecimento'].map(self.store_id_map)
         
-        # Filtrar linhas onde scenario_id ou store_id são None (coletar warnings em batch)
-        mask_valid = df['scenario_id'].notna() & df['store_id'].notna()
+        # ⚠️ VALIDAÇÃO CRÍTICA: Verificar se o scenario_id encontrado realmente corresponde aos valores
+        # Buscar os scenarios do banco para validar correspondência exata
+        print("[ETAPA 3] Validando correspondência exata dos scenarios...")
+        schema_scenarios = schema
+        conn_validate = DatabaseConnection.get_postgresql_destino_connection()
+        cursor_validate = conn_validate.cursor()
+        
+        # Mapa reverso: frequency enum -> lista de valores originais possíveis (inteiros e decimais como string)
+        # Usado para comparar com Frequencia da origem durante validação
+        # Um enum pode ter múltiplos valores de origem (ex: once_per_week pode vir de 1 ou 1.5)
+        frequency_enum_to_values = {
+            'once_per_week': ['1', '1.5'],
+            'twice_per_week': ['2', '2.5'],
+            'three_times_per_week': ['3'],
+            'four_times_per_week': ['4'],
+            'five_times_per_week': ['5'],
+            'six_times_per_week': ['6'],
+            'seven_times_per_week': ['7'],
+            'every_15_days': ['15', '0.5'],
+            'once_per_month': ['30', '0.25']
+        }
+        
+        # Buscar todos os scenarios com seus valores para validação
+        # ⚠️ IMPORTANTE: Incluir legacy_id (IdOrcamento) através do JOIN com contracts
+        cursor_validate.execute(f"""
+            SELECT 
+                cs.id,
+                cs.frequency,
+                cs.hours,
+                cs.hour_value,
+                cs.start_date,
+                cs.end_date,
+                c.legacy_id
+            FROM {schema_scenarios}.contract_scenarios cs
+            INNER JOIN {schema_scenarios}.contracts c ON c.id = cs.contract_id
+        """)
+        
+        scenario_validation_map = {}
+        for row in cursor_validate.fetchall():
+            scenario_uuid, frequency, hours, hour_value, start_date, end_date, legacy_id = row
+            # Normalizar valores para comparação (mesma normalização do create_scenario_key)
+            # ⚠️ IMPORTANTE: Converter frequency de enum para lista de valores possíveis (inteiros e decimais)
+            # Um enum pode ter múltiplos valores de origem (ex: once_per_week pode vir de 1 ou 1.5)
+            freq_enum_str = str(frequency) if frequency else ''
+            freq_values_list = frequency_enum_to_values.get(freq_enum_str, [freq_enum_str])  # Lista de valores possíveis
+            
+            # ⚠️ CRÍTICO: Converter hours para float primeiro, depois para string (mesmo do create_scenario_key)
+            # Isso garante que 1.0 vire '1.0' (mesmo formato que será usado na validação)
+            try:
+                hours_float = float(hours) if hours is not None else 0.0
+                hours_val = str(hours_float)
+            except (ValueError, TypeError):
+                hours_val = ''
+            # ⚠️ IMPORTANTE: Converter para float primeiro, depois para string (mesmo do create_scenario_key)
+            try:
+                hour_value_float = float(hour_value) if hour_value is not None else 0.0
+                hour_value_val = str(hour_value_float)
+            except (ValueError, TypeError):
+                hour_value_val = '0.0'
+            start_date_val = start_date.strftime('%Y-%m-%d') if start_date else ''
+            # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do create_scenario_key)
+            end_date_val = end_date.strftime('%Y-%m-%d') if end_date else None
+            
+            scenario_validation_map[str(scenario_uuid)] = {
+                'legacy_id': legacy_id,  # IdOrcamento para validação
+                'frequency': freq_values_list,  # Lista de valores possíveis para comparação flexível
+                'hours': hours_val,
+                'hour_value': hour_value_val,
+                'start_date': start_date_val,
+                'end_date': end_date_val
+            }
+        
+        cursor_validate.close()
+        conn_validate.close()
+        
+        # Validar cada registro que tem scenario_id
+        def validate_scenario_match(row):
+            """Valida se o scenario_id realmente corresponde aos valores do registro"""
+            if pd.isna(row['scenario_id']):
+                return False
+            
+            scenario_uuid = str(row['scenario_id'])
+            if scenario_uuid not in scenario_validation_map:
+                return False
+            
+            scenario_data = scenario_validation_map[scenario_uuid]
+            
+            # Normalizar valores do registro para comparação (mesma normalização do create_scenario_key)
+            # ⚠️ IMPORTANTE: Usar função auxiliar para normalizar Frequencia de forma consistente
+            freq_reg = normalize_frequency(row['Frequencia'])
+            # ⚠️ CRÍTICO: Converter Horas para float primeiro, depois para string (mesmo do create_scenario_key)
+            # Isso garante que '1' e 1.0 virem ambos '1.0'
+            try:
+                horas_float_reg = float(row['Horas']) if pd.notna(row['Horas']) else 0.0
+                horas_reg = str(horas_float_reg)
+            except (ValueError, TypeError):
+                horas_reg = ''
+            # ⚠️ IMPORTANTE: Converter para float primeiro, depois para string (mesmo do create_scenario_key)
+            try:
+                valor_hora_float = float(row['ValorHora']) if pd.notna(row['ValorHora']) else 0.0
+                valor_hora_reg = str(valor_hora_float)
+            except (ValueError, TypeError):
+                valor_hora_reg = '0.0'
+            start_date_reg = row['DataInicioOperacao'].strftime('%Y-%m-%d') if pd.notna(row['DataInicioOperacao']) else ''
+            # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do create_scenario_key)
+            end_date_reg = row['DataAvisoPrevio'].strftime('%Y-%m-%d') if pd.notna(row['DataAvisoPrevio']) else None
+            
+            # Comparar valores normalizados
+            # ⚠️ IMPORTANTE: Comparar end_date considerando None e string vazia como equivalentes
+            end_date_match = (
+                end_date_reg == scenario_data['end_date'] or
+                (end_date_reg == '' and scenario_data['end_date'] is None) or
+                (end_date_reg is None and scenario_data['end_date'] == '')
+            )
+            
+            # ⚠️ IMPORTANTE: Comparar frequency considerando múltiplos valores possíveis (inteiros e decimais)
+            # scenario_data['frequency'] agora é uma lista de valores possíveis
+            freq_match = freq_reg in scenario_data['frequency'] if isinstance(scenario_data['frequency'], list) else freq_reg == scenario_data['frequency']
+            
+            # ⚠️ IMPORTANTE: Validar legacy_id (IdOrcamento) para garantir que o scenario pertence ao mesmo contrato
+            legacy_id_match = int(row['IdOrcamento']) == scenario_data['legacy_id'] if scenario_data.get('legacy_id') is not None else False
+            
+            match = (
+                legacy_id_match and
+                freq_match and
+                horas_reg == scenario_data['hours'] and
+                valor_hora_reg == scenario_data['hour_value'] and
+                start_date_reg == scenario_data['start_date'] and
+                end_date_match
+            )
+            
+            if not match:
+                logger.warning(
+                    f"[ETAPA 3] VALIDACAO FALHOU para IdOrcamentoLoja={row['IdOrcamentoLoja']}, "
+                    f"IdOrcamento={row['IdOrcamento']}, scenario_id={scenario_uuid}. "
+                    f"Registro: IdOrcamento={row['IdOrcamento']}, Frequencia={freq_reg}, Horas={horas_reg}, ValorHora={valor_hora_reg}, "
+                    f"DataInicio={start_date_reg}, DataAviso={end_date_reg}. "
+                    f"Scenario: legacy_id={scenario_data.get('legacy_id')}, frequency={scenario_data['frequency']}, hours={scenario_data['hours']}, "
+                    f"hour_value={scenario_data['hour_value']}, start_date={scenario_data['start_date']}, "
+                    f"end_date={scenario_data['end_date']}"
+                )
+            
+            return match
+        
+        # Aplicar validação
+        df['scenario_valid'] = df.apply(validate_scenario_match, axis=1)
+        
+        # Filtrar linhas onde scenario_id ou store_id são None OU onde a validação falhou
+        mask_valid = df['scenario_id'].notna() & df['store_id'].notna() & df['scenario_valid']
+        
+        # Coletar informações sobre registros filtrados
         missing_scenarios = df[~mask_valid & df['scenario_id'].isna()]['IdOrcamentoLoja'].unique()
         missing_stores = df[~mask_valid & df['store_id'].isna()]['IdEstabelecimento'].unique()
+        invalid_scenarios = df[~mask_valid & df['scenario_valid'] == False]['IdOrcamentoLoja'].unique()
         
         if len(missing_scenarios) > 0:
-            logger.warning(f"Scenario nao encontrado para {len(missing_scenarios)} IdOrcamentoLoja(s): {missing_scenarios[:10].tolist()}{'...' if len(missing_scenarios) > 10 else ''}")
-        if len(missing_stores) > 0:
-            logger.warning(f"Store nao encontrado para {len(missing_stores)} IdEstabelecimento(s): {missing_stores[:10].tolist()}{'...' if len(missing_stores) > 10 else ''}")
+            logger.warning(f"[ETAPA 3] Scenario nao encontrado para {len(missing_scenarios)} IdOrcamentoLoja(s): {missing_scenarios[:10].tolist()}{'...' if len(missing_scenarios) > 10 else ''}")
+            print(f"[ETAPA 3] AVISO: {len(missing_scenarios)} registros sem scenario_id correspondente")
         
-        # Filtrar apenas linhas válidas
+        if len(missing_stores) > 0:
+            logger.warning(f"[ETAPA 3] Store nao encontrado para {len(missing_stores)} IdEstabelecimento(s): {missing_stores[:10].tolist()}{'...' if len(missing_stores) > 10 else ''}")
+            print(f"[ETAPA 3] AVISO: {len(missing_stores)} registros sem store_id correspondente")
+        
+        if len(invalid_scenarios) > 0:
+            logger.warning(f"[ETAPA 3] VALIDACAO FALHOU para {len(invalid_scenarios)} IdOrcamentoLoja(s): {invalid_scenarios[:10].tolist()}{'...' if len(invalid_scenarios) > 10 else ''}")
+            print(f"[ETAPA 3] AVISO CRITICO: {len(invalid_scenarios)} registros com scenario_id que nao corresponde aos valores!")
+            print(f"[ETAPA 3] Esses registros serao FILTRADOS e nao serao inseridos.")
+        
+        # Filtrar apenas linhas válidas (com scenario_id, store_id E validação passada)
         df = df[mask_valid].copy()
+        
+        # Remover coluna temporária de validação
+        df = df.drop(columns=['scenario_valid'], errors='ignore')
+        
+        print(f"[ETAPA 3] Apos validacao: {len(df)} registros validos de {len(all_rows)} carregados")
+        logger.info(f"[ETAPA 3] Apos validacao: {len(df)} registros validos de {len(all_rows)} carregados")
         
         # Preparar valores com transformações vetorizadas
         df['start_date'] = df['DataInicioOperacao'].fillna(df['DataInclusaoOrcamentoLojas'])
         df.loc[df['start_date'].isna(), 'start_date'] = datetime.now()
-        df['status'] = df['Ativo'].fillna(False).astype(int)
-        # Converter NaT para None explicitamente - usar mask para identificar NaT/NaN e substituir
-        # NOTA: Em PRD a coluna é 'closed_at' (DATE), não 'removed_at' (TIMESTAMP)
-        # Converter datetime para date apenas (remover hora) - tratar None/NaT corretamente
-        df['closed_at'] = pd.to_datetime(df['DataExclusao'], errors='coerce')
-        # Converter para date apenas onde não é NaT/None
-        mask_not_null = df['closed_at'].notna()
-        df.loc[mask_not_null, 'closed_at'] = df.loc[mask_not_null, 'closed_at'].dt.date
-        df.loc[~mask_not_null, 'closed_at'] = None
+        
+        # ⚠️ IMPORTANTE: status deve ser VARCHAR(50), não INTEGER
+        # Converter Ativo para VARCHAR: True/1 → 'active', False/0 → 'inactive'
+        df['status'] = df['Ativo'].fillna(False).astype(bool)
+        df['status'] = df['status'].map({True: 'active', False: 'inactive'})
+        
+        # ⚠️ IMPORTANTE: closed_at sempre preenchido com NULL (conforme dictionary)
+        df['closed_at'] = None
         df['created_at'] = df['DataInclusaoOrcamentoLojas'].fillna(datetime.now())
         df['updated_at'] = df['DataAlteracaoOrcamentoLojas'].fillna(df['created_at'])
         
@@ -2610,18 +3445,12 @@ class ContractsMigration:
         df['scenario_id'] = df['scenario_id'].astype(str)
         df['store_id'] = df['store_id'].astype(str)
         
-        # Converter DataFrame diretamente para lista de tuplas (otimizado)
-        # Converter NaT/NaN para None explicitamente antes de criar tuplas
-        # Função helper para converter NaT/NaN para None (inclui objetos date)
-        def convert_nat_to_none(val):
-            if val is None:
-                return None
-            if pd.isna(val) or val is pd.NaT or str(val) == 'NaT':
-                return None
-            # Se for objeto date do Python, manter como está
-            return val
+        # Remover coluna temporária scenario_key
+        df = df.drop(columns=['scenario_key'], errors='ignore')
         
-        closed_at_list = [convert_nat_to_none(x) for x in df['closed_at']]
+        # Converter DataFrame diretamente para lista de tuplas (otimizado)
+        # ⚠️ IMPORTANTE: closed_at sempre NULL, não precisa converter NaT
+        closed_at_list = [None] * len(df)
         
         if include_legacy:
             processed_tuples = list(zip(

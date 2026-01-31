@@ -1,0 +1,358 @@
+====================================================================================================
+RELATÓRIO DE ANÁLISE - SCENARIO_ID: 042b9d01-e069-4eb0-8440-dc92ea3ba08a
+====================================================================================================
+Data/Hora: 2026-01-29 20:47:31.753469
+
+SCENARIO_ID: 042b9d01-e069-4eb0-8440-dc92ea3ba08a
+CONTRACT_ID: c27cd57b-4f30-420d-927f-516e67903f7b
+
+VALORES NO DESTINO (contract_scenarios):
+  - Frequency: once_per_week
+  - Hours: 1.0
+  - Hour Value: 38.18
+  - Start Date: 2025-02-01
+  - End Date: None
+
+TOTAL DE REGISTROS NA ORIGEM: 20
+TOTAL DE REGISTROS COM DISCREPÂNCIAS: 20
+
+DISCREPÂNCIAS ENCONTRADAS:
+----------------------------------------------------------------------------------------------------
+
+IdOrcamentoLoja: 477052 | IdOrcamento: 6053 | IdEstabelecimento: 2424
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 1.5 (normalizado: '1.5')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.82 (normalizado: '35.82')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2021-01-01 03:00:00 (normalizado: '2021-01-01')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2023-10-29 03:00:00 (normalizado: '2023-10-29')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 477052 | IdOrcamento: 6053 | IdEstabelecimento: 2424
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 3.5 (normalizado: '3.5')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.82 (normalizado: '35.82')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2023-10-30 03:00:00 (normalizado: '2023-10-30')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2024-11-30 03:00:00 (normalizado: '2024-11-30')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 477052 | IdOrcamento: 6053 | IdEstabelecimento: 2424
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 3.5 (normalizado: '3.5')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.88 (normalizado: '35.88')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2024-12-01 03:00:00 (normalizado: '2024-12-01')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2024-12-31 03:00:00 (normalizado: '2024-12-31')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 477052 | IdOrcamento: 6053 | IdEstabelecimento: 2424
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 3.5 (normalizado: '3.5')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.93 (normalizado: '35.93')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2025-01-01 03:00:00 (normalizado: '2025-01-01')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2025-01-31 03:00:00 (normalizado: '2025-01-31')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 477052 | IdOrcamento: 6053 | IdEstabelecimento: 2424
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 3.5 (normalizado: '3.5')
+     Destino: 1.0 (normalizado: '1.0')
+
+IdOrcamentoLoja: 477102 | IdOrcamento: 6053 | IdEstabelecimento: 2435
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 7 (normalizado: '7')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.82 (normalizado: '35.82')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2021-01-01 03:00:00 (normalizado: '2021-01-01')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2022-07-31 03:00:00 (normalizado: '2022-07-31')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 477102 | IdOrcamento: 6053 | IdEstabelecimento: 2435
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 6 (normalizado: '6')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.82 (normalizado: '35.82')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2022-08-01 03:00:00 (normalizado: '2022-08-01')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2022-08-07 03:00:00 (normalizado: '2022-08-07')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 477102 | IdOrcamento: 6053 | IdEstabelecimento: 2435
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 7 (normalizado: '7')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.82 (normalizado: '35.82')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2022-08-08 03:00:00 (normalizado: '2022-08-08')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2023-01-31 03:00:00 (normalizado: '2023-01-31')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 477102 | IdOrcamento: 6053 | IdEstabelecimento: 2435
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 7 (normalizado: '7')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.82 (normalizado: '35.82')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2023-02-01 03:00:00 (normalizado: '2023-02-01')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2024-10-27 03:00:00 (normalizado: '2024-10-27')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 477102 | IdOrcamento: 6053 | IdEstabelecimento: 2435
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 3.5 (normalizado: '3.5')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.82 (normalizado: '35.82')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2024-10-28 03:00:00 (normalizado: '2024-10-28')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2024-11-30 03:00:00 (normalizado: '2024-11-30')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 477102 | IdOrcamento: 6053 | IdEstabelecimento: 2435
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 3.5 (normalizado: '3.5')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.88 (normalizado: '35.88')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2024-12-01 03:00:00 (normalizado: '2024-12-01')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2024-12-31 03:00:00 (normalizado: '2024-12-31')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 477102 | IdOrcamento: 6053 | IdEstabelecimento: 2435
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 3.5 (normalizado: '3.5')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.93 (normalizado: '35.93')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2025-01-01 03:00:00 (normalizado: '2025-01-01')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2025-01-31 03:00:00 (normalizado: '2025-01-31')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 477102 | IdOrcamento: 6053 | IdEstabelecimento: 2435
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 3.5 (normalizado: '3.5')
+     Destino: 1.0 (normalizado: '1.0')
+
+IdOrcamentoLoja: 678722 | IdOrcamento: 6053 | IdEstabelecimento: 24449
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 6 (normalizado: '6')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.82 (normalizado: '35.82')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2023-05-09 03:00:00 (normalizado: '2023-05-09')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2023-07-23 03:00:00 (normalizado: '2023-07-23')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 678722 | IdOrcamento: 6053 | IdEstabelecimento: 24449
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 5 (normalizado: '5')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.82 (normalizado: '35.82')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2023-07-24 03:00:00 (normalizado: '2023-07-24')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2024-07-10 03:00:00 (normalizado: '2024-07-10')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 678722 | IdOrcamento: 6053 | IdEstabelecimento: 24449
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 5 (normalizado: '5')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.82 (normalizado: '35.82')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2024-08-19 03:00:00 (normalizado: '2024-08-19')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2024-10-27 03:00:00 (normalizado: '2024-10-27')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 678722 | IdOrcamento: 6053 | IdEstabelecimento: 24449
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 3.5 (normalizado: '3.5')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.82 (normalizado: '35.82')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2024-10-28 03:00:00 (normalizado: '2024-10-28')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2024-11-30 03:00:00 (normalizado: '2024-11-30')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 678722 | IdOrcamento: 6053 | IdEstabelecimento: 24449
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 3.5 (normalizado: '3.5')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.88 (normalizado: '35.88')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2024-12-01 03:00:00 (normalizado: '2024-12-01')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2024-12-31 03:00:00 (normalizado: '2024-12-31')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 678722 | IdOrcamento: 6053 | IdEstabelecimento: 24449
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 3.5 (normalizado: '3.5')
+     Destino: 1.0 (normalizado: '1.0')
+  [ERRO] ValorHora:
+     Origem: 35.93 (normalizado: '35.93')
+     Destino: 38.18 (normalizado: '38.18')
+  [ERRO] DataInicioOperacao:
+     Origem: 2025-01-01 03:00:00 (normalizado: '2025-01-01')
+     Destino: 2025-02-01 (normalizado: '2025-02-01')
+  [ERRO] DataAvisoPrevio:
+     Origem: 2025-01-31 03:00:00 (normalizado: '2025-01-31')
+     Destino: None (normalizado: '')
+
+IdOrcamentoLoja: 678722 | IdOrcamento: 6053 | IdEstabelecimento: 24449
+  [ERRO] Frequencia:
+     Origem: 6 (normalizado: '6')
+     Destino: once_per_week (normalizado: 'once_per_week')
+  [ERRO] Horas:
+     Origem: 3.5 (normalizado: '3.5')
+     Destino: 1.0 (normalizado: '1.0')
+
+====================================================================================================
+DADOS COMPLETOS DA ORIGEM:
+====================================================================================================
+ IdOrcamentoLoja  IdOrcamento  IdEstabelecimento Frequencia Horas ValorHora  DataInicioOperacao     DataAvisoPrevio
+          477052         6053               2424          6   1.5     35.82 2021-01-01 03:00:00 2023-10-29 03:00:00
+          477052         6053               2424          6   3.5     35.82 2023-10-30 03:00:00 2024-11-30 03:00:00
+          477052         6053               2424          6   3.5     35.88 2024-12-01 03:00:00 2024-12-31 03:00:00
+          477052         6053               2424          6   3.5     35.93 2025-01-01 03:00:00 2025-01-31 03:00:00
+          477052         6053               2424          6   3.5     38.18 2025-02-01 03:00:00                 NaT
+          477102         6053               2435          6     7     35.82 2021-01-01 03:00:00 2022-07-31 03:00:00
+          477102         6053               2435          6     6     35.82 2022-08-01 03:00:00 2022-08-07 03:00:00
+          477102         6053               2435          6     7     35.82 2022-08-08 03:00:00 2023-01-31 03:00:00
+          477102         6053               2435          6     7     35.82 2023-02-01 03:00:00 2024-10-27 03:00:00
+          477102         6053               2435          6   3.5     35.82 2024-10-28 03:00:00 2024-11-30 03:00:00
+          477102         6053               2435          6   3.5     35.88 2024-12-01 03:00:00 2024-12-31 03:00:00
+          477102         6053               2435          6   3.5     35.93 2025-01-01 03:00:00 2025-01-31 03:00:00
+          477102         6053               2435          6   3.5     38.18 2025-02-01 03:00:00                 NaT
+          678722         6053              24449          6     6     35.82 2023-05-09 03:00:00 2023-07-23 03:00:00
+          678722         6053              24449          6     5     35.82 2023-07-24 03:00:00 2024-07-10 03:00:00
+          678722         6053              24449          6     5     35.82 2024-08-19 03:00:00 2024-10-27 03:00:00
+          678722         6053              24449          6   3.5     35.82 2024-10-28 03:00:00 2024-11-30 03:00:00
+          678722         6053              24449          6   3.5     35.88 2024-12-01 03:00:00 2024-12-31 03:00:00
+          678722         6053              24449          6   3.5     35.93 2025-01-01 03:00:00 2025-01-31 03:00:00
+          678722         6053              24449          6   3.5     38.18 2025-02-01 03:00:00                 NaT

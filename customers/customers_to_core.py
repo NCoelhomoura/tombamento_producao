@@ -82,7 +82,8 @@ class CustomersMigration:
     """Classe para executar a migração de dados"""
     
     def __init__(self, limit_rows=0, id_orcamento_filter=None, 
-                 data_aviso_previo_min=None, data_inicio_operacao_max=None, clear_data=False):
+                 data_aviso_previo_min=None, data_inicio_operacao_max=None, 
+                 status_pedido_filter=None, clear_data=False):
         self.stats = {
             'customers': 0,
             'customer_segments': 0,
@@ -99,6 +100,7 @@ class CustomersMigration:
         self.id_orcamento_filter = id_orcamento_filter  # Lista de IdOrcamento para filtrar
         self.data_aviso_previo_min = data_aviso_previo_min  # Data mínima para DataAvisoPrevio
         self.data_inicio_operacao_max = data_inicio_operacao_max  # Data máxima para DataInicioOperacao
+        self.status_pedido_filter = status_pedido_filter if status_pedido_filter else []  # Lista de StatusPedido para filtrar
         self.clear_data = clear_data  # Se True, força TRUNCATE mesmo com filtros aplicados
         self.json_updated_this_run = False  # Flag para evitar múltiplas atualizações do JSON na mesma execução
         
@@ -228,7 +230,7 @@ class CustomersMigration:
     def delete_polymorphic_table(self, table_name: str, entity_type: str, type_column: str, schema: str = None):
         """
         Faz DELETE em tabela polimórfica filtrando por tipo de entidade
-        Exemplo: delete_polymorphic_table('contacts', 'customers', 'contactable_type')
+        Exemplo: delete_polymorphic_table('contacts', 'Customer', 'contactable_type')
         """
         if schema is None:
             schema = get_schema_atual()
@@ -296,6 +298,7 @@ class CustomersMigration:
             existing_data = self.load_filter_json()
             data_aviso_previo_min = self.data_aviso_previo_min
             data_inicio_operacao_max = self.data_inicio_operacao_max
+            status_pedido_filter = self.status_pedido_filter
             
             # Se não foram fornecidos no objeto, tentar pegar do JSON existente
             if not data_aviso_previo_min and existing_data and 'filters_applied' in existing_data:
@@ -305,6 +308,12 @@ class CustomersMigration:
             if not data_inicio_operacao_max and existing_data and 'filters_applied' in existing_data:
                 filters = existing_data['filters_applied']
                 data_inicio_operacao_max = filters.get('data_inicio_operacao_max')
+            
+            if len(status_pedido_filter) == 0 and existing_data and 'filters_applied' in existing_data:
+                filters = existing_data['filters_applied']
+                json_status_pedido = filters.get('status_pedido')
+                if json_status_pedido:
+                    status_pedido_filter = json_status_pedido
             
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
@@ -328,6 +337,12 @@ class CustomersMigration:
             if data_inicio_operacao_max:
                 where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
                 query_params.append(data_inicio_operacao_max)
+            
+            # Filtro StatusPedido
+            if len(status_pedido_filter) > 0:
+                placeholders = ','.join(['?' for _ in status_pedido_filter])
+                where_conditions.append(f"v.StatusPedido IN ({placeholders})")
+                query_params.extend(status_pedido_filter)
             
             where_clause = ""
             if where_conditions:
@@ -938,29 +953,66 @@ class CustomersMigration:
                 json_filters = filter_data['filters_applied']
                 json_data_aviso = json_filters.get('data_aviso_previo_min')
                 json_data_inicio = json_filters.get('data_inicio_operacao_max')
+                json_status_pedido = json_filters.get('status_pedido')
+                json_id_orcamento = json_filters.get('id_orcamento')
                 
-                # Converter filtros para string para comparação
-                cmd_data_aviso = self.data_aviso_previo_min
-                if cmd_data_aviso and isinstance(cmd_data_aviso, str):
-                    cmd_data_aviso = cmd_data_aviso
-                elif cmd_data_aviso:
-                    cmd_data_aviso = cmd_data_aviso.strftime('%Y-%m-%d')
-                
-                cmd_data_inicio = self.data_inicio_operacao_max
-                if cmd_data_inicio and isinstance(cmd_data_inicio, str):
-                    cmd_data_inicio = cmd_data_inicio
-                elif cmd_data_inicio:
-                    cmd_data_inicio = cmd_data_inicio.strftime('%Y-%m-%d')
-                
-                # Comparar filtros
-                json_filters_match = (
-                    (json_data_aviso == cmd_data_aviso or (json_data_aviso is None and cmd_data_aviso is None)) and
-                    (json_data_inicio == cmd_data_inicio or (json_data_inicio is None and cmd_data_inicio is None))
+                # Verificar se CMD especificou algum filtro
+                cmd_has_filters = (
+                    self.id_orcamento_filter is not None or
+                    self.data_aviso_previo_min is not None or
+                    self.data_inicio_operacao_max is not None or
+                    len(self.status_pedido_filter) > 0
                 )
                 
-                if not json_filters_match:
-                    logger.info(f"[ETAPA 2] Filtros de data no JSON não correspondem aos filtros passados. JSON: data_aviso={json_data_aviso}, data_inicio={json_data_inicio}. CMD: data_aviso={cmd_data_aviso}, data_inicio={cmd_data_inicio}")
-                    print(f"[ETAPA 2] Filtros de data no JSON não correspondem. Buscando da ViewOrcamentosLojas...")
+                # Se CMD não especificou filtros, aceitar filtros do JSON (não comparar)
+                if not cmd_has_filters:
+                    json_filters_match = True  # Aceitar filtros do JSON quando CMD não especificou
+                    logger.info(f"[ETAPA 2] CMD não especificou filtros. Aceitando filtros do JSON: data_aviso={json_data_aviso}, data_inicio={json_data_inicio}, status_pedido={json_status_pedido if json_status_pedido else []}, id_orcamento={json_id_orcamento if json_id_orcamento else []}")
+                else:
+                    # CMD especificou filtros: comparar com JSON
+                    # Converter filtros para string para comparação
+                    cmd_data_aviso = self.data_aviso_previo_min
+                    if cmd_data_aviso and isinstance(cmd_data_aviso, str):
+                        cmd_data_aviso = cmd_data_aviso
+                    elif cmd_data_aviso:
+                        cmd_data_aviso = cmd_data_aviso.strftime('%Y-%m-%d')
+                    
+                    cmd_data_inicio = self.data_inicio_operacao_max
+                    if cmd_data_inicio and isinstance(cmd_data_inicio, str):
+                        cmd_data_inicio = cmd_data_inicio
+                    elif cmd_data_inicio:
+                        cmd_data_inicio = cmd_data_inicio.strftime('%Y-%m-%d')
+                    
+                    # Comparar status_pedido (listas)
+                    cmd_status_pedido = self.status_pedido_filter if self.status_pedido_filter else []
+                    json_status_pedido_list = json_status_pedido if json_status_pedido else []
+                    status_pedido_match = (
+                        sorted(cmd_status_pedido) == sorted(json_status_pedido_list)
+                    )
+                    
+                    # Comparar id_orcamento (listas)
+                    # Normalizar None para lista vazia para comparação
+                    cmd_id_orcamento = self.id_orcamento_filter if self.id_orcamento_filter else []
+                    json_id_orcamento_list = json_id_orcamento if json_id_orcamento else []
+                    # Se ambos são None ou listas vazias, considerar match
+                    if (not cmd_id_orcamento and not json_id_orcamento_list):
+                        id_orcamento_match = True
+                    else:
+                        id_orcamento_match = (
+                            sorted(cmd_id_orcamento) == sorted(json_id_orcamento_list)
+                        )
+                    
+                    # Comparar filtros (incluindo id_orcamento)
+                    json_filters_match = (
+                        id_orcamento_match and
+                        (json_data_aviso == cmd_data_aviso or (json_data_aviso is None and cmd_data_aviso is None)) and
+                        (json_data_inicio == cmd_data_inicio or (json_data_inicio is None and cmd_data_inicio is None)) and
+                        status_pedido_match
+                    )
+                    
+                    if not json_filters_match:
+                        logger.info(f"[ETAPA 2] Filtros no JSON não correspondem aos filtros passados. JSON: id_orcamento={json_id_orcamento_list if json_id_orcamento else []}, data_aviso={json_data_aviso}, data_inicio={json_data_inicio}, status_pedido={json_status_pedido_list if json_status_pedido else []}. CMD: id_orcamento={cmd_id_orcamento}, data_aviso={cmd_data_aviso}, data_inicio={cmd_data_inicio}, status_pedido={cmd_status_pedido}")
+                        print(f"[ETAPA 2] Filtros no JSON não correspondem. Buscando da ViewOrcamentosLojas...")
                     # ⚠️ IMPORTANTE: Manter filter_data para usar os filtros do JSON quando CMD não especificou filtros
                     # Não definir filter_data = None aqui, pois precisamos dos filtros do JSON
         
@@ -968,13 +1020,19 @@ class CustomersMigration:
         
         # ⚠️ IMPORTANTE: Se os filtros não correspondem mas CMD não especificou filtros, usar os IdCliente do JSON
         # Isso garante consistência quando o JSON tem filtros mas o CMD não especificou nenhum
+        # ⚠️ CRÍTICO: Se id_orcamento_filter foi especificado, NUNCA usar IdCliente do JSON, sempre buscar da ViewOrcamentosLojas
         if filter_data and 'aggregated_ids' in filter_data:
-            if json_filters_match:
+            # Se id_orcamento_filter foi especificado, sempre buscar da ViewOrcamentosLojas (não usar JSON)
+            if self.id_orcamento_filter:
+                logger.info(f"[ETAPA 2] id_orcamento_filter especificado ({self.id_orcamento_filter}). Buscando IdCliente da ViewOrcamentosLojas...")
+                print(f"[ETAPA 2] id_orcamento_filter especificado ({self.id_orcamento_filter}). Buscando IdCliente da ViewOrcamentosLojas...")
+                id_cliente_filter_list = []  # Forçar busca da ViewOrcamentosLojas
+            elif json_filters_match:
                 # Filtros correspondem: usar IdCliente do JSON diretamente
                 id_cliente_filter_list = filter_data['aggregated_ids'].get('IdCliente', [])
                 logger.info(f"[ETAPA 2] Carregados {len(id_cliente_filter_list)} IdCliente do arquivo de filtros do contracts")
                 print(f"[ETAPA 2] Carregados {len(id_cliente_filter_list)} IdCliente do arquivo de filtros do contracts")
-            elif self.data_aviso_previo_min is None and self.data_inicio_operacao_max is None:
+            elif self.data_aviso_previo_min is None and self.data_inicio_operacao_max is None and len(self.status_pedido_filter) == 0:
                 # Filtros não correspondem mas CMD não especificou filtros: usar IdCliente do JSON mesmo assim
                 id_cliente_filter_list = filter_data['aggregated_ids'].get('IdCliente', [])
                 logger.info(f"[ETAPA 2] Filtros não correspondem mas CMD não especificou filtros. Usando {len(id_cliente_filter_list)} IdCliente do JSON.")
@@ -1005,6 +1063,7 @@ class CustomersMigration:
             # Prioridade: CMD > JSON > None
             data_aviso_previo_to_use = self.data_aviso_previo_min
             data_inicio_operacao_to_use = self.data_inicio_operacao_max
+            status_pedido_to_use = self.status_pedido_filter
             
             # Debug: verificar se filter_data existe
             logger.info(f"[ETAPA 2] DEBUG - filter_data existe: {filter_data is not None}")
@@ -1034,7 +1093,15 @@ class CustomersMigration:
                 else:
                     logger.info(f"[ETAPA 2] DEBUG - Não foi possível usar filtro do JSON para data_inicio_operacao (filter_data={filter_data is not None}, tem filters_applied={filter_data and 'filters_applied' in filter_data if filter_data else False})")
             
-            logger.info(f"[ETAPA 2] DEBUG - Filtros finais a usar: data_aviso_previo={data_aviso_previo_to_use}, data_inicio_operacao={data_inicio_operacao_to_use}")
+            if len(status_pedido_to_use) == 0:
+                if filter_data and 'filters_applied' in filter_data:
+                    json_filters = filter_data['filters_applied']
+                    json_status_pedido = json_filters.get('status_pedido')
+                    if json_status_pedido:
+                        status_pedido_to_use = json_status_pedido
+                        logger.info(f"[ETAPA 2] Usando filtro StatusPedido do JSON (status_pedido={json_status_pedido}) já que CMD não especificou")
+            
+            logger.info(f"[ETAPA 2] DEBUG - Filtros finais a usar: data_aviso_previo={data_aviso_previo_to_use}, data_inicio_operacao={data_inicio_operacao_to_use}, status_pedido={status_pedido_to_use}")
             
             # Filtro IdOrcamento
             if self.id_orcamento_filter:
@@ -1059,6 +1126,12 @@ class CustomersMigration:
                     data_inicio_str = data_inicio_operacao_to_use.strftime('%Y-%m-%d')
                 where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
                 query_params.append(data_inicio_str)
+            
+            # Filtro StatusPedido
+            if len(status_pedido_to_use) > 0:
+                placeholders = ','.join(['?' for _ in status_pedido_to_use])
+                where_conditions.append(f"v.StatusPedido IN ({placeholders})")
+                query_params.extend(status_pedido_to_use)
             
             # Construir query completa com INNER JOIN Orcamento e filtros
             where_clause = ""
@@ -1886,21 +1959,21 @@ class CustomersMigration:
             destino_nome = DatabaseConnection.get_destino()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'customers'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'Customer'")
             destino_total = cursor_pg.fetchone()[0]
             
             # Contar por tipo
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'customers' AND type = 'email'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'Customer' AND type = 'email'")
             destino_email = cursor_pg.fetchone()[0]
             
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'customers' AND type = 'phone'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'Customer' AND type = 'phone'")
             destino_phone = cursor_pg.fetchone()[0]
             
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'customers' AND type = 'cellphone'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'Customer' AND type = 'cellphone'")
             destino_cellphone = cursor_pg.fetchone()[0]
             
             # Verificar contactable_id preenchido
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'customers' AND contactable_id IS NOT NULL")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'Customer' AND contactable_id IS NOT NULL")
             com_contactable_id = cursor_pg.fetchone()[0]
             
             cursor_pg.close()
@@ -1957,7 +2030,7 @@ class CustomersMigration:
                 logger.info("[ETAPA 4] Flag --clear-data ativo: deletando TODOS os contacts de customers")
             else:
                 print("\n[ETAPA 4] Limpando contacts de customers...")
-            self.delete_polymorphic_table('contacts', 'customers', 'contactable_type')
+            self.delete_polymorphic_table('contacts', 'Customer', 'contactable_type')
             
             # Buscar dados do SQL Server
             print("[ETAPA 4] Buscando dados do SQL Server...")
@@ -2013,7 +2086,7 @@ class CustomersMigration:
                         email_value = str(row[1]).strip().lower()
                         batch_values.append((
                             str(customer_id),  # contactable_id
-                            'customers',  # contactable_type
+                            'Customer',  # contactable_type (primeira maiúscula e singular)
                             'email',  # type
                             email_value,  # value (em minusculo)
                             data_inclusao,  # created_at
@@ -2034,7 +2107,7 @@ class CustomersMigration:
                         if telefone_value:
                             batch_values.append((
                                 str(customer_id),  # contactable_id
-                                'customers',  # contactable_type
+                                'Customer',  # contactable_type (primeira maiúscula e singular)
                                 'phone',  # type
                                 telefone_value,  # value (apenas numeros)
                                 data_inclusao,  # created_at
@@ -2055,7 +2128,7 @@ class CustomersMigration:
                         if celular_value:
                             batch_values.append((
                                 str(customer_id),  # contactable_id
-                                'customers',  # contactable_type
+                                'Customer',  # contactable_type (primeira maiúscula e singular)
                                 'cellphone',  # type
                                 celular_value,  # value (apenas numeros)
                                 data_inclusao,  # created_at
@@ -2199,6 +2272,7 @@ class CustomersMigration:
             # Filtros de data (mesma lógica do step2)
             data_aviso_previo_to_use = self.data_aviso_previo_min
             data_inicio_operacao_to_use = self.data_inicio_operacao_max
+            status_pedido_to_use = self.status_pedido_filter
             
             if data_aviso_previo_to_use is None and filter_data and 'filters_applied' in filter_data:
                 json_filters = filter_data['filters_applied']
@@ -2207,6 +2281,12 @@ class CustomersMigration:
             if data_inicio_operacao_to_use is None and filter_data and 'filters_applied' in filter_data:
                 json_filters = filter_data['filters_applied']
                 data_inicio_operacao_to_use = json_filters.get('data_inicio_operacao_max')
+            
+            if len(status_pedido_to_use) == 0 and filter_data and 'filters_applied' in filter_data:
+                json_filters = filter_data['filters_applied']
+                json_status_pedido = json_filters.get('status_pedido')
+                if json_status_pedido:
+                    status_pedido_to_use = json_status_pedido
             
             if data_aviso_previo_to_use is not None:
                 if isinstance(data_aviso_previo_to_use, str):
@@ -2223,6 +2303,12 @@ class CustomersMigration:
                     data_inicio_str = data_inicio_operacao_to_use.strftime('%Y-%m-%d')
                 where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
                 query_params.append(data_inicio_str)
+            
+            # Filtro StatusPedido
+            if len(status_pedido_to_use) > 0:
+                placeholders = ','.join(['?' for _ in status_pedido_to_use])
+                where_conditions.append(f"v.StatusPedido IN ({placeholders})")
+                query_params.extend(status_pedido_to_use)
             
             # Filtro IdOrcamento
             if self.id_orcamento_filter:
@@ -2452,6 +2538,7 @@ class CustomersMigration:
             # Filtros de data (mesma lógica do step2)
             data_aviso_previo_to_use = self.data_aviso_previo_min
             data_inicio_operacao_to_use = self.data_inicio_operacao_max
+            status_pedido_to_use = self.status_pedido_filter
             
             if data_aviso_previo_to_use is None and filter_data and 'filters_applied' in filter_data:
                 json_filters = filter_data['filters_applied']
@@ -2460,6 +2547,12 @@ class CustomersMigration:
             if data_inicio_operacao_to_use is None and filter_data and 'filters_applied' in filter_data:
                 json_filters = filter_data['filters_applied']
                 data_inicio_operacao_to_use = json_filters.get('data_inicio_operacao_max')
+            
+            if len(status_pedido_to_use) == 0 and filter_data and 'filters_applied' in filter_data:
+                json_filters = filter_data['filters_applied']
+                json_status_pedido = json_filters.get('status_pedido')
+                if json_status_pedido:
+                    status_pedido_to_use = json_status_pedido
             
             if data_aviso_previo_to_use is not None:
                 if isinstance(data_aviso_previo_to_use, str):
@@ -2476,6 +2569,12 @@ class CustomersMigration:
                     data_inicio_str = data_inicio_operacao_to_use.strftime('%Y-%m-%d')
                 where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
                 query_params.append(data_inicio_str)
+            
+            # Filtro StatusPedido
+            if len(status_pedido_to_use) > 0:
+                placeholders = ','.join(['?' for _ in status_pedido_to_use])
+                where_conditions.append(f"v.StatusPedido IN ({placeholders})")
+                query_params.extend(status_pedido_to_use)
             
             # Filtro IdOrcamento
             if self.id_orcamento_filter:

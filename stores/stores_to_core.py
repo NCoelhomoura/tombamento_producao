@@ -81,7 +81,8 @@ class StoresMigration:
     """Classe para executar a migração de dados de stores"""
     
     def __init__(self, limit_rows=0, id_orcamento_filter=None, 
-                 data_aviso_previo_min=None, data_inicio_operacao_max=None, clear_data=False):
+                 data_aviso_previo_min=None, data_inicio_operacao_max=None, 
+                 status_pedido_filter=None, clear_data=False):
         self.stats = {
             'store_segments': 0,
             'retail_chains': 0,
@@ -100,6 +101,7 @@ class StoresMigration:
         self.id_orcamento_filter = id_orcamento_filter  # Lista de IdOrcamento para filtrar
         self.data_aviso_previo_min = data_aviso_previo_min  # Data mínima para DataAvisoPrevio
         self.data_inicio_operacao_max = data_inicio_operacao_max  # Data máxima para DataInicioOperacao
+        self.status_pedido_filter = status_pedido_filter if status_pedido_filter else []  # Lista de StatusPedido para filtrar
         self.clear_data = clear_data  # Se True, força TRUNCATE mesmo com filtros aplicados
         self.json_updated_this_run = False  # Flag para evitar múltiplas atualizações do JSON na mesma execução
         
@@ -157,8 +159,10 @@ class StoresMigration:
             
             # ⚠️ IMPORTANTE: Usar filtros de data da linha de comando (CMD) com prioridade sobre JSON
             # Prioridade: CMD > JSON > None
+            # ⚠️ CRÍTICO: id_orcamento_list sempre vem do CMD, nunca do JSON (para garantir que o filtro seja aplicado)
             data_aviso_previo_min = self.data_aviso_previo_min
             data_inicio_operacao_max = self.data_inicio_operacao_max
+            status_pedido_filter = self.status_pedido_filter
             
             # Se CMD não especificou filtros, usar do JSON se existir
             existing_data = self.load_filter_json()
@@ -170,8 +174,14 @@ class StoresMigration:
                 filters = existing_data['filters_applied']
                 data_inicio_operacao_max = filters.get('data_inicio_operacao_max')
             
+            if len(status_pedido_filter) == 0 and existing_data and 'filters_applied' in existing_data:
+                filters = existing_data['filters_applied']
+                json_status_pedido = filters.get('status_pedido')
+                if json_status_pedido:
+                    status_pedido_filter = json_status_pedido
+            
             # Log dos filtros que estão sendo usados
-            logger.info(f"[STORES] Filtros aplicados em save_filter_json_from_view: data_aviso_previo_min={data_aviso_previo_min}, data_inicio_operacao_max={data_inicio_operacao_max}")
+            logger.info(f"[STORES] Filtros aplicados em save_filter_json_from_view: id_orcamento={id_orcamento_list if id_orcamento_list else 'None'}, data_aviso_previo_min={data_aviso_previo_min}, data_inicio_operacao_max={data_inicio_operacao_max}, status_pedido={status_pedido_filter}")
             
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
@@ -195,6 +205,12 @@ class StoresMigration:
             if data_inicio_operacao_max:
                 where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
                 query_params.append(data_inicio_operacao_max)
+            
+            # Filtro StatusPedido
+            if len(status_pedido_filter) > 0:
+                placeholders = ','.join(['?' for _ in status_pedido_filter])
+                where_conditions.append(f"v.StatusPedido IN ({placeholders})")
+                query_params.extend(status_pedido_filter)
             
             # Construir WHERE clause exatamente como na query do usuário (com WHERE 1 = 1)
             where_clause = ""
@@ -684,7 +700,7 @@ class StoresMigration:
     def delete_polymorphic_table(self, table_name: str, entity_type: str, type_column: str, schema: str = None):
         """
         Faz DELETE em tabela polimórfica filtrando por tipo de entidade
-        Exemplo: delete_polymorphic_table('contacts', 'stores', 'contactable_type')
+        Exemplo: delete_polymorphic_table('contacts', 'Store', 'contactable_type')
         """
         if schema is None:
             schema = get_schema_atual()
@@ -1068,6 +1084,7 @@ class StoresMigration:
         # Carregar filtros de data: prioridade CMD > JSON > None
         data_aviso_previo_min = self.data_aviso_previo_min
         data_inicio_operacao_max = self.data_inicio_operacao_max
+        status_pedido_filter = self.status_pedido_filter
         
         # Se CMD não especificou filtros, usar do JSON se existir
         if data_aviso_previo_min is None and filter_data and 'filters_applied' in filter_data:
@@ -1077,6 +1094,12 @@ class StoresMigration:
         if data_inicio_operacao_max is None and filter_data and 'filters_applied' in filter_data:
             filters = filter_data['filters_applied']
             data_inicio_operacao_max = filters.get('data_inicio_operacao_max')
+        
+        if len(status_pedido_filter) == 0 and filter_data and 'filters_applied' in filter_data:
+            filters = filter_data['filters_applied']
+            json_status_pedido = filters.get('status_pedido')
+            if json_status_pedido:
+                status_pedido_filter = json_status_pedido
         
         # Filtro IdOrcamento
         if self.id_orcamento_filter:
@@ -1093,6 +1116,12 @@ class StoresMigration:
         if data_inicio_operacao_max:
             where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
             query_params.append(data_inicio_operacao_max)
+        
+        # Filtro StatusPedido
+        if len(status_pedido_filter) > 0:
+            placeholders = ','.join(['?' for _ in status_pedido_filter])
+            where_conditions.append(f"v.StatusPedido IN ({placeholders})")
+            query_params.extend(status_pedido_filter)
         
         # Construir query completa com INNER JOIN Orcamento e filtros
         where_clause = ""
@@ -1511,6 +1540,7 @@ class StoresMigration:
         # Carregar filtros de data: prioridade CMD > JSON > None
         data_aviso_previo_min = self.data_aviso_previo_min
         data_inicio_operacao_max = self.data_inicio_operacao_max
+        status_pedido_filter = self.status_pedido_filter
         
         # Se CMD não especificou filtros, usar do JSON se existir
         if data_aviso_previo_min is None and filter_data and 'filters_applied' in filter_data:
@@ -1520,6 +1550,12 @@ class StoresMigration:
         if data_inicio_operacao_max is None and filter_data and 'filters_applied' in filter_data:
             filters = filter_data['filters_applied']
             data_inicio_operacao_max = filters.get('data_inicio_operacao_max')
+        
+        if len(status_pedido_filter) == 0 and filter_data and 'filters_applied' in filter_data:
+            filters = filter_data['filters_applied']
+            json_status_pedido = filters.get('status_pedido')
+            if json_status_pedido:
+                status_pedido_filter = json_status_pedido
         
         # Filtro IdOrcamento
         if self.id_orcamento_filter:
@@ -1536,6 +1572,12 @@ class StoresMigration:
         if data_inicio_operacao_max:
             where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
             query_params.append(data_inicio_operacao_max)
+        
+        # Filtro StatusPedido
+        if len(status_pedido_filter) > 0:
+            placeholders = ','.join(['?' for _ in status_pedido_filter])
+            where_conditions.append(f"v.StatusPedido IN ({placeholders})")
+            query_params.extend(status_pedido_filter)
         
         # Construir query completa com INNER JOIN Orcamento e filtros
         where_clause = ""
@@ -2092,6 +2134,7 @@ class StoresMigration:
         # Carregar filtros de data: prioridade CMD > JSON > None
         data_aviso_previo_min = self.data_aviso_previo_min
         data_inicio_operacao_max = self.data_inicio_operacao_max
+        status_pedido_filter = self.status_pedido_filter
         
         # Se CMD não especificou filtros, usar do JSON se existir
         if data_aviso_previo_min is None and filter_data and 'filters_applied' in filter_data:
@@ -2101,6 +2144,12 @@ class StoresMigration:
         if data_inicio_operacao_max is None and filter_data and 'filters_applied' in filter_data:
             filters = filter_data['filters_applied']
             data_inicio_operacao_max = filters.get('data_inicio_operacao_max')
+        
+        if len(status_pedido_filter) == 0 and filter_data and 'filters_applied' in filter_data:
+            filters = filter_data['filters_applied']
+            json_status_pedido = filters.get('status_pedido')
+            if json_status_pedido:
+                status_pedido_filter = json_status_pedido
         
         # Filtro IdOrcamento
         if self.id_orcamento_filter:
@@ -2117,6 +2166,12 @@ class StoresMigration:
         if data_inicio_operacao_max:
             where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
             query_params.append(data_inicio_operacao_max)
+        
+        # Filtro StatusPedido
+        if len(status_pedido_filter) > 0:
+            placeholders = ','.join(['?' for _ in status_pedido_filter])
+            where_conditions.append(f"v.StatusPedido IN ({placeholders})")
+            query_params.extend(status_pedido_filter)
         
         # Construir query completa com INNER JOIN Orcamento e filtros
         where_clause = ""
@@ -3465,17 +3520,17 @@ class StoresMigration:
             destino_nome = DatabaseConnection.get_destino()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'stores'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'Store'")
             destino_total = cursor_pg.fetchone()[0]
             
             # Contar por tipo
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'stores' AND type = 'email'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'Store' AND type = 'email'")
             destino_email = cursor_pg.fetchone()[0]
             
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'stores' AND type = 'phone'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'Store' AND type = 'phone'")
             destino_phone = cursor_pg.fetchone()[0]
             
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'stores' AND type = 'cellphone'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.contacts WHERE contactable_type = 'Store' AND type = 'cellphone'")
             destino_cellphone = cursor_pg.fetchone()[0]
             
             cursor_pg.close()
@@ -3529,7 +3584,7 @@ class StoresMigration:
             logger.info("[ETAPA 7] Flag --clear-data ativo: deletando TODOS os contacts de stores")
         else:
             print("\n[ETAPA 7] Limpando contacts de stores...")
-        self.delete_polymorphic_table('contacts', 'stores', 'contactable_type')
+        self.delete_polymorphic_table('contacts', 'Store', 'contactable_type')
         
         # Buscar dados do SQL Server
         # Se houver limite, filtrar apenas estabelecimentos que foram migrados
@@ -3681,7 +3736,7 @@ class StoresMigration:
         
         # Criar listas de registros para cada tipo de contato e converter para tuplas diretamente
         processed_tuples = []
-        addressable_type_default = 'stores'
+        addressable_type_default = 'Store'  # Primeira maiúscula e singular (mesma lógica de addressable_type)
         
         # Email (vetorizado)
         email_mask = df['Email'].notna() & (df['Email'].astype(str).str.strip() != '')

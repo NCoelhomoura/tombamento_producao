@@ -4,7 +4,7 @@ O Objetivo desse documento é garantir que as regras de negócio e de migração
 
 IMPORTANTE - REGRAS DE LIMPEZA DE DADOS (TRUNCATE vs DELETE):
 
-⚠️ ATENÇÃO: Quando filtros são aplicados (IdOrcamento, DataAvisoPrevio, DataInicioOperacao), NÃO pode ser usado TRUNCATE a menos que tenha um comando master como "--clear-data".
+⚠️ ATENÇÃO: Quando filtros são aplicados (IdOrcamento, DataAvisoPrevio, DataInicioOperacao, StatusPedido), NÃO pode ser usado TRUNCATE a menos que tenha um comando master como "--clear-data".
 
 REGRAS GERAIS:
 1. SEM filtros aplicados E SEM flag --clear-data:
@@ -32,6 +32,7 @@ EXEMPLO DE DETECÇÃO DE FILTROS:
 - Se IdOrcamento foi especificado: há filtro → usar DELETE (se clear_data=False)
 - Se DataAvisoPrevio foi especificado: há filtro → usar DELETE (se clear_data=False)
 - Se DataInicioOperacao foi especificado: há filtro → usar DELETE (se clear_data=False)
+- Se StatusPedido foi especificado: há filtro → usar DELETE (se clear_data=False)
 - Se nenhum filtro foi aplicado: usar TRUNCATE (comportamento padrão)
 - Se clear_data=True: SEMPRE TRUNCATE (ignora qualquer filtro)
 
@@ -113,6 +114,10 @@ AND (
 Exemplo de uso: 
 	AND CONVERT(DATE, DataInicioOperacao) <= '2026-01-13'
 
+- StatusPedido: Não é obrigatório, mas filtrar caso tiver definido um ou mais status específicos separados por vírgula
+Exemplo de uso: 
+	AND StatusPedido IN (6, 7, 8)
+
 
 * USE CASE *
 Exemplo de script filtrado seguindo modelo que já está definido no projeto inicial:
@@ -137,6 +142,7 @@ WHERE IdOrcamento IN (valores do filtro IdOrcamento se aplicado)
             OR DataAvisoPrevio IS NULL
         )
         AND CONVERT(DATE, DataInicioOperacao) <= (data máxima do filtro DataInicioOperacao se aplicado)
+        AND StatusPedido IN (valores do filtro StatusPedido se aplicado)
 GROUP BY v.IdOrcamento
 ORDER BY v.IdOrcamento
 
@@ -259,7 +265,10 @@ WHERE t.Id = ? (quando IdTarefa disponível)
 ⚠️ DEPENDÊNCIA CRÍTICA: Este step DEPENDE do step9_migrate_promoter_tasks ter sido executado.
 O campo promoter_task_id (UUID) requer que promoter_tasks já esteja migrado e mapeado.
 
-Tabela Origem: ViewOrcamentosLojas + OrcamentoLojas (LEFT JOIN)
+⚠️ IMPORTANTE: Este step cria CENÁRIOS ÚNICOS usando DISTINCT baseado na combinação:
+IdOrcamento + Frequencia + Horas + ValorHora + DataInicioOperacao + DataAvisoPrevio
+
+Tabela Origem: ViewOrcamentosLojas + Orcamento (INNER JOIN)
 Tabela Destino: contract_scenarios
 
 LIMPEZA DE DADOS:
@@ -267,11 +276,48 @@ LIMPEZA DE DADOS:
 - COM filtros aplicados no step1: DELETE FROM contract_scenarios WHERE contract_id IN (SELECT id FROM contracts WHERE legacy_id IN (lista de IdOrcamento))
 - COM flag --clear-data: TRUNCATE TABLE contract_scenarios CASCADE
 
-FILTRO OBRIGATÓRIO: Aplicar filtro WHERE IdOrcamento IN (lista de IdOrcamento do step1)
-Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento
+FILTROS OBRIGATÓRIOS: Aplicar os mesmos filtros do step1 (IdOrcamento, DataAvisoPrevio, DataInicioOperacao, StatusPedido)
+Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento + filtros aplicados
 
-Exemplo de uso do filtro:
+LÓGICA DE CENÁRIOS ÚNICOS:
+1. Usar SELECT DISTINCT para criar apenas cenários únicos baseados na combinação:
+   - IdOrcamento
+   - Frequencia
+   - Horas
+   - ValorHora
+   - DataInicioOperacao
+   - DataAvisoPrevio
+2. Cada combinação única gera um único registro em contract_scenarios
+3. A associação entre cenários e lojas é feita posteriormente na tabela contract_scenario_stores (step3)
+
+CAMPOS ESPECIAIS:
+- legacy_id: SEMPRE preenchido com 0 (não mais IdOrcamentoLoja)
+- end_date: Mapeado de DataAvisoPrevio (pode ser NULL)
+- store_id: REMOVIDO da tabela (não existe mais)
+
+Exemplo de query base:
+SELECT DISTINCT
+    v.IdOrcamento,
+    v.Frequencia,
+    v.Horas,
+    v.ValorHora,
+    v.DataInicioOperacao,
+    v.DataAvisoPrevio,
+    v.NomeTarefa,
+    v.NomeCliente,
+    v.StatusPedido,
+    v.DataInclusaoOrcamentoLojas,
+    v.DataAlteracaoOrcamentoLojas,
+    v.IdTarefa,
+    v.IdCliente
+FROM ViewOrcamentosLojas v
+INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
 WHERE v.IdOrcamento IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento)
+    AND (CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)  -- se filtro aplicado
+    AND CONVERT(DATE, v.DataInicioOperacao) <= ?  -- se filtro aplicado
+    AND v.StatusPedido IN (?)  -- se filtro aplicado
+    AND v.IdCliente IS NOT NULL
+ORDER BY v.IdOrcamento, v.Frequencia, v.Horas, v.ValorHora, v.DataInicioOperacao, v.DataAvisoPrevio
 
 LÓGICA DE MAPEAMENTO DE promoter_task_id (UUID):
 1. Antes de inserir contract_scenarios, garantir que promoter_tasks foi migrado (step1.5)
@@ -300,69 +346,77 @@ LÓGICA DE MAPEAMENTO DE frequency (INT → VARCHAR):
 4. Valores não mapeados: preencher com string vazia ('')
 5. Conversão deve ser feita em lote, não linha a linha, para otimizar performance
 
+MAPEAMENTO DE CENÁRIOS PARA STEP3:
+Após inserir contract_scenarios, criar um mapeamento (scenario_id_map):
+- Chave: Tupla (IdOrcamento, Frequencia, Horas, ValorHora, DataInicioOperacao, DataAvisoPrevio) normalizada
+- Valor: UUID de contract_scenarios.id
+- Este mapeamento será usado no step3 para buscar scenario_id baseado na combinação única
+- Normalização: Usar valores brutos do DataFrame ANTES das conversões para garantir match correto
+
+VALIDAÇÃO:
+- Contar cenários únicos na origem usando DISTINCT na mesma combinação de campos
+- Comparar com quantidade de registros inseridos em contract_scenarios
+- Garantir que cada combinação única gera exatamente um registro
+
+
+-- STEP 3: step3_migrate_contract_scenario_stores
+
+⚠️ IMPORTANTE: Este step associa os cenários únicos (criados no step2) com as lojas específicas.
+Cada registro de ViewOrcamentosLojas/OrcamentoLojas deve ser associado ao cenário correspondente baseado na combinação única:
+IdOrcamento + Frequencia + Horas + ValorHora + DataInicioOperacao + DataAvisoPrevio
+
+Tabela Origem: ViewOrcamentosLojas + Orcamento (INNER JOIN) + OrcamentoLojas (LEFT JOIN)
+Tabela Destino: contract_scenario_stores
+
+LIMPEZA DE DADOS:
+- SEM filtros aplicados no step1: TRUNCATE TABLE contract_scenario_stores CASCADE
+- COM filtros aplicados no step1: DELETE baseado nos contract_id filtrados (via contract_scenarios)
+- COM flag --clear-data: TRUNCATE TABLE contract_scenario_stores CASCADE
+
+FILTROS OBRIGATÓRIOS: Aplicar os mesmos filtros do step1 e step2 (IdOrcamento, DataAvisoPrevio, DataInicioOperacao, StatusPedido)
+Fonte do filtro: contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento + filtros aplicados
+
+LÓGICA DE MAPEAMENTO DE scenario_id:
+1. Para cada registro de ViewOrcamentosLojas, criar chave única baseada na combinação:
+   - IdOrcamento
+   - Frequencia
+   - Horas
+   - ValorHora
+   - DataInicioOperacao
+   - DataAvisoPrevio
+2. Buscar scenario_id usando scenario_id_map criado no step2 (chave -> UUID)
+3. Se scenario_id não for encontrado: logar warning e pular registro
+4. Associar scenario_id com store_id (via IdEstabelecimento -> stores.legacy_id -> stores.id)
+
+CAMPOS ESPECIAIS:
+- legacy_id: Preenchido com IdOrcamentoLoja
+- scenario_id: Buscado via combinação única (não mais por IdOrcamentoLoja diretamente)
+- closed_at: SEMPRE preenchido com NULL (não mais mapeado de DataExclusao)
+- status: Convertido para VARCHAR(50): 'active' (se Ativo=1) ou 'inactive' (se Ativo=0)
+
+NOTA: Este step depende do step2. O step2 deve ser executado primeiro para criar os cenários únicos e o mapeamento scenario_id_map.
+
 Query base:
 SELECT 
     v.IdOrcamentoLoja,
     v.IdOrcamento,
     v.IdEstabelecimento,
-    v.NomeTarefa,
     v.Frequencia,
     v.Horas,
     v.ValorHora,
     v.DataInicioOperacao,
-    v.StatusPedido,
+    v.DataAvisoPrevio,
     v.DataInclusaoOrcamentoLojas,
     v.DataAlteracaoOrcamentoLojas,
-    v.IdTarefa,
     ol.Ativo
 FROM ViewOrcamentosLojas v
+INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
 LEFT JOIN OrcamentoLojas ol ON ol.Id = v.IdOrcamentoLoja
 WHERE v.IdOrcamento IN (valores de contracts/contracts_filter_main.json -> aggregated_ids.IdOrcamento)
-ORDER BY v.IdOrcamentoLoja
-
-Query para obter UUID de promoter_task_id (após step9):
--- Opção 1: Buscar por IdTarefa (quando disponível)
-SELECT pt.id
-FROM pdv.promoter_tasks pt
-WHERE pt.legacy_id = IdTarefa (se houver coluna legacy_id)
--- OU buscar por name normalizado
-
--- Opção 2: Buscar por NomeTarefa normalizado (traduzido para inglês, snake_case)
-SELECT pt.id
-FROM pdv.promoter_tasks pt
-WHERE pt.name = NomeTarefa_normalizado
-
--- Opção 3: Usar mapeamento em memória (promoter_task_map) criado no step9
--- Mais eficiente: usar dicionário Python com chave (IdTarefa, NomeTarefa) -> UUID
-
-
--- STEP 3: step3_migrate_contract_scenario_stores
-
-Tabela Origem: ViewOrcamentosLojas + OrcamentoLojas (LEFT JOIN)
-Tabela Destino: contract_scenario_stores
-
-LIMPEZA DE DADOS:
-- SEM filtros aplicados no step1: TRUNCATE TABLE contract_scenario_stores CASCADE
-- COM filtros aplicados no step1: DELETE FROM contract_scenario_stores WHERE contract_scenario_id IN (SELECT id FROM contract_scenarios WHERE legacy_id IN (lista de IdOrcamentoLoja do step2))
-- COM flag --clear-data: TRUNCATE TABLE contract_scenario_stores CASCADE
-
-FILTRO OBRIGATÓRIO: Aplicar filtro WHERE IdOrcamentoLoja IN (lista de IdOrcamentoLoja do step2)
-Fonte do filtro: Resultado do step2_migrate_contract_scenarios (buscar IdOrcamentoLoja migrados)
-
-NOTA: Este step depende do step2. O step2 deve ser executado primeiro para gerar os IdOrcamentoLoja que serão usados como filtro.
-
-Query base:
-SELECT 
-    v.IdOrcamentoLoja,
-    v.IdEstabelecimento,
-    v.DataInicioOperacao,
-    v.DataInclusaoOrcamentoLojas,
-    v.DataAlteracaoOrcamentoLojas,
-    ol.Ativo,
-    ol.DataExclusao
-FROM ViewOrcamentosLojas v
-LEFT JOIN OrcamentoLojas ol ON ol.Id = v.IdOrcamentoLoja
-WHERE v.IdOrcamentoLoja IN (lista_de_ids_do_step2)
+    AND (CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)  -- se filtro aplicado
+    AND CONVERT(DATE, v.DataInicioOperacao) <= ?  -- se filtro aplicado
+    AND v.StatusPedido IN (?)  -- se filtro aplicado
+    AND v.IdCliente IS NOT NULL
 ORDER BY v.IdOrcamentoLoja
 
 
@@ -525,9 +579,13 @@ STEP 1 (step1_migrate_contracts):
 
 STEP 2 (step2_migrate_contract_scenarios):
 - DEPENDE DE: STEP 1 e STEP 9 (promoter_tasks)
-- Filtro: WHERE IdOrcamento IN (do step1)
+- Filtros: IdOrcamento, DataAvisoPrevio, DataInicioOperacao, StatusPedido (mesmos do step1)
 - Usa: promoter_task_map do step9 para preencher promoter_task_id (UUID)
-- Gera: contract_scenarios com legacy_id = IdOrcamentoLoja
+- Lógica: Cria CENÁRIOS ÚNICOS usando DISTINCT baseado em IdOrcamento+Frequencia+Horas+ValorHora+DataInicioOperacao+DataAvisoPrevio
+- Gera: contract_scenarios com legacy_id = 0 (sempre)
+- Gera: end_date mapeado de DataAvisoPrevio (pode ser NULL)
+- Gera: scenario_id_map (chave: combinação única -> valor: UUID) para uso no step3
+- ⚠️ IMPORTANTE: store_id foi REMOVIDO da tabela contract_scenarios
 
 STEP 9 (step9_migrate_promoter_tasks):
 - DEPENDE DE: STEP 1 (para filtro de IdOrcamento)
@@ -538,8 +596,12 @@ STEP 9 (step9_migrate_promoter_tasks):
 
 STEP 3 (step3_migrate_contract_scenario_stores):
 - DEPENDE DE: STEP 1 e STEP 2
-- Filtro: WHERE IdOrcamentoLoja IN (do step2)
-- Gera: contract_scenario_stores
+- Filtros: IdOrcamento, DataAvisoPrevio, DataInicioOperacao, StatusPedido (mesmos do step1 e step2)
+- Usa: scenario_id_map do step2 para buscar scenario_id baseado na combinação única
+- Lógica: Associa cada registro de ViewOrcamentosLojas ao cenário correspondente usando a combinação única
+- Gera: contract_scenario_stores com legacy_id = IdOrcamentoLoja
+- ⚠️ IMPORTANTE: closed_at sempre NULL (não mais mapeado de DataExclusao)
+- ⚠️ IMPORTANTE: status é VARCHAR(50): 'active' ou 'inactive' (não mais INTEGER)
 
 STEP 4 (step4_migrate_contract_sellers):
 - DEPENDE DE: STEP 1
@@ -1114,11 +1176,11 @@ LÓGICA DE LIMPEZA (tabela polimórfica):
 
 CENÁRIOS ESPECÍFICOS:
 - SEM filtros de contracts (busca direta da ViewOrcamentosLojas): 
-  → DELETE FROM contacts WHERE contactable_type = 'customers' (sempre deleta todos de 'customers')
+  → DELETE FROM contacts WHERE contactable_type = 'Customer' (sempre deleta todos de 'Customer')
 - COM filtros de contracts (via contracts_filter_main.json): 
-  → DELETE FROM contacts WHERE contactable_type = 'customers' (sempre deleta todos de 'customers')
+  → DELETE FROM contacts WHERE contactable_type = 'Customer' (sempre deleta todos de 'Customer')
 - COM flag --clear-data: 
-  → DELETE FROM contacts WHERE contactable_type = 'customers' (mesmo comportamento, apenas log adicional)
+  → DELETE FROM contacts WHERE contactable_type = 'Customer' (mesmo comportamento, apenas log adicional)
 
 FILTRO OBRIGATÓRIO: Aplicar filtro WHERE Id IN (lista de IdCliente da ViewOrcamentosLojas)
 
@@ -1211,7 +1273,7 @@ REGRAS DE SINCRONIZAÇÃO:
 5. TABELAS POLIMÓRFICAS:
    - Addresses e Contacts são tabelas polimórficas
    - Sempre usar delete_polymorphic_table() ao invés de truncate_table()
-   - Filtrar por contactable_type = 'customers' ou addressable_type = 'customers'
+   - Filtrar por contactable_type = 'Customer' ou addressable_type = 'Customer'
 
 
 ================================================================================

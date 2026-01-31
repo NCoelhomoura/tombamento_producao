@@ -42,7 +42,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'users'))
 
 
 def run_customers_task(step=None, limit_rows=0, id_orcamento_filter=None,
-                      data_aviso_previo_min=None, data_inicio_operacao_max=None, clear_data=False):
+                      data_aviso_previo_min=None, data_inicio_operacao_max=None, 
+                      status_pedido_filter=None, clear_data=False):
     """
     Executa a task de migracao de customers
     
@@ -52,6 +53,7 @@ def run_customers_task(step=None, limit_rows=0, id_orcamento_filter=None,
         id_orcamento_filter: Lista opcional de IdOrcamento para filtrar
         data_aviso_previo_min: Data mínima para DataAvisoPrevio (string 'YYYY-MM-DD')
         data_inicio_operacao_max: Data máxima para DataInicioOperacao (string 'YYYY-MM-DD')
+        status_pedido_filter: Lista opcional de StatusPedido para filtrar (ex: [6, 7, 8])
         clear_data: Se True, força TRUNCATE mesmo com filtros aplicados
     """
     print("\n" + "="*80)
@@ -81,6 +83,7 @@ def run_customers_task(step=None, limit_rows=0, id_orcamento_filter=None,
         id_orcamento_filter=id_orcamento_filter,
         data_aviso_previo_min=data_aviso_previo_min,
         data_inicio_operacao_max=data_inicio_operacao_max,
+        status_pedido_filter=status_pedido_filter,
         clear_data=clear_data
     )
     
@@ -165,7 +168,8 @@ def run_customers_task(step=None, limit_rows=0, id_orcamento_filter=None,
 
 
 def run_stores_task(step=None, limit_rows=0, id_orcamento_filter=None,
-                    data_aviso_previo_min=None, data_inicio_operacao_max=None, clear_data=False):
+                    data_aviso_previo_min=None, data_inicio_operacao_max=None, 
+                    status_pedido_filter=None, clear_data=False):
     """
     Executa a task de migracao de stores
     
@@ -175,6 +179,7 @@ def run_stores_task(step=None, limit_rows=0, id_orcamento_filter=None,
         id_orcamento_filter: Lista de IdOrcamento para filtrar (ex: [6192, 6193])
         data_aviso_previo_min: Data mínima para DataAvisoPrevio (string 'YYYY-MM-DD')
         data_inicio_operacao_max: Data máxima para DataInicioOperacao (string 'YYYY-MM-DD')
+        status_pedido_filter: Lista opcional de StatusPedido para filtrar (ex: [6, 7, 8])
         clear_data: Se True, força TRUNCATE mesmo com filtros aplicados
     """
     from utils.database_connection import DatabaseConnection
@@ -201,6 +206,7 @@ def run_stores_task(step=None, limit_rows=0, id_orcamento_filter=None,
         id_orcamento_filter=id_orcamento_filter,
         data_aviso_previo_min=data_aviso_previo_min,
         data_inicio_operacao_max=data_inicio_operacao_max,
+        status_pedido_filter=status_pedido_filter,
         clear_data=clear_data
     )
     
@@ -287,7 +293,8 @@ def run_stores_task(step=None, limit_rows=0, id_orcamento_filter=None,
 
 
 def run_contracts_task(step=None, limit_rows=0, id_orcamento_filter=None, 
-                       data_aviso_previo_min=None, data_inicio_operacao_max=None, clear_data=False):
+                       data_aviso_previo_min=None, data_inicio_operacao_max=None, 
+                       status_pedido_filter=None, clear_data=False):
     """
     Executa a task de migracao de contracts
     
@@ -297,6 +304,7 @@ def run_contracts_task(step=None, limit_rows=0, id_orcamento_filter=None,
         id_orcamento_filter: Lista de IdOrcamento para filtrar (ex: [6192, 6193])
         data_aviso_previo_min: Data mínima para DataAvisoPrevio (string 'YYYY-MM-DD')
         data_inicio_operacao_max: Data máxima para DataInicioOperacao (string 'YYYY-MM-DD')
+        status_pedido_filter: Lista opcional de StatusPedido para filtrar (ex: [6, 7, 8])
         clear_data: Se True, força TRUNCATE mesmo com filtros aplicados
     """
     from utils.database_connection import DatabaseConnection
@@ -314,6 +322,8 @@ def run_contracts_task(step=None, limit_rows=0, id_orcamento_filter=None,
         print(f"Filtro DataAvisoPrevio (min): {data_aviso_previo_min}")
     if data_inicio_operacao_max:
         print(f"Filtro DataInicioOperacao (max): {data_inicio_operacao_max}")
+    if status_pedido_filter:
+        print(f"Filtro StatusPedido: {status_pedido_filter}")
     if clear_data:
         print("⚠️ FLAG --clear-data ATIVO: TRUNCATE será usado mesmo com filtros")
     if step:
@@ -331,6 +341,7 @@ def run_contracts_task(step=None, limit_rows=0, id_orcamento_filter=None,
         id_orcamento_filter=id_orcamento_filter,
         data_aviso_previo_min=data_aviso_previo_min,
         data_inicio_operacao_max=data_inicio_operacao_max,
+        status_pedido_filter=status_pedido_filter,
         clear_data=clear_data
     )
     
@@ -561,6 +572,7 @@ def main():
     id_orcamento_filter = None
     data_aviso_previo_min = None
     data_inicio_operacao_max = None
+    status_pedido_filter = None
     
     # Processar TODOS os argumentos primeiro
     i = 1
@@ -590,6 +602,11 @@ def main():
             i += 2
         elif arg == '--data-inicio-operacao' and i + 1 < len(sys.argv):
             data_inicio_operacao_max = sys.argv[i + 1]
+            i += 2
+        elif arg == '--status-pedido' and i + 1 < len(sys.argv):
+            # Aceitar lista separada por vírgula: --status-pedido 6,7,8
+            status_pedido_str = sys.argv[i + 1]
+            status_pedido_filter = [int(x.strip()) for x in status_pedido_str.split(',')]
             i += 2
         elif arg.lower() in ['customers', 'stores', 'contracts', 'users']:
             task = arg.lower()
@@ -678,15 +695,22 @@ def main():
         print("\n" + "="*80)
         print("INICIANDO TASK: CUSTOMERS")
         print("="*80)
-        run_customers_task(step=None, limit_rows=limit, clear_data=clear_data)
+        run_customers_task(step=None, limit_rows=limit,
+                          id_orcamento_filter=id_orcamento_filter,
+                          data_aviso_previo_min=data_aviso_previo_min,
+                          data_inicio_operacao_max=data_inicio_operacao_max,
+                          status_pedido_filter=status_pedido_filter,
+                          clear_data=clear_data)
         
         # Task 2: Stores
         print("\n" + "="*80)
         print("INICIANDO TASK: STORES")
         print("="*80)
         run_stores_task(step=None, limit_rows=limit,
+                        id_orcamento_filter=id_orcamento_filter,
                         data_aviso_previo_min=data_aviso_previo_min,
                         data_inicio_operacao_max=data_inicio_operacao_max,
+                        status_pedido_filter=status_pedido_filter,
                         clear_data=clear_data)
         
         # Task 4: Users (DEVE SER EXECUTADO ANTES DE CONTRACTS)
@@ -711,6 +735,7 @@ def main():
                           id_orcamento_filter=id_orcamento_filter,
                           data_aviso_previo_min=data_aviso_previo_min,
                           data_inicio_operacao_max=data_inicio_operacao_max,
+                          status_pedido_filter=status_pedido_filter,
                           clear_data=clear_data)
         
     elif task == 'customers':
@@ -718,11 +743,14 @@ def main():
                           id_orcamento_filter=id_orcamento_filter,
                           data_aviso_previo_min=data_aviso_previo_min,
                           data_inicio_operacao_max=data_inicio_operacao_max,
+                          status_pedido_filter=status_pedido_filter,
                           clear_data=clear_data)
     elif task == 'stores':
         run_stores_task(step=step, limit_rows=limit,
+                        id_orcamento_filter=id_orcamento_filter,
                         data_aviso_previo_min=data_aviso_previo_min,
                         data_inicio_operacao_max=data_inicio_operacao_max,
+                        status_pedido_filter=status_pedido_filter,
                         clear_data=clear_data)
     elif task == 'users':
         run_users_task(step=step, limit_rows=limit)
@@ -740,7 +768,9 @@ def main():
         try:
             # Step 1 de customers (customer_segments) - necessário antes do step 2
             print("  → Executando Customers step 1 (customer_segments)...")
-            run_customers_task(step='1', limit_rows=limit, id_orcamento_filter=id_orcamento_filter, clear_data=clear_data)
+            run_customers_task(step='1', limit_rows=limit, id_orcamento_filter=id_orcamento_filter, 
+                              status_pedido_filter=status_pedido_filter,
+                              clear_data=clear_data)
             print("  [OK] Customers step 1 concluído")
             
             # Step 2 de customers (customers)
@@ -748,6 +778,7 @@ def main():
             run_customers_task(step='2', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
                               data_aviso_previo_min=data_aviso_previo_min,
                               data_inicio_operacao_max=data_inicio_operacao_max,
+                              status_pedido_filter=status_pedido_filter,
                               clear_data=clear_data)
             print("  [OK] Customers step 2 concluído")
             
@@ -756,6 +787,7 @@ def main():
             run_customers_task(step='5', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
                               data_aviso_previo_min=data_aviso_previo_min,
                               data_inicio_operacao_max=data_inicio_operacao_max,
+                              status_pedido_filter=status_pedido_filter,
                               clear_data=clear_data)
             print("  [OK] Customers step 5 concluído")
             
@@ -764,6 +796,7 @@ def main():
             run_customers_task(step='6', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
                               data_aviso_previo_min=data_aviso_previo_min,
                               data_inicio_operacao_max=data_inicio_operacao_max,
+                              status_pedido_filter=status_pedido_filter,
                               clear_data=clear_data)
             print("  [OK] Customers step 6 concluído")
             
@@ -780,6 +813,7 @@ def main():
             run_stores_task(step='1', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
                             data_aviso_previo_min=data_aviso_previo_min,
                             data_inicio_operacao_max=data_inicio_operacao_max,
+                            status_pedido_filter=status_pedido_filter,
                             clear_data=clear_data)
             print("  [OK] Stores step 1 concluído")
             
@@ -788,6 +822,7 @@ def main():
             run_stores_task(step='2', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
                             data_aviso_previo_min=data_aviso_previo_min,
                             data_inicio_operacao_max=data_inicio_operacao_max,
+                            status_pedido_filter=status_pedido_filter,
                             clear_data=clear_data)
             print("  [OK] Stores step 2 concluído")
             
@@ -796,6 +831,7 @@ def main():
             run_stores_task(step='3', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
                             data_aviso_previo_min=data_aviso_previo_min,
                             data_inicio_operacao_max=data_inicio_operacao_max,
+                            status_pedido_filter=status_pedido_filter,
                             clear_data=clear_data)
             print("  [OK] Stores step 3 concluído")
             
@@ -804,6 +840,7 @@ def main():
             run_stores_task(step='4', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
                             data_aviso_previo_min=data_aviso_previo_min,
                             data_inicio_operacao_max=data_inicio_operacao_max,
+                            status_pedido_filter=status_pedido_filter,
                             clear_data=clear_data)
             print("  [OK] Stores step 4 concluído")
             
@@ -842,6 +879,7 @@ def main():
                           id_orcamento_filter=id_orcamento_filter,
                           data_aviso_previo_min=data_aviso_previo_min,
                           data_inicio_operacao_max=data_inicio_operacao_max,
+                          status_pedido_filter=status_pedido_filter,
                           clear_data=clear_data)
     else:
         print(f"ERRO: Task '{task}' invalida")
