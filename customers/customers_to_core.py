@@ -1321,6 +1321,7 @@ class CustomersMigration:
         
         # Aplicar transformações vetorizadas
         df['legacy_id'] = df['Id']
+        df['code'] = df['Codigo']
         
         # Limpar CPF/CNPJ (vetorizado)
         df['cpf_cnpj'] = self.clean_cpf_cnpj_vectorized(df['CpfCnpj'])
@@ -1356,7 +1357,8 @@ class CustomersMigration:
             df['trade_name'].tolist(),
             df['status'].tolist(),
             df['data_inclusao'].tolist(),
-            df['data_alteracao'].tolist()
+            df['data_alteracao'].tolist(),
+            df['code'].tolist()
         ))
         legacy_ids_list = df['legacy_id'].tolist()
         
@@ -1371,10 +1373,10 @@ class CustomersMigration:
         INSERT INTO {schema}.customers (
             id, legacy_id, cnpj, cnpj_status, state_registration,
             municipal_registration, legal_name, trade_name, status,
-            created_at, updated_at
+            created_at, updated_at, code
         ) VALUES %s
         """
-        insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
         
         chunk_num = 0
         total_processed = 0
