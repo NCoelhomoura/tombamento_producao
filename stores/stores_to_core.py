@@ -2303,7 +2303,8 @@ class StoresMigration:
                     IdBandeira,
                     Ativo,
                     DataInclusao,
-                    DataAlteracao
+                    DataAlteracao,
+                    codigo
                 FROM Estabelecimento
                 WHERE Id IN ({placeholders})
                 ORDER BY Id
@@ -2330,7 +2331,8 @@ class StoresMigration:
                     e.IdBandeira,
                     e.Ativo,
                     e.DataInclusao,
-                    e.DataAlteracao
+                    e.DataAlteracao,
+                    e.codigo
                 FROM Estabelecimento e
                 WHERE e.IdBandeira IN {bandeiras_ids}
                 ORDER BY e.Id
@@ -2345,7 +2347,8 @@ class StoresMigration:
                     IdBandeira,
                     Ativo,
                     DataInclusao,
-                    DataAlteracao
+                    DataAlteracao,
+                    codigo
                 FROM Estabelecimento
                 ORDER BY Id
                 """
@@ -2366,7 +2369,8 @@ class StoresMigration:
                 e.IdBandeira,
                 e.Ativo,
                 e.DataInclusao,
-                e.DataAlteracao
+                e.DataAlteracao,
+                e.codigo
             FROM Estabelecimento e
             WHERE e.Id IN (
                 SELECT DISTINCT IdEstabelecimento 
@@ -2386,7 +2390,7 @@ class StoresMigration:
         
         # Processar conversões em massa usando DataFrame (vetorizado)
         # Criar DataFrame usando from_records que é mais adequado para dados de banco
-        df = pd.DataFrame.from_records(all_rows, columns=['Id', 'NomeFantasia', 'IdBandeira', 'Ativo', 'DataInclusao', 'DataAlteracao'])
+        df = pd.DataFrame.from_records(all_rows, columns=['Id', 'NomeFantasia', 'IdBandeira', 'Ativo', 'DataInclusao', 'DataAlteracao', 'codigo'])
         
         # Aplicar transformações vetorizadas
         df['legacy_id'] = df['Id']
@@ -2394,6 +2398,7 @@ class StoresMigration:
         
         # Lookup store_brand_id (vetorizado)
         df['store_brand_id'] = df['IdBandeira'].map(store_brand_map)
+        df['code'] = df['codigo'].fillna('')  # Preencher None/NaN com string vazia
         
         # Preencher store_brand_id padrão onde está None
         mask_missing = df['store_brand_id'].isna()
@@ -2421,7 +2426,8 @@ class StoresMigration:
                 df['ativo'].tolist(),
                 df['data_inclusao'].tolist(),
                 df['data_alteracao'].tolist(),
-                df['legacy_id'].tolist()
+                df['legacy_id'].tolist(),
+                df['code'].tolist()
             ))
             legacy_ids_list = df['legacy_id'].tolist()
         else:
@@ -2430,10 +2436,11 @@ class StoresMigration:
                 df['store_brand_id'].tolist(),
                 df['ativo'].tolist(),
                 df['data_inclusao'].tolist(),
-                df['data_alteracao'].tolist()
+                df['data_alteracao'].tolist(),
+                df['code'].tolist()
             ))
             # Manter processed_data como dict para mapeamento por ordem quando não há legacy_id
-            processed_data = df[['legacy_id', 'nome', 'store_brand_id', 'ativo', 'data_inclusao', 'data_alteracao']].to_dict('records')
+            processed_data = df[['legacy_id', 'nome', 'store_brand_id', 'ativo', 'data_inclusao', 'data_alteracao', 'code']].to_dict('records')
         
         print(f"[ETAPA 4] {len(processed_tuples)} registros processados. Inserindo no banco (otimizado com execute_values)...")
         
@@ -2445,17 +2452,17 @@ class StoresMigration:
         if include_legacy:
             insert_query = f"""
             INSERT INTO {schema}.stores (
-                id, name, store_brand_id, is_active, created_at, updated_at, legacy_id
+                id, name, store_brand_id, is_active, created_at, updated_at, legacy_id, code
             ) VALUES %s
             """
-            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s)"
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s)"
         else:
             insert_query = f"""
             INSERT INTO {schema}.stores (
-                id, name, store_brand_id, is_active, created_at, updated_at
+                id, name, store_brand_id, is_active, created_at, updated_at, code
             ) VALUES %s
             """
-            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s)"
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s)"
         
         chunk_num = 0
         total_processed = 0
@@ -2481,7 +2488,9 @@ class StoresMigration:
                         
                         # Coletar legacy_ids para lookup depois (se necessário)
                         if include_legacy:
-                            chunk_legacy_ids = [row[-1] for row in chunk]  # último elemento é legacy_id
+                            # Ordem da tupla: (nome, store_brand_id, ativo, data_inclusao, data_alteracao, legacy_id, code)
+                            # legacy_id está na posição 5 (penúltimo, ou -2)
+                            chunk_legacy_ids = [row[-2] for row in chunk]  # penúltimo elemento é legacy_id
                             all_legacy_ids_inserted.extend(chunk_legacy_ids)
                         
                         total_processed += len(chunk)
@@ -2967,7 +2976,7 @@ class StoresMigration:
             destino_nome = DatabaseConnection.get_destino()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.addresses WHERE addressable_type = 'stores'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.addresses WHERE addressable_type IN ('Store','Stores')")
             destino_count = cursor_pg.fetchone()[0]
             cursor_pg.close()
             conn_pg.close()
@@ -2976,7 +2985,7 @@ class StoresMigration:
             print(f"  Total de enderecos: {origem_count}")
             
             print(f"\nDESTINO (PostgreSQL {destino_nome} - {schema}.addresses):")
-            print(f"  Total inserido (addressable_type='stores'): {destino_count}")
+            print(f"  Total inserido (addressable_type='Store'): {destino_count}")
             
             diferenca = origem_count - destino_count
             
@@ -3014,7 +3023,7 @@ class StoresMigration:
             logger.info("[ETAPA 6] Flag --clear-data ativo: deletando TODOS os addresses de stores")
         else:
             print("\n[ETAPA 6] Limpando addresses de stores...")
-        self.delete_polymorphic_table('addresses', 'stores', 'addressable_type')
+        self.delete_polymorphic_table('addresses', 'Store', 'addressable_type')
         
         # Buscar dados do SQL Server
         # Se houver limite, filtrar apenas estabelecimentos que foram migrados
@@ -3206,7 +3215,7 @@ class StoresMigration:
         
         # Converter DataFrame diretamente para lista de tuplas (otimizado)
         municipal_code_default = [0] * len(df)  # municipal_code padrão 0
-        addressable_type_default = ['stores'] * len(df)
+        addressable_type_default = ['Store'] * len(df)
         type_default = ['main'] * len(df)
         
         if include_legacy:

@@ -1110,6 +1110,7 @@ class ContractsMigration:
         for row in all_rows:
             try:
                 legado_id = row[0]  # IdOrcamento
+                code = row[0]  # IdOrcamento
                 customer_legacy_id = row[1]  # IdCliente
                 
                 # Mapear customer_id
@@ -1150,7 +1151,8 @@ class ContractsMigration:
                         status,
                         None,  # deleted_at sempre NULL
                         created_at,
-                        updated_at
+                        updated_at,
+                        code
                     ))
                     legacy_ids_list.append(legado_id)
                 else:
@@ -1166,7 +1168,8 @@ class ContractsMigration:
                         status,
                         None,  # deleted_at sempre NULL
                         created_at,
-                        updated_at
+                        updated_at,
+                        str(customer_uuid)
                     ))
                     legacy_ids_list.append(legado_id)
                 
@@ -1188,19 +1191,19 @@ class ContractsMigration:
             INSERT INTO {schema}.contracts (
                 id, legacy_id, customer_id, billing_day, due_day,
                 billing_type, operation_type, thirteenth_salary_type, trade_type,
-                start_date, status, deleted_at, created_at, updated_at
+                start_date, status, deleted_at, created_at, updated_at, code
             ) VALUES %s
             """
-            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
         else:
             insert_query = f"""
             INSERT INTO {schema}.contracts (
                 id, customer_id, billing_day, due_day,
                 billing_type, operation_type, thirteenth_salary_type, trade_type,
-                start_date, status, deleted_at, created_at, updated_at
+                start_date, status, deleted_at, created_at, updated_at, code
             ) VALUES %s
             """
-            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
         
         chunk_num = 0
         total_processed = 0

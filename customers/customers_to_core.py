@@ -1541,7 +1541,7 @@ class CustomersMigration:
             com_addressable_id = cursor_pg.fetchone()[0]
             
             # Verificar addressable_type
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.addresses WHERE addressable_type = 'customers'")
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.addresses WHERE addressable_type IN ('Customer','Customers')")
             com_addressable_type = cursor_pg.fetchone()[0]
             
             cursor_pg.close()
@@ -1557,7 +1557,7 @@ class CustomersMigration:
             print(f"  Enderecos de cobranca (type='billing'): {destino_billing}")
             print(f"  Total inserido: {destino_total}")
             print(f"  Com addressable_id: {com_addressable_id}")
-            print(f"  Com addressable_type='customers': {com_addressable_type}")
+            print(f"  Com addressable_type='Customer': {com_addressable_type}")
             
             diferenca = origem_total - destino_total
             
@@ -1597,7 +1597,7 @@ class CustomersMigration:
                 logger.info("[ETAPA 3] Flag --clear-data ativo: deletando TODOS os addresses de customers")
             else:
                 print("\n[ETAPA 3] Limpando addresses de customers...")
-            self.delete_polymorphic_table('addresses', 'customers', 'addressable_type')
+            self.delete_polymorphic_table('addresses', 'Customer', 'addressable_type')
             
             # Buscar dados do SQL Server
             print("[ETAPA 3] Buscando dados do SQL Server...")
@@ -1714,7 +1714,7 @@ class CustomersMigration:
                         batch_values.append((
                             legado_id,  # legacy_id
                             str(customer_id),  # addressable_id (UUID do customer)
-                            'customers',  # addressable_type
+                            'Customer',  # addressable_type
                             'main',  # type
                             cep,  # postal_code (obrigatório, usar '00000000' se vazio)
                             street_value,  # street (obrigatório, usar '' se vazio)
@@ -1781,7 +1781,7 @@ class CustomersMigration:
                         batch_values.append((
                             legado_id,
                             str(customer_id),
-                            'customers',
+                            'Customer',
                             'billing',  # type = billing
                             cep,  # postal_code (obrigatório, usar '00000000' se vazio)
                             street_value,  # street (obrigatório, usar '' se vazio)
