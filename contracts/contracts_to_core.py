@@ -87,17 +87,17 @@ CHUNK_SIZE = 20000
 # FUNÇÕES COMPARTILHADAS PARA PROMOTER_TASKS (UNIFICADAS)
 # ============================================================================
 
-def normalize_promoter_task_name(nome_tarefa, nome_cliente):
+def normalize_promoter_task_name(nome_tarefa, nome_cliente=None):
     """
     Normaliza e constrói o name de promoter_task de forma consistente.
     Esta função DEVE ser usada tanto no step9 quanto no step2.
     
     Args:
         nome_tarefa: str ou None da ViewOrcamentosLojas.NomeTarefa
-        nome_cliente: str ou None da ViewOrcamentosLojas.NomeCliente
+        nome_cliente: str ou None da ViewOrcamentosLojas.NomeCliente (não utilizado, mantido para compatibilidade)
     
     Returns:
-        tuple: (name_normalizado, nome_tarefa_clean) ou (None, None) se NomeCliente inválido
+        tuple: (name_normalizado, nome_tarefa_clean) ou (None, None) se NomeTarefa inválido
     """
     # 1. Normalizar NomeTarefa
     if nome_tarefa:
@@ -107,26 +107,15 @@ def normalize_promoter_task_name(nome_tarefa, nome_cliente):
     else:
         nome_tarefa_clean = None
     
-    # 2. Normalizar NomeCliente (obrigatório)
-    if nome_cliente:
-        nome_cliente_clean = str(nome_cliente).strip()
-        if not nome_cliente_clean or nome_cliente_clean in ['NULL', 'NONE', '']:
-            nome_cliente_clean = None
-    else:
-        nome_cliente_clean = None
-    
-    # 3. Validar NomeCliente (obrigatório)
-    if not nome_cliente_clean:
-        # Se não tem cliente, não pode criar tarefa
+    # 2. Validar NomeTarefa (obrigatório)
+    if not nome_tarefa_clean:
+        # Se não tem tarefa, não pode criar promoter_task
         return None, None
     
-    # 4. Construir name no formato padrão
-    if nome_tarefa_clean:
-        name = f"{nome_tarefa_clean} {nome_cliente_clean}"
-    else:
-        name = f"INDEFINIDA {nome_cliente_clean}"
+    # 3. Construir name apenas com o nome da tarefa (sem cliente)
+    name = f"{nome_tarefa_clean}"
     
-    # 5. Remover espaços extras e normalizar
+    # 4. Remover espaços extras e normalizar
     name = ' '.join(name.split())  # Remove espaços múltiplos
     
     return name, nome_tarefa_clean
@@ -1689,7 +1678,7 @@ class ContractsMigration:
             except Exception as e:
                 logger.warning(f"Não foi possível truncar tabela: {e}")
         
-        # Construir query para coletar tarefas únicas da ViewOrcamentosLojas com NomeCliente
+        # Construir query para coletar tarefas únicas da ViewOrcamentosLojas (sem NomeCliente)
         conn_sql = None
         cursor_sql = None
         conn_pg = None
@@ -1747,22 +1736,21 @@ class ContractsMigration:
             if where_conditions:
                 where_clause = "WHERE " + " AND ".join(where_conditions)
             
-            # Query para coletar NomeTarefa e NomeCliente únicos
+            # Query para coletar NomeTarefa únicos (sem NomeCliente)
             query_tarefas = f"""
             SELECT DISTINCT
-                v.NomeTarefa,
-                v.NomeCliente
+                v.NomeTarefa
             FROM ViewOrcamentosLojas v
             INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
             {where_clause}
-            AND v.NomeCliente IS NOT NULL
-            AND LTRIM(RTRIM(v.NomeCliente)) != ''
+            AND v.NomeTarefa IS NOT NULL
+            AND LTRIM(RTRIM(v.NomeTarefa)) != ''
             """
             
             if self.limit_rows > 0:
                 query_tarefas = query_tarefas.replace("SELECT DISTINCT", f"SELECT DISTINCT TOP {self.limit_rows}")
             
-            print(f"[ETAPA 9] Coletando tarefas e clientes únicos da ViewOrcamentosLojas...")
+            print(f"[ETAPA 9] Coletando tarefas únicas da ViewOrcamentosLojas...")
             logger.info(f"[ETAPA 9] Query: {query_tarefas}")
             logger.info(f"[ETAPA 9] Parâmetros: {len(query_params)} parâmetros")
             
@@ -1778,8 +1766,8 @@ class ContractsMigration:
                 print("[ETAPA 9] Nenhuma tarefa encontrada.")
                 return
             
-            print(f"[ETAPA 9] Encontradas {len(tarefas_view)} combinações únicas de tarefa+cliente")
-            logger.info(f"[ETAPA 9] Encontradas {len(tarefas_view)} combinações únicas")
+            print(f"[ETAPA 9] Encontradas {len(tarefas_view)} tarefas únicas")
+            logger.info(f"[ETAPA 9] Encontradas {len(tarefas_view)} tarefas únicas")
             
             # Conectar ao PostgreSQL
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
@@ -1792,12 +1780,11 @@ class ContractsMigration:
             
             for row in tarefas_view:
                 nome_tarefa_raw = row[0]
-                nome_cliente_raw = row[1]
                 
-                # Usar função compartilhada para normalização (mesma lógica do step2)
-                name, nome_tarefa_clean = normalize_promoter_task_name(nome_tarefa_raw, nome_cliente_raw)
+                # Usar função compartilhada para normalização (sem NomeCliente)
+                name, nome_tarefa_clean = normalize_promoter_task_name(nome_tarefa_raw)
                 
-                # Se name é None, pular (NomeCliente obrigatório)
+                # Se name é None, pular (NomeTarefa obrigatório)
                 if not name:
                     continue
                 
@@ -2267,44 +2254,50 @@ class ContractsMigration:
         # Filtrar apenas linhas válidas
         df = df[mask_valid].copy()
         
-        # Preparar promoter_task_id usando vetorização (otimizado - mesma lógica do step9)
-        print("[ETAPA 2] Normalizando e mapeando promoter_task_id (vetorizado)...")
+        # Preparar promoter_task_id usando função compartilhada (mesma lógica do step9)
+        print("[ETAPA 2] Normalizando e mapeando promoter_task_id usando função compartilhada...")
         logger.info("[ETAPA 2] Normalizando promoter_task names usando função compartilhada")
         
-        # Normalização vetorizada usando pandas (mais rápido que apply)
-        # 1. Normalizar NomeTarefa
-        df['nome_tarefa_clean'] = df['NomeTarefa'].fillna('').astype(str).str.strip().str.upper()
-        df.loc[df['nome_tarefa_clean'].isin(['NULL', 'NONE', '']), 'nome_tarefa_clean'] = None
+        # Usar função compartilhada normalize_promoter_task_name para garantir consistência com step9
+        # Verificar se a coluna NomeTarefa existe
+        if 'NomeTarefa' not in df.columns:
+            logger.error(f"Coluna 'NomeTarefa' não encontrada no DataFrame. Colunas disponíveis: {df.columns.tolist()}")
+            raise KeyError(f"Coluna 'NomeTarefa' não encontrada no DataFrame")
         
-        # 2. Normalizar NomeCliente
-        df['nome_cliente_clean'] = df['NomeCliente'].fillna('').astype(str).str.strip()
-        df.loc[df['nome_cliente_clean'].isin(['NULL', 'NONE', '']), 'nome_cliente_clean'] = None
+        # Aplicar função para cada linha (garante mesma normalização do step9)
+        def normalize_row(row):
+            try:
+                nome_tarefa = row['NomeTarefa'] if pd.notna(row['NomeTarefa']) else None
+                name, nome_tarefa_clean = normalize_promoter_task_name(nome_tarefa)
+                return pd.Series({'name': name, 'nome_tarefa_clean': nome_tarefa_clean})
+            except KeyError as e:
+                logger.error(f"Erro KeyError ao normalizar linha: {e}. Colunas disponíveis: {row.index.tolist()}")
+                return pd.Series({'name': None, 'nome_tarefa_clean': None})
+            except Exception as e:
+                logger.error(f"Erro ao normalizar linha: {e}")
+                return pd.Series({'name': None, 'nome_tarefa_clean': None})
         
-        # 3. Construir name usando operações vetorizadas
-        # Primeiro validar: se nome_cliente_clean é None, name deve ser None
-        mask_valid_cliente = df['nome_cliente_clean'].notna()
-        df['name'] = None
-        
-        # Apenas construir name para registros com cliente válido
-        if mask_valid_cliente.sum() > 0:
-            # Se nome_tarefa_clean não é None e não é vazio: "{nome_tarefa_clean} {nome_cliente_clean}"
-            # Senão: "INDEFINIDA {nome_cliente_clean}"
-            mask_has_tarefa = df['nome_tarefa_clean'].notna() & (df['nome_tarefa_clean'] != '') & mask_valid_cliente
+        # Aplicar normalização usando função compartilhada
+        try:
+            normalized = df.apply(normalize_row, axis=1)
+            # Garantir que as colunas existem
+            if 'name' not in normalized.columns:
+                logger.error(f"Coluna 'name' não encontrada no resultado da normalização. Colunas: {normalized.columns.tolist()}")
+                raise KeyError("Coluna 'name' não encontrada no resultado da normalização")
+            if 'nome_tarefa_clean' not in normalized.columns:
+                logger.error(f"Coluna 'nome_tarefa_clean' não encontrada no resultado da normalização. Colunas: {normalized.columns.tolist()}")
+                raise KeyError("Coluna 'nome_tarefa_clean' não encontrada no resultado da normalização")
             
-            df.loc[mask_has_tarefa, 'name'] = (
-                df.loc[mask_has_tarefa, 'nome_tarefa_clean'] + ' ' + 
-                df.loc[mask_has_tarefa, 'nome_cliente_clean']
-            )
-            
-            mask_indefinida = ~mask_has_tarefa & mask_valid_cliente
-            df.loc[mask_indefinida, 'name'] = 'INDEFINIDA ' + df.loc[mask_indefinida, 'nome_cliente_clean']
-            
-            # 4. Remover espaços extras (vetorizado) apenas onde name não é None
-            df.loc[df['name'].notna(), 'name'] = (
-                df.loc[df['name'].notna(), 'name']
-                .str.replace(r'\s+', ' ', regex=True)
-                .str.strip()
-            )
+            df['name'] = normalized['name']
+            df['nome_tarefa_clean'] = normalized['nome_tarefa_clean']
+        except KeyError as e:
+            logger.error(f"Erro KeyError ao aplicar normalização: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Erro ao aplicar normalização: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            raise
         
         # Preencher valores None com tarefa padrão
         DEFAULT_TASK_NAME = "standard_task"
@@ -2334,11 +2327,17 @@ class ContractsMigration:
             # Preencher com tarefa padrão (vetorizado)
             df.loc[missing_mask, 'promoter_task_id'] = default_task_id
         
-        # Converter para string
+        # Garantir que não há valores None antes de converter para string
+        if df['promoter_task_id'].isna().any():
+            remaining_none = df['promoter_task_id'].isna().sum()
+            logger.warning(f"[ETAPA 2] Ainda há {remaining_none} valores None após preenchimento. Preenchendo com tarefa padrão...")
+            df.loc[df['promoter_task_id'].isna(), 'promoter_task_id'] = default_task_id
+        
+        # Converter para string (garantindo que todos os valores são válidos)
         df['promoter_task_id'] = df['promoter_task_id'].astype(str)
         
         # Remover colunas temporárias
-        df = df.drop(columns=['name', 'nome_tarefa_clean', 'nome_cliente_clean'], errors='ignore')
+        df = df.drop(columns=['name', 'nome_tarefa_clean'], errors='ignore')
         
         print(f"[ETAPA 2] Mapeamento de promoter_task_id concluído. {missing_count} registros usaram tarefa padrão.")
         logger.info(f"[ETAPA 2] Mapeamento concluído: {missing_count} registros usaram tarefa padrão de {len(df)} total")

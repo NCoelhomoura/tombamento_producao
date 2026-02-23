@@ -1321,7 +1321,8 @@ class CustomersMigration:
         
         # Aplicar transformações vetorizadas
         df['legacy_id'] = df['Id']
-        df['code'] = df['Codigo']
+        # Tratar code: se NULL, converter para 0
+        df['code'] = df['Codigo'].fillna(0).astype(int)
         
         # Limpar CPF/CNPJ (vetorizado)
         df['cpf_cnpj'] = self.clean_cpf_cnpj_vectorized(df['CpfCnpj'])
