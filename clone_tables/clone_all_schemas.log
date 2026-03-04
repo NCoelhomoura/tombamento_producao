@@ -1,0 +1,135 @@
+2026-03-04 09:26:17,307 - INFO - Database PRD: gmcoredb, Schemas encontrados: 4
+2026-03-04 09:26:18,917 - INFO - Schema gmcommercial já existe no HML
+2026-03-04 09:26:20,020 - INFO - Schema gmcore já existe no HML
+2026-03-04 09:26:21,397 - INFO - Schema gmfinancial criado com sucesso no HML
+2026-03-04 09:26:22,720 - INFO - Schema gmpdv criado com sucesso no HML
+2026-03-04 09:26:24,033 - INFO - Processando tabela 1/10: commercial.contract_additional_charges -> gmcommercial.contract_additional_charges
+2026-03-04 09:26:24,048 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:26:27,028 - WARNING - Tabela gmcommercial.contract_additional_charges já existe no HML. Pulando...
+2026-03-04 09:26:27,029 - INFO - Processando tabela 2/10: commercial.contract_adjustments -> gmcommercial.contract_adjustments
+2026-03-04 09:26:27,051 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:26:30,516 - INFO - Tabela gmcommercial.contract_adjustments criada com sucesso no HML
+2026-03-04 09:26:30,517 - INFO - Processando tabela 3/10: commercial.contract_contacts -> gmcommercial.contract_contacts
+2026-03-04 09:26:30,531 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:26:33,689 - WARNING - Tabela gmcommercial.contract_contacts já existe no HML. Pulando...
+2026-03-04 09:26:33,691 - INFO - Processando tabela 4/10: commercial.contract_partners -> gmcommercial.contract_partners
+2026-03-04 09:26:33,701 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:26:36,861 - WARNING - Tabela gmcommercial.contract_partners já existe no HML. Pulando...
+2026-03-04 09:26:36,861 - INFO - Processando tabela 5/10: commercial.contract_scenario_stores -> gmcommercial.contract_scenario_stores
+2026-03-04 09:26:36,870 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:26:40,037 - WARNING - Tabela gmcommercial.contract_scenario_stores já existe no HML. Pulando...
+2026-03-04 09:26:40,039 - INFO - Processando tabela 6/10: commercial.contract_scenarios -> gmcommercial.contract_scenarios
+2026-03-04 09:26:40,051 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:26:43,052 - WARNING - Tabela gmcommercial.contract_scenarios já existe no HML. Pulando...
+2026-03-04 09:26:43,053 - INFO - Processando tabela 7/10: commercial.contract_scenarios_brands -> gmcommercial.contract_scenarios_brands
+2026-03-04 09:26:43,067 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:26:46,573 - INFO - Tabela gmcommercial.contract_scenarios_brands criada com sucesso no HML
+2026-03-04 09:26:46,574 - INFO - Processando tabela 8/10: commercial.contract_sellers -> gmcommercial.contract_sellers
+2026-03-04 09:26:46,585 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:26:49,516 - WARNING - Tabela gmcommercial.contract_sellers já existe no HML. Pulando...
+2026-03-04 09:26:49,518 - INFO - Processando tabela 9/10: commercial.contract_team_members -> gmcommercial.contract_team_members
+2026-03-04 09:26:49,540 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:26:52,554 - WARNING - Tabela gmcommercial.contract_team_members já existe no HML. Pulando...
+2026-03-04 09:26:52,554 - INFO - Processando tabela 10/10: commercial.contracts -> gmcommercial.contracts
+2026-03-04 09:26:52,564 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:26:55,459 - WARNING - Tabela gmcommercial.contracts já existe no HML. Pulando...
+2026-03-04 09:26:56,712 - INFO - Processando tabela 1/28: core.addresses -> gmcore.addresses
+2026-03-04 09:26:56,723 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:26:59,595 - WARNING - Tabela gmcore.addresses já existe no HML. Pulando...
+2026-03-04 09:26:59,595 - INFO - Processando tabela 2/28: core.attachments -> gmcore.attachments
+2026-03-04 09:26:59,606 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:02,675 - WARNING - Tabela gmcore.attachments já existe no HML. Pulando...
+2026-03-04 09:27:02,675 - INFO - Processando tabela 3/28: core.client_integrations -> gmcore.client_integrations
+2026-03-04 09:27:02,686 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:06,266 - INFO - Tabela gmcore.client_integrations criada com sucesso no HML
+2026-03-04 09:27:06,267 - INFO - Processando tabela 4/28: core.contacts -> gmcore.contacts
+2026-03-04 09:27:06,277 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:09,197 - WARNING - Tabela gmcore.contacts já existe no HML. Pulando...
+2026-03-04 09:27:09,198 - INFO - Processando tabela 5/28: core.customer_brands -> gmcore.customer_brands
+2026-03-04 09:27:09,209 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:12,158 - WARNING - Tabela gmcore.customer_brands já existe no HML. Pulando...
+2026-03-04 09:27:12,159 - INFO - Processando tabela 6/28: core.customer_customer_brand -> gmcore.customer_customer_brand
+2026-03-04 09:27:12,172 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:15,066 - WARNING - Tabela gmcore.customer_customer_brand já existe no HML. Pulando...
+2026-03-04 09:27:15,067 - INFO - Processando tabela 7/28: core.customer_segments -> gmcore.customer_segments
+2026-03-04 09:27:15,080 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:18,145 - WARNING - Tabela gmcore.customer_segments já existe no HML. Pulando...
+2026-03-04 09:27:18,146 - INFO - Processando tabela 8/28: core.customers -> gmcore.customers
+2026-03-04 09:27:18,157 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:21,141 - WARNING - Tabela gmcore.customers já existe no HML. Pulando...
+2026-03-04 09:27:21,142 - INFO - Processando tabela 9/28: core.model_audits -> gmcore.model_audits
+2026-03-04 09:27:21,151 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:24,825 - INFO - Tabela gmcore.model_audits criada com sucesso no HML
+2026-03-04 09:27:24,827 - INFO - Processando tabela 10/28: core.notifications -> gmcore.notifications
+2026-03-04 09:27:24,838 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:27,881 - WARNING - Tabela gmcore.notifications já existe no HML. Pulando...
+2026-03-04 09:27:27,881 - INFO - Processando tabela 11/28: core.occurrence_types -> gmcore.occurrence_types
+2026-03-04 09:27:27,893 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:31,374 - INFO - Tabela gmcore.occurrence_types criada com sucesso no HML
+2026-03-04 09:27:31,374 - INFO - Processando tabela 12/28: core.occurrences -> gmcore.occurrences
+2026-03-04 09:27:31,386 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:35,540 - INFO - Tabela gmcore.occurrences criada com sucesso no HML
+2026-03-04 09:27:35,540 - INFO - Processando tabela 13/28: core.people -> gmcore.people
+2026-03-04 09:27:35,554 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:38,688 - WARNING - Tabela gmcore.people já existe no HML. Pulando...
+2026-03-04 09:27:38,688 - INFO - Processando tabela 14/28: core.refresh_tokens -> gmcore.refresh_tokens
+2026-03-04 09:27:38,700 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:41,594 - WARNING - Tabela gmcore.refresh_tokens já existe no HML. Pulando...
+2026-03-04 09:27:41,594 - INFO - Processando tabela 15/28: core.reminders -> gmcore.reminders
+2026-03-04 09:27:41,608 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:44,727 - WARNING - Tabela gmcore.reminders já existe no HML. Pulando...
+2026-03-04 09:27:44,727 - INFO - Processando tabela 16/28: core.retail_chains -> gmcore.retail_chains
+2026-03-04 09:27:44,740 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:47,740 - WARNING - Tabela gmcore.retail_chains já existe no HML. Pulando...
+2026-03-04 09:27:47,740 - INFO - Processando tabela 17/28: core.role_claims -> gmcore.role_claims
+2026-03-04 09:27:47,752 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:50,835 - WARNING - Tabela gmcore.role_claims já existe no HML. Pulando...
+2026-03-04 09:27:50,835 - INFO - Processando tabela 18/28: core.roles -> gmcore.roles
+2026-03-04 09:27:50,845 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:53,768 - WARNING - Tabela gmcore.roles já existe no HML. Pulando...
+2026-03-04 09:27:53,768 - INFO - Processando tabela 19/28: core.store_brands -> gmcore.store_brands
+2026-03-04 09:27:53,779 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:56,838 - WARNING - Tabela gmcore.store_brands já existe no HML. Pulando...
+2026-03-04 09:27:56,839 - INFO - Processando tabela 20/28: core.store_cnpjs -> gmcore.store_cnpjs
+2026-03-04 09:27:56,851 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:27:59,909 - WARNING - Tabela gmcore.store_cnpjs já existe no HML. Pulando...
+2026-03-04 09:27:59,911 - INFO - Processando tabela 21/28: core.store_segments -> gmcore.store_segments
+2026-03-04 09:27:59,930 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:28:02,893 - WARNING - Tabela gmcore.store_segments já existe no HML. Pulando...
+2026-03-04 09:28:02,894 - INFO - Processando tabela 22/28: core.stores -> gmcore.stores
+2026-03-04 09:28:02,909 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:28:05,899 - WARNING - Tabela gmcore.stores já existe no HML. Pulando...
+2026-03-04 09:28:05,901 - INFO - Processando tabela 23/28: core.token_integrations -> gmcore.token_integrations
+2026-03-04 09:28:05,923 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:28:10,195 - INFO - Tabela gmcore.token_integrations criada com sucesso no HML
+2026-03-04 09:28:10,196 - INFO - Processando tabela 24/28: core.user_claims -> gmcore.user_claims
+2026-03-04 09:28:10,216 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:28:13,236 - WARNING - Tabela gmcore.user_claims já existe no HML. Pulando...
+2026-03-04 09:28:13,237 - INFO - Processando tabela 25/28: core.user_logins -> gmcore.user_logins
+2026-03-04 09:28:13,258 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:28:16,246 - WARNING - Tabela gmcore.user_logins já existe no HML. Pulando...
+2026-03-04 09:28:16,246 - INFO - Processando tabela 26/28: core.user_roles -> gmcore.user_roles
+2026-03-04 09:28:16,257 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:28:19,169 - WARNING - Tabela gmcore.user_roles já existe no HML. Pulando...
+2026-03-04 09:28:19,169 - INFO - Processando tabela 27/28: core.user_tokens -> gmcore.user_tokens
+2026-03-04 09:28:19,180 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:28:22,134 - WARNING - Tabela gmcore.user_tokens já existe no HML. Pulando...
+2026-03-04 09:28:22,135 - INFO - Processando tabela 28/28: core.users -> gmcore.users
+2026-03-04 09:28:22,149 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:28:25,143 - WARNING - Tabela gmcore.users já existe no HML. Pulando...
+2026-03-04 09:28:26,464 - INFO - Processando tabela 1/3: financial.billings -> gmfinancial.billings
+2026-03-04 09:28:26,479 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:28:30,191 - INFO - Tabela gmfinancial.billings criada com sucesso no HML
+2026-03-04 09:28:30,192 - INFO - Processando tabela 2/3: financial.invoice_amount_adjustments -> gmfinancial.invoice_amount_adjustments
+2026-03-04 09:28:30,207 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:28:34,122 - INFO - Tabela gmfinancial.invoice_amount_adjustments criada com sucesso no HML
+2026-03-04 09:28:34,122 - INFO - Processando tabela 3/3: financial.invoices -> gmfinancial.invoices
+2026-03-04 09:28:34,135 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:28:37,729 - INFO - Tabela gmfinancial.invoices criada com sucesso no HML
+2026-03-04 09:28:39,043 - INFO - Processando tabela 1/2: pdv.products -> gmpdv.products
+2026-03-04 09:28:39,058 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:28:44,484 - INFO - Tabela gmpdv.products criada com sucesso no HML
+2026-03-04 09:28:44,484 - INFO - Processando tabela 2/2: pdv.promoter_tasks -> gmpdv.promoter_tasks
+2026-03-04 09:28:44,494 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-04 09:28:49,049 - INFO - Tabela gmpdv.promoter_tasks criada com sucesso no HML
+2026-03-04 09:28:53,189 - WARNING - Validação com diferenças - PRD: gmcoredb (43 tabelas) vs HML: supera_dev_seed (44 tabelas)
