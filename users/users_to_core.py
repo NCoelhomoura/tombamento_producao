@@ -796,6 +796,108 @@ class UsersMigration:
             
             logger.info(f"[VERIFICAÇÃO] Tabela '{schema}.user_roles' existe e está acessível")
             
+            # Verificar e garantir que os roles existem antes de inserir
+            print("\n[ETAPA 2] Verificando se os roles existem na tabela roles...")
+            
+            # Verificar se a tabela roles existe (pode estar em schema diferente)
+            # Tentar encontrar a tabela roles em diferentes schemas possíveis
+            roles_table_schema = None
+            roles_table_name = None
+            
+            # Verificar em diferentes schemas possíveis
+            possible_schemas = [schema, 'public', 'asp_net_roles', 'identity']
+            for check_schema in possible_schemas:
+                try:
+                    cursor_pg.execute("""
+                        SELECT EXISTS (
+                            SELECT 1 
+                            FROM information_schema.tables 
+                            WHERE table_schema = %s 
+                            AND table_name = 'roles'
+                        )
+                    """, (check_schema,))
+                    if cursor_pg.fetchone()[0]:
+                        roles_table_schema = check_schema
+                        roles_table_name = 'roles'
+                        logger.info(f"[ETAPA 2] Tabela roles encontrada em schema: {check_schema}")
+                        break
+                except Exception:
+                    continue
+            
+            if not roles_table_schema:
+                # Tentar buscar em asp_net_roles (nome completo da constraint sugere isso)
+                try:
+                    cursor_pg.execute("""
+                        SELECT table_schema, table_name
+                        FROM information_schema.tables 
+                        WHERE table_name LIKE '%role%'
+                        AND table_schema IN ('public', %s, 'asp_net_roles', 'identity')
+                        LIMIT 1
+                    """, (schema,))
+                    result = cursor_pg.fetchone()
+                    if result:
+                        roles_table_schema, roles_table_name = result
+                        logger.info(f"[ETAPA 2] Tabela de roles encontrada: {roles_table_schema}.{roles_table_name}")
+                except Exception as e:
+                    logger.warning(f"[ETAPA 2] Não foi possível encontrar tabela roles: {e}")
+            
+            # Verificar se o role do registro manual existe
+            role_id_to_use = None
+            if roles_table_schema and roles_table_name:
+                try:
+                    # Verificar se o role_id do registro manual existe
+                    check_role_query = f"""
+                        SELECT id 
+                        FROM "{roles_table_schema}"."{roles_table_name}"
+                        WHERE id = %s
+                    """
+                    cursor_pg.execute(check_role_query, (manual_user_role['role_id'],))
+                    if cursor_pg.fetchone():
+                        role_id_to_use = manual_user_role['role_id']
+                        print(f"[ETAPA 2] Role do registro manual encontrado: {role_id_to_use}")
+                        logger.info(f"[ETAPA 2] Role do registro manual encontrado: {role_id_to_use}")
+                    else:
+                        # Verificar se o ROLE_HUNTER_UUID existe
+                        cursor_pg.execute(check_role_query, (ROLE_HUNTER_UUID,))
+                        if cursor_pg.fetchone():
+                            role_id_to_use = ROLE_HUNTER_UUID
+                            print(f"[ETAPA 2] Role HUNTER encontrado: {role_id_to_use}")
+                            logger.info(f"[ETAPA 2] Role HUNTER encontrado: {role_id_to_use}")
+                        else:
+                            # Buscar qualquer role existente
+                            cursor_pg.execute(f"""
+                                SELECT id 
+                                FROM "{roles_table_schema}"."{roles_table_name}"
+                                LIMIT 1
+                            """)
+                            result = cursor_pg.fetchone()
+                            if result:
+                                role_id_to_use = str(result[0])
+                                print(f"[ETAPA 2] Usando role existente encontrado: {role_id_to_use}")
+                                logger.warning(f"[ETAPA 2] Roles especificados não encontrados. Usando role existente: {role_id_to_use}")
+                            else:
+                                error_msg = f"Nenhum role encontrado na tabela {roles_table_schema}.{roles_table_name}. É necessário criar roles antes de migrar user_roles."
+                                logger.error(f"[ERRO] {error_msg}")
+                                raise ValueError(error_msg)
+                except Exception as e:
+                    logger.warning(f"[ETAPA 2] Erro ao verificar roles: {e}. Tentando usar role_id do registro manual...")
+                    role_id_to_use = manual_user_role['role_id']
+            else:
+                # Se não encontrou a tabela roles, usar o role_id do registro manual que funcionou
+                logger.warning("[ETAPA 2] Tabela roles não encontrada. Usando role_id do registro manual.")
+                role_id_to_use = manual_user_role['role_id']
+            
+            # Validar que role_id_to_use foi definido
+            if not role_id_to_use:
+                error_msg = "Não foi possível determinar um role_id válido. Verifique se a tabela roles existe e contém roles."
+                logger.error(f"[ERRO] {error_msg}")
+                raise ValueError(error_msg)
+            
+            # Atualizar o role_id do registro manual para usar o mesmo role
+            manual_user_role['role_id'] = role_id_to_use
+            print(f"[ETAPA 2] Role_id que será usado: {role_id_to_use}")
+            logger.info(f"[ETAPA 2] Role_id que será usado: {role_id_to_use}")
+            
             # Limpar tabela (TRUNCATE)
             print("\n[ETAPA 2] Limpando tabela user_roles...")
             try:
@@ -852,12 +954,13 @@ class UsersMigration:
             """
             insert_template = f"(%s, %s)"
             
-            # Criar lista de tuplas com todos os usuários (exceto o manual) associados à role HUNTER
+            # Criar lista de tuplas com todos os usuários (exceto o manual) associados ao role verificado
+            # Usar o mesmo role_id que foi usado no registro manual (já verificado que existe)
             processed_tuples = []
             for (user_id,) in all_users:
                 processed_tuples.append((
                     str(user_id),
-                    ROLE_HUNTER_UUID
+                    role_id_to_use  # Usar o role_id verificado que existe
                 ))
             
             # Inserir em chunks

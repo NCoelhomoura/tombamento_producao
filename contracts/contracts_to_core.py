@@ -1141,7 +1141,8 @@ class ContractsMigration:
                         None,  # deleted_at sempre NULL
                         created_at,
                         updated_at,
-                        code
+                        code,
+                        0  # expected_amount sempre 0 por enquanto
                     ))
                     legacy_ids_list.append(legado_id)
                 else:
@@ -1158,7 +1159,8 @@ class ContractsMigration:
                         None,  # deleted_at sempre NULL
                         created_at,
                         updated_at,
-                        str(customer_uuid)
+                        str(customer_uuid),
+                        0  # expected_amount sempre 0 por enquanto
                     ))
                     legacy_ids_list.append(legado_id)
                 
@@ -1180,19 +1182,19 @@ class ContractsMigration:
             INSERT INTO {schema}.contracts (
                 id, legacy_id, customer_id, billing_day, due_day,
                 billing_type, operation_type, thirteenth_salary_type, trade_type,
-                start_date, status, deleted_at, created_at, updated_at, code
+                start_date, status, deleted_at, created_at, updated_at, code, expected_amount
             ) VALUES %s
             """
-            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
         else:
             insert_query = f"""
             INSERT INTO {schema}.contracts (
                 id, customer_id, billing_day, due_day,
                 billing_type, operation_type, thirteenth_salary_type, trade_type,
-                start_date, status, deleted_at, created_at, updated_at, code
+                start_date, status, deleted_at, created_at, updated_at, code, expected_amount
             ) VALUES %s
             """
-            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
         
         chunk_num = 0
         total_processed = 0
@@ -2264,32 +2266,37 @@ class ContractsMigration:
             logger.error(f"Coluna 'NomeTarefa' não encontrada no DataFrame. Colunas disponíveis: {df.columns.tolist()}")
             raise KeyError(f"Coluna 'NomeTarefa' não encontrada no DataFrame")
         
-        # Aplicar função para cada linha (garante mesma normalização do step9)
-        def normalize_row(row):
-            try:
-                nome_tarefa = row['NomeTarefa'] if pd.notna(row['NomeTarefa']) else None
-                name, nome_tarefa_clean = normalize_promoter_task_name(nome_tarefa)
-                return pd.Series({'name': name, 'nome_tarefa_clean': nome_tarefa_clean})
-            except KeyError as e:
-                logger.error(f"Erro KeyError ao normalizar linha: {e}. Colunas disponíveis: {row.index.tolist()}")
-                return pd.Series({'name': None, 'nome_tarefa_clean': None})
-            except Exception as e:
-                logger.error(f"Erro ao normalizar linha: {e}")
-                return pd.Series({'name': None, 'nome_tarefa_clean': None})
-        
-        # Aplicar normalização usando função compartilhada
+        # Aplicar função compartilhada normalize_promoter_task_name para cada linha
+        # Criar colunas 'name' e 'nome_tarefa_clean' diretamente
         try:
-            normalized = df.apply(normalize_row, axis=1)
-            # Garantir que as colunas existem
-            if 'name' not in normalized.columns:
-                logger.error(f"Coluna 'name' não encontrada no resultado da normalização. Colunas: {normalized.columns.tolist()}")
-                raise KeyError("Coluna 'name' não encontrada no resultado da normalização")
-            if 'nome_tarefa_clean' not in normalized.columns:
-                logger.error(f"Coluna 'nome_tarefa_clean' não encontrada no resultado da normalização. Colunas: {normalized.columns.tolist()}")
-                raise KeyError("Coluna 'nome_tarefa_clean' não encontrada no resultado da normalização")
+            # Criar listas para armazenar os resultados
+            names_list = []
+            nome_tarefa_clean_list = []
             
-            df['name'] = normalized['name']
-            df['nome_tarefa_clean'] = normalized['nome_tarefa_clean']
+            # Aplicar função para cada valor de NomeTarefa
+            for idx, nome_tarefa in df['NomeTarefa'].items():
+                try:
+                    nome_tarefa_val = nome_tarefa if pd.notna(nome_tarefa) else None
+                    name, nome_tarefa_clean = normalize_promoter_task_name(nome_tarefa_val)
+                    names_list.append(name)
+                    nome_tarefa_clean_list.append(nome_tarefa_clean)
+                except Exception as e:
+                    logger.error(f"Erro ao normalizar nome_tarefa na linha {idx} ('{nome_tarefa}'): {e}")
+                    names_list.append(None)
+                    nome_tarefa_clean_list.append(None)
+            
+            # Criar colunas no DataFrame
+            df['name'] = names_list
+            df['nome_tarefa_clean'] = nome_tarefa_clean_list
+            
+            # Verificar se as colunas foram criadas
+            if 'name' not in df.columns:
+                logger.error(f"Coluna 'name' não foi criada. Colunas disponíveis: {df.columns.tolist()}")
+                raise KeyError("Coluna 'name' não foi criada")
+            if 'nome_tarefa_clean' not in df.columns:
+                logger.error(f"Coluna 'nome_tarefa_clean' não foi criada. Colunas disponíveis: {df.columns.tolist()}")
+                raise KeyError("Coluna 'nome_tarefa_clean' não foi criada")
+                
         except KeyError as e:
             logger.error(f"Erro KeyError ao aplicar normalização: {e}")
             raise
