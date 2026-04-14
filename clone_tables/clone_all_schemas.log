@@ -133,3 +133,425 @@
 2026-03-04 09:28:44,494 - WARNING - pg_dump não encontrado, usando método alternativo
 2026-03-04 09:28:49,049 - INFO - Tabela gmpdv.promoter_tasks criada com sucesso no HML
 2026-03-04 09:28:53,189 - WARNING - Validação com diferenças - PRD: gmcoredb (43 tabelas) vs HML: supera_dev_seed (44 tabelas)
+2026-03-30 16:35:27,561 - INFO - Database PRD: gmcoredb, Schemas encontrados: 4
+2026-03-30 16:35:29,200 - INFO - Schema gmcommercial existe. Removendo antes de recriar...
+2026-03-30 16:35:30,941 - INFO - Schema gmcommercial removido com sucesso do HML (CASCADE=True)
+2026-03-30 16:35:32,167 - INFO - Schema gmcommercial recriado com sucesso no HML
+2026-03-30 16:35:33,398 - INFO - Schema gmcore existe. Removendo antes de recriar...
+2026-03-30 16:35:34,954 - INFO - Schema gmcore removido com sucesso do HML (CASCADE=True)
+2026-03-30 16:35:36,238 - INFO - Schema gmcore recriado com sucesso no HML
+2026-03-30 16:35:37,378 - INFO - Schema gmfinancial existe. Removendo antes de recriar...
+2026-03-30 16:35:38,825 - INFO - Schema gmfinancial removido com sucesso do HML (CASCADE=True)
+2026-03-30 16:35:40,110 - INFO - Schema gmfinancial recriado com sucesso no HML
+2026-03-30 16:35:41,241 - INFO - Schema gmpdv existe. Removendo antes de recriar...
+2026-03-30 16:35:42,648 - INFO - Schema gmpdv removido com sucesso do HML (CASCADE=True)
+2026-03-30 16:35:43,943 - INFO - Schema gmpdv recriado com sucesso no HML
+2026-03-30 16:35:45,479 - INFO - Processando tabela 1/10: commercial.contract_additional_charges -> gmcommercial.contract_additional_charges
+2026-03-30 16:35:45,503 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:35:49,714 - INFO - Tabela gmcommercial.contract_additional_charges criada com sucesso no HML
+2026-03-30 16:35:49,715 - INFO - Processando tabela 2/10: commercial.contract_adjustments -> gmcommercial.contract_adjustments
+2026-03-30 16:35:49,731 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:35:53,584 - INFO - Tabela gmcommercial.contract_adjustments criada com sucesso no HML
+2026-03-30 16:35:53,585 - INFO - Processando tabela 3/10: commercial.contract_contacts -> gmcommercial.contract_contacts
+2026-03-30 16:35:53,603 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:35:57,768 - INFO - Tabela gmcommercial.contract_contacts criada com sucesso no HML
+2026-03-30 16:35:57,769 - INFO - Processando tabela 4/10: commercial.contract_partners -> gmcommercial.contract_partners
+2026-03-30 16:35:57,788 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:36:02,377 - INFO - Tabela gmcommercial.contract_partners criada com sucesso no HML
+2026-03-30 16:36:02,378 - INFO - Processando tabela 5/10: commercial.contract_scenario_stores -> gmcommercial.contract_scenario_stores
+2026-03-30 16:36:02,398 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:36:06,385 - INFO - Tabela gmcommercial.contract_scenario_stores criada com sucesso no HML
+2026-03-30 16:36:06,387 - INFO - Processando tabela 6/10: commercial.contract_scenarios -> gmcommercial.contract_scenarios
+2026-03-30 16:36:06,407 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:36:10,319 - INFO - Tabela gmcommercial.contract_scenarios criada com sucesso no HML
+2026-03-30 16:36:10,320 - INFO - Processando tabela 7/10: commercial.contract_scenarios_brands -> gmcommercial.contract_scenarios_brands
+2026-03-30 16:36:10,336 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:36:14,254 - INFO - Tabela gmcommercial.contract_scenarios_brands criada com sucesso no HML
+2026-03-30 16:36:14,256 - INFO - Processando tabela 8/10: commercial.contract_sellers -> gmcommercial.contract_sellers
+2026-03-30 16:36:14,274 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:36:18,146 - INFO - Tabela gmcommercial.contract_sellers criada com sucesso no HML
+2026-03-30 16:36:18,147 - INFO - Processando tabela 9/10: commercial.contract_team_members -> gmcommercial.contract_team_members
+2026-03-30 16:36:18,162 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:36:22,242 - INFO - Tabela gmcommercial.contract_team_members criada com sucesso no HML
+2026-03-30 16:36:22,243 - INFO - Processando tabela 10/10: commercial.contracts -> gmcommercial.contracts
+2026-03-30 16:36:22,261 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:36:26,055 - ERROR - Erro ao criar tabela gmcommercial.contracts no HML: relation "contract_code_seq" does not exist
+LINE 3:     code INTEGER NOT NULL DEFAULT nextval('contract_code_seq...
+                                                  ^
+
+2026-03-30 16:36:26,173 - ERROR - Erro ao processar tabela commercial.contracts: relation "contract_code_seq" does not exist
+LINE 3:     code INTEGER NOT NULL DEFAULT nextval('contract_code_seq...
+                                                  ^
+
+2026-03-30 16:36:27,874 - INFO - Processando tabela 1/30: core.addresses -> gmcore.addresses
+2026-03-30 16:36:27,894 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:36:32,052 - INFO - Tabela gmcore.addresses criada com sucesso no HML
+2026-03-30 16:36:32,053 - INFO - Processando tabela 2/30: core.attachments -> gmcore.attachments
+2026-03-30 16:36:32,072 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:36:35,964 - INFO - Tabela gmcore.attachments criada com sucesso no HML
+2026-03-30 16:36:35,965 - INFO - Processando tabela 3/30: core.certificates -> gmcore.certificates
+2026-03-30 16:36:35,979 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:36:39,787 - INFO - Tabela gmcore.certificates criada com sucesso no HML
+2026-03-30 16:36:39,788 - INFO - Processando tabela 4/30: core.client_integrations -> gmcore.client_integrations
+2026-03-30 16:36:39,806 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:36:43,754 - INFO - Tabela gmcore.client_integrations criada com sucesso no HML
+2026-03-30 16:36:43,755 - INFO - Processando tabela 5/30: core.companies -> gmcore.companies
+2026-03-30 16:36:43,771 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:36:48,001 - INFO - Tabela gmcore.companies criada com sucesso no HML
+2026-03-30 16:36:48,003 - INFO - Processando tabela 6/30: core.contacts -> gmcore.contacts
+2026-03-30 16:36:48,023 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:36:51,835 - INFO - Tabela gmcore.contacts criada com sucesso no HML
+2026-03-30 16:36:51,837 - INFO - Processando tabela 7/30: core.customer_brands -> gmcore.customer_brands
+2026-03-30 16:36:51,854 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:36:55,728 - ERROR - Erro ao criar tabela gmcore.customer_brands no HML: relation "customer_brand_code_seq" does not exist
+LINE 2:     code INTEGER NOT NULL DEFAULT nextval('customer_brand_co...
+                                                  ^
+
+2026-03-30 16:36:55,930 - ERROR - Erro ao processar tabela core.customer_brands: relation "customer_brand_code_seq" does not exist
+LINE 2:     code INTEGER NOT NULL DEFAULT nextval('customer_brand_co...
+                                                  ^
+
+2026-03-30 16:36:55,931 - INFO - Processando tabela 8/30: core.customer_customer_brand -> gmcore.customer_customer_brand
+2026-03-30 16:36:55,952 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:37:00,338 - INFO - Tabela gmcore.customer_customer_brand criada com sucesso no HML
+2026-03-30 16:37:00,339 - INFO - Processando tabela 9/30: core.customer_segments -> gmcore.customer_segments
+2026-03-30 16:37:00,355 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:37:05,079 - INFO - Tabela gmcore.customer_segments criada com sucesso no HML
+2026-03-30 16:37:05,080 - INFO - Processando tabela 10/30: core.customers -> gmcore.customers
+2026-03-30 16:37:05,096 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:37:09,141 - ERROR - Erro ao criar tabela gmcore.customers no HML: relation "customer_code_seq" does not exist
+LINE 2:     code INTEGER NOT NULL DEFAULT nextval('customer_code_seq...
+                                                  ^
+
+2026-03-30 16:37:09,346 - ERROR - Erro ao processar tabela core.customers: relation "customer_code_seq" does not exist
+LINE 2:     code INTEGER NOT NULL DEFAULT nextval('customer_code_seq...
+                                                  ^
+
+2026-03-30 16:37:09,356 - INFO - Processando tabela 11/30: core.model_audits -> gmcore.model_audits
+2026-03-30 16:37:09,372 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:37:13,868 - INFO - Tabela gmcore.model_audits criada com sucesso no HML
+2026-03-30 16:37:13,870 - INFO - Processando tabela 12/30: core.notifications -> gmcore.notifications
+2026-03-30 16:37:13,886 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:37:17,785 - INFO - Tabela gmcore.notifications criada com sucesso no HML
+2026-03-30 16:37:17,786 - INFO - Processando tabela 13/30: core.occurrence_types -> gmcore.occurrence_types
+2026-03-30 16:37:17,805 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:37:22,092 - INFO - Tabela gmcore.occurrence_types criada com sucesso no HML
+2026-03-30 16:37:22,093 - INFO - Processando tabela 14/30: core.occurrences -> gmcore.occurrences
+2026-03-30 16:37:22,111 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:37:26,447 - INFO - Tabela gmcore.occurrences criada com sucesso no HML
+2026-03-30 16:37:26,449 - INFO - Processando tabela 15/30: core.people -> gmcore.people
+2026-03-30 16:37:26,468 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:37:30,849 - INFO - Tabela gmcore.people criada com sucesso no HML
+2026-03-30 16:37:30,850 - INFO - Processando tabela 16/30: core.refresh_tokens -> gmcore.refresh_tokens
+2026-03-30 16:37:30,870 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:37:34,633 - INFO - Tabela gmcore.refresh_tokens criada com sucesso no HML
+2026-03-30 16:37:34,634 - INFO - Processando tabela 17/30: core.reminders -> gmcore.reminders
+2026-03-30 16:37:34,652 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:37:39,075 - INFO - Tabela gmcore.reminders criada com sucesso no HML
+2026-03-30 16:37:39,076 - INFO - Processando tabela 18/30: core.retail_chains -> gmcore.retail_chains
+2026-03-30 16:37:39,091 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:37:43,170 - INFO - Tabela gmcore.retail_chains criada com sucesso no HML
+2026-03-30 16:37:43,171 - INFO - Processando tabela 19/30: core.role_claims -> gmcore.role_claims
+2026-03-30 16:37:43,190 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:37:47,557 - INFO - Tabela gmcore.role_claims criada com sucesso no HML
+2026-03-30 16:37:47,559 - INFO - Processando tabela 20/30: core.roles -> gmcore.roles
+2026-03-30 16:37:47,577 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:37:51,738 - INFO - Tabela gmcore.roles criada com sucesso no HML
+2026-03-30 16:37:51,739 - INFO - Processando tabela 21/30: core.store_brands -> gmcore.store_brands
+2026-03-30 16:37:51,757 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:37:55,939 - INFO - Tabela gmcore.store_brands criada com sucesso no HML
+2026-03-30 16:37:55,940 - INFO - Processando tabela 22/30: core.store_cnpjs -> gmcore.store_cnpjs
+2026-03-30 16:37:55,956 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:38:00,480 - INFO - Tabela gmcore.store_cnpjs criada com sucesso no HML
+2026-03-30 16:38:00,482 - INFO - Processando tabela 23/30: core.store_segments -> gmcore.store_segments
+2026-03-30 16:38:00,498 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:38:04,894 - INFO - Tabela gmcore.store_segments criada com sucesso no HML
+2026-03-30 16:38:04,895 - INFO - Processando tabela 24/30: core.stores -> gmcore.stores
+2026-03-30 16:38:04,911 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:38:08,968 - ERROR - Erro ao criar tabela gmcore.stores no HML: relation "store_code_seq" does not exist
+LINE 3:     code INTEGER NOT NULL DEFAULT nextval('store_code_seq'::...
+                                                  ^
+
+2026-03-30 16:38:09,086 - ERROR - Erro ao processar tabela core.stores: relation "store_code_seq" does not exist
+LINE 3:     code INTEGER NOT NULL DEFAULT nextval('store_code_seq'::...
+                                                  ^
+
+2026-03-30 16:38:09,087 - INFO - Processando tabela 25/30: core.token_integrations -> gmcore.token_integrations
+2026-03-30 16:38:09,103 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:38:13,448 - INFO - Tabela gmcore.token_integrations criada com sucesso no HML
+2026-03-30 16:38:13,449 - INFO - Processando tabela 26/30: core.user_claims -> gmcore.user_claims
+2026-03-30 16:38:13,468 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:38:17,231 - INFO - Tabela gmcore.user_claims criada com sucesso no HML
+2026-03-30 16:38:17,232 - INFO - Processando tabela 27/30: core.user_logins -> gmcore.user_logins
+2026-03-30 16:38:17,246 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:38:21,231 - INFO - Tabela gmcore.user_logins criada com sucesso no HML
+2026-03-30 16:38:21,233 - INFO - Processando tabela 28/30: core.user_roles -> gmcore.user_roles
+2026-03-30 16:38:21,251 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:38:25,327 - INFO - Tabela gmcore.user_roles criada com sucesso no HML
+2026-03-30 16:38:25,327 - INFO - Processando tabela 29/30: core.user_tokens -> gmcore.user_tokens
+2026-03-30 16:38:25,345 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:38:29,763 - INFO - Tabela gmcore.user_tokens criada com sucesso no HML
+2026-03-30 16:38:29,764 - INFO - Processando tabela 30/30: core.users -> gmcore.users
+2026-03-30 16:38:29,781 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:38:34,053 - INFO - Tabela gmcore.users criada com sucesso no HML
+2026-03-30 16:38:35,425 - INFO - Processando tabela 1/11: financial.bank_slip_accounts -> gmfinancial.bank_slip_accounts
+2026-03-30 16:38:35,446 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:38:39,969 - INFO - Tabela gmfinancial.bank_slip_accounts criada com sucesso no HML
+2026-03-30 16:38:39,970 - INFO - Processando tabela 2/11: financial.billings -> gmfinancial.billings
+2026-03-30 16:38:39,990 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:38:44,222 - INFO - Tabela gmfinancial.billings criada com sucesso no HML
+2026-03-30 16:38:44,223 - INFO - Processando tabela 3/11: financial.customer_fiscal_code_configs -> gmfinancial.customer_fiscal_code_configs
+2026-03-30 16:38:44,245 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:38:48,309 - INFO - Tabela gmfinancial.customer_fiscal_code_configs criada com sucesso no HML
+2026-03-30 16:38:48,310 - INFO - Processando tabela 4/11: financial.invoice_amount_adjustments -> gmfinancial.invoice_amount_adjustments
+2026-03-30 16:38:48,324 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:38:52,568 - INFO - Tabela gmfinancial.invoice_amount_adjustments criada com sucesso no HML
+2026-03-30 16:38:52,569 - INFO - Processando tabela 5/11: financial.invoice_batch_errors -> gmfinancial.invoice_batch_errors
+2026-03-30 16:38:52,586 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:38:56,574 - INFO - Tabela gmfinancial.invoice_batch_errors criada com sucesso no HML
+2026-03-30 16:38:56,577 - INFO - Processando tabela 6/11: financial.invoice_batches -> gmfinancial.invoice_batches
+2026-03-30 16:38:56,591 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:39:00,702 - INFO - Tabela gmfinancial.invoice_batches criada com sucesso no HML
+2026-03-30 16:39:00,703 - INFO - Processando tabela 7/11: financial.invoice_items -> gmfinancial.invoice_items
+2026-03-30 16:39:00,723 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:39:04,874 - INFO - Tabela gmfinancial.invoice_items criada com sucesso no HML
+2026-03-30 16:39:04,875 - INFO - Processando tabela 8/11: financial.invoices -> gmfinancial.invoices
+2026-03-30 16:39:04,892 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:39:09,386 - INFO - Tabela gmfinancial.invoices criada com sucesso no HML
+2026-03-30 16:39:09,387 - INFO - Processando tabela 9/11: financial.service_fiscal_codes -> gmfinancial.service_fiscal_codes
+2026-03-30 16:39:09,404 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:39:13,572 - INFO - Tabela gmfinancial.service_fiscal_codes criada com sucesso no HML
+2026-03-30 16:39:13,574 - INFO - Processando tabela 10/11: financial.tax_service_configs -> gmfinancial.tax_service_configs
+2026-03-30 16:39:13,592 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:39:22,977 - INFO - Tabela gmfinancial.tax_service_configs criada com sucesso no HML
+2026-03-30 16:39:22,978 - INFO - Processando tabela 11/11: financial.taxes -> gmfinancial.taxes
+2026-03-30 16:39:22,996 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:39:27,284 - INFO - Tabela gmfinancial.taxes criada com sucesso no HML
+2026-03-30 16:39:28,934 - INFO - Processando tabela 1/10: pdv.cluster_products -> gmpdv.cluster_products
+2026-03-30 16:39:28,956 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:39:33,032 - INFO - Tabela gmpdv.cluster_products criada com sucesso no HML
+2026-03-30 16:39:33,034 - INFO - Processando tabela 2/10: pdv.clusters -> gmpdv.clusters
+2026-03-30 16:39:33,060 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:39:37,229 - INFO - Tabela gmpdv.clusters criada com sucesso no HML
+2026-03-30 16:39:37,230 - INFO - Processando tabela 3/10: pdv.products -> gmpdv.products
+2026-03-30 16:39:37,265 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:39:41,615 - INFO - Tabela gmpdv.products criada com sucesso no HML
+2026-03-30 16:39:41,617 - INFO - Processando tabela 4/10: pdv.promoter_service_tags -> gmpdv.promoter_service_tags
+2026-03-30 16:39:41,635 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:39:45,756 - INFO - Tabela gmpdv.promoter_service_tags criada com sucesso no HML
+2026-03-30 16:39:45,757 - INFO - Processando tabela 5/10: pdv.promoter_services -> gmpdv.promoter_services
+2026-03-30 16:39:45,772 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:39:49,637 - INFO - Tabela gmpdv.promoter_services criada com sucesso no HML
+2026-03-30 16:39:49,639 - INFO - Processando tabela 6/10: pdv.promoter_tasks -> gmpdv.promoter_tasks
+2026-03-30 16:39:49,657 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:39:53,817 - INFO - Tabela gmpdv.promoter_tasks criada com sucesso no HML
+2026-03-30 16:39:53,818 - INFO - Processando tabela 7/10: pdv.promoters -> gmpdv.promoters
+2026-03-30 16:39:53,833 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:39:58,102 - INFO - Tabela gmpdv.promoters criada com sucesso no HML
+2026-03-30 16:39:58,103 - INFO - Processando tabela 8/10: pdv.spot_tasks -> gmpdv.spot_tasks
+2026-03-30 16:39:58,120 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:40:02,485 - INFO - Tabela gmpdv.spot_tasks criada com sucesso no HML
+2026-03-30 16:40:02,486 - INFO - Processando tabela 9/10: pdv.spots -> gmpdv.spots
+2026-03-30 16:40:02,509 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:40:06,704 - INFO - Tabela gmpdv.spots criada com sucesso no HML
+2026-03-30 16:40:06,705 - INFO - Processando tabela 10/10: pdv.task_photos -> gmpdv.task_photos
+2026-03-30 16:40:06,724 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 16:40:11,037 - INFO - Tabela gmpdv.task_photos criada com sucesso no HML
+2026-03-30 16:40:15,414 - WARNING - Validação com diferenças - PRD: gmcoredb (61 tabelas) vs HML: supera_dev_seed (57 tabelas)
+2026-03-30 17:34:41,535 - INFO - Database PRD: gmcoredb, Schemas encontrados: 4
+2026-03-30 17:34:43,024 - INFO - Schema gmcommercial existe. Removendo antes de recriar...
+2026-03-30 17:34:44,423 - INFO - Schema gmcommercial removido com sucesso do HML (CASCADE=True)
+2026-03-30 17:34:45,666 - INFO - Schema gmcommercial recriado com sucesso no HML
+2026-03-30 17:34:46,795 - INFO - Schema gmcore existe. Removendo antes de recriar...
+2026-03-30 17:34:48,157 - INFO - Schema gmcore removido com sucesso do HML (CASCADE=True)
+2026-03-30 17:34:49,374 - INFO - Schema gmcore recriado com sucesso no HML
+2026-03-30 17:34:50,460 - INFO - Schema gmfinancial existe. Removendo antes de recriar...
+2026-03-30 17:34:51,803 - INFO - Schema gmfinancial removido com sucesso do HML (CASCADE=True)
+2026-03-30 17:34:53,029 - INFO - Schema gmfinancial recriado com sucesso no HML
+2026-03-30 17:34:54,131 - INFO - Schema gmpdv existe. Removendo antes de recriar...
+2026-03-30 17:34:55,497 - INFO - Schema gmpdv removido com sucesso do HML (CASCADE=True)
+2026-03-30 17:34:56,700 - INFO - Schema gmpdv recriado com sucesso no HML
+2026-03-30 17:34:57,985 - INFO - Processando tabela 1/10: commercial.contract_additional_charges -> gmcommercial.contract_additional_charges
+2026-03-30 17:34:58,001 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:02,039 - INFO - Tabela gmcommercial.contract_additional_charges criada com sucesso no HML
+2026-03-30 17:35:02,040 - INFO - Processando tabela 2/10: commercial.contract_adjustments -> gmcommercial.contract_adjustments
+2026-03-30 17:35:02,057 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:05,958 - INFO - Tabela gmcommercial.contract_adjustments criada com sucesso no HML
+2026-03-30 17:35:05,959 - INFO - Processando tabela 3/10: commercial.contract_contacts -> gmcommercial.contract_contacts
+2026-03-30 17:35:05,969 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:09,794 - INFO - Tabela gmcommercial.contract_contacts criada com sucesso no HML
+2026-03-30 17:35:09,795 - INFO - Processando tabela 4/10: commercial.contract_partners -> gmcommercial.contract_partners
+2026-03-30 17:35:09,813 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:13,785 - INFO - Tabela gmcommercial.contract_partners criada com sucesso no HML
+2026-03-30 17:35:13,788 - INFO - Processando tabela 5/10: commercial.contract_scenario_stores -> gmcommercial.contract_scenario_stores
+2026-03-30 17:35:13,807 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:17,856 - INFO - Tabela gmcommercial.contract_scenario_stores criada com sucesso no HML
+2026-03-30 17:35:17,858 - INFO - Processando tabela 6/10: commercial.contract_scenarios -> gmcommercial.contract_scenarios
+2026-03-30 17:35:17,875 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:22,052 - INFO - Tabela gmcommercial.contract_scenarios criada com sucesso no HML
+2026-03-30 17:35:22,053 - INFO - Processando tabela 7/10: commercial.contract_scenarios_brands -> gmcommercial.contract_scenarios_brands
+2026-03-30 17:35:22,064 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:25,820 - INFO - Tabela gmcommercial.contract_scenarios_brands criada com sucesso no HML
+2026-03-30 17:35:25,822 - INFO - Processando tabela 8/10: commercial.contract_sellers -> gmcommercial.contract_sellers
+2026-03-30 17:35:25,837 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:29,698 - INFO - Tabela gmcommercial.contract_sellers criada com sucesso no HML
+2026-03-30 17:35:29,700 - INFO - Processando tabela 9/10: commercial.contract_team_members -> gmcommercial.contract_team_members
+2026-03-30 17:35:29,714 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:33,744 - INFO - Tabela gmcommercial.contract_team_members criada com sucesso no HML
+2026-03-30 17:35:33,745 - INFO - Processando tabela 10/10: commercial.contracts -> gmcommercial.contracts
+2026-03-30 17:35:33,756 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:38,139 - INFO - Tabela gmcommercial.contracts criada com sucesso no HML
+2026-03-30 17:35:39,499 - INFO - Processando tabela 1/30: core.addresses -> gmcore.addresses
+2026-03-30 17:35:39,513 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:43,456 - INFO - Tabela gmcore.addresses criada com sucesso no HML
+2026-03-30 17:35:43,458 - INFO - Processando tabela 2/30: core.attachments -> gmcore.attachments
+2026-03-30 17:35:43,482 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:47,320 - INFO - Tabela gmcore.attachments criada com sucesso no HML
+2026-03-30 17:35:47,321 - INFO - Processando tabela 3/30: core.certificates -> gmcore.certificates
+2026-03-30 17:35:47,337 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:51,059 - INFO - Tabela gmcore.certificates criada com sucesso no HML
+2026-03-30 17:35:51,060 - INFO - Processando tabela 4/30: core.client_integrations -> gmcore.client_integrations
+2026-03-30 17:35:51,072 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:54,751 - INFO - Tabela gmcore.client_integrations criada com sucesso no HML
+2026-03-30 17:35:54,752 - INFO - Processando tabela 5/30: core.companies -> gmcore.companies
+2026-03-30 17:35:54,764 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:35:58,541 - INFO - Tabela gmcore.companies criada com sucesso no HML
+2026-03-30 17:35:58,542 - INFO - Processando tabela 6/30: core.contacts -> gmcore.contacts
+2026-03-30 17:35:58,557 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:36:02,183 - INFO - Tabela gmcore.contacts criada com sucesso no HML
+2026-03-30 17:36:02,184 - INFO - Processando tabela 7/30: core.customer_brands -> gmcore.customer_brands
+2026-03-30 17:36:02,199 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:36:06,683 - INFO - Tabela gmcore.customer_brands criada com sucesso no HML
+2026-03-30 17:36:06,684 - INFO - Processando tabela 8/30: core.customer_customer_brand -> gmcore.customer_customer_brand
+2026-03-30 17:36:06,702 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:36:10,579 - INFO - Tabela gmcore.customer_customer_brand criada com sucesso no HML
+2026-03-30 17:36:10,580 - INFO - Processando tabela 9/30: core.customer_segments -> gmcore.customer_segments
+2026-03-30 17:36:10,597 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:36:19,304 - INFO - Tabela gmcore.customer_segments criada com sucesso no HML
+2026-03-30 17:36:19,306 - INFO - Processando tabela 10/30: core.customers -> gmcore.customers
+2026-03-30 17:36:19,320 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:36:23,622 - INFO - Tabela gmcore.customers criada com sucesso no HML
+2026-03-30 17:36:23,623 - INFO - Processando tabela 11/30: core.model_audits -> gmcore.model_audits
+2026-03-30 17:36:23,635 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:36:27,768 - INFO - Tabela gmcore.model_audits criada com sucesso no HML
+2026-03-30 17:36:27,770 - INFO - Processando tabela 12/30: core.notifications -> gmcore.notifications
+2026-03-30 17:36:27,783 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:36:32,550 - INFO - Tabela gmcore.notifications criada com sucesso no HML
+2026-03-30 17:36:32,552 - INFO - Processando tabela 13/30: core.occurrence_types -> gmcore.occurrence_types
+2026-03-30 17:36:32,563 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:36:36,274 - INFO - Tabela gmcore.occurrence_types criada com sucesso no HML
+2026-03-30 17:36:36,274 - INFO - Processando tabela 14/30: core.occurrences -> gmcore.occurrences
+2026-03-30 17:36:36,284 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:36:40,335 - INFO - Tabela gmcore.occurrences criada com sucesso no HML
+2026-03-30 17:36:40,336 - INFO - Processando tabela 15/30: core.people -> gmcore.people
+2026-03-30 17:36:40,346 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:36:49,090 - INFO - Tabela gmcore.people criada com sucesso no HML
+2026-03-30 17:36:49,090 - INFO - Processando tabela 16/30: core.refresh_tokens -> gmcore.refresh_tokens
+2026-03-30 17:36:49,101 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:36:52,838 - INFO - Tabela gmcore.refresh_tokens criada com sucesso no HML
+2026-03-30 17:36:52,840 - INFO - Processando tabela 17/30: core.reminders -> gmcore.reminders
+2026-03-30 17:36:52,854 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:36:56,859 - INFO - Tabela gmcore.reminders criada com sucesso no HML
+2026-03-30 17:36:56,860 - INFO - Processando tabela 18/30: core.retail_chains -> gmcore.retail_chains
+2026-03-30 17:36:56,880 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:37:00,692 - INFO - Tabela gmcore.retail_chains criada com sucesso no HML
+2026-03-30 17:37:00,693 - INFO - Processando tabela 19/30: core.role_claims -> gmcore.role_claims
+2026-03-30 17:37:00,705 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:37:04,629 - INFO - Tabela gmcore.role_claims criada com sucesso no HML
+2026-03-30 17:37:04,630 - INFO - Processando tabela 20/30: core.roles -> gmcore.roles
+2026-03-30 17:37:04,645 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:37:08,472 - INFO - Tabela gmcore.roles criada com sucesso no HML
+2026-03-30 17:37:08,473 - INFO - Processando tabela 21/30: core.store_brands -> gmcore.store_brands
+2026-03-30 17:37:08,492 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:37:12,357 - INFO - Tabela gmcore.store_brands criada com sucesso no HML
+2026-03-30 17:37:12,359 - INFO - Processando tabela 22/30: core.store_cnpjs -> gmcore.store_cnpjs
+2026-03-30 17:37:12,374 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:37:16,254 - INFO - Tabela gmcore.store_cnpjs criada com sucesso no HML
+2026-03-30 17:37:16,256 - INFO - Processando tabela 23/30: core.store_segments -> gmcore.store_segments
+2026-03-30 17:37:16,272 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:37:25,089 - INFO - Tabela gmcore.store_segments criada com sucesso no HML
+2026-03-30 17:37:25,091 - INFO - Processando tabela 24/30: core.stores -> gmcore.stores
+2026-03-30 17:37:25,107 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:37:29,434 - INFO - Tabela gmcore.stores criada com sucesso no HML
+2026-03-30 17:37:29,436 - INFO - Processando tabela 25/30: core.token_integrations -> gmcore.token_integrations
+2026-03-30 17:37:29,454 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:37:33,342 - INFO - Tabela gmcore.token_integrations criada com sucesso no HML
+2026-03-30 17:37:33,344 - INFO - Processando tabela 26/30: core.user_claims -> gmcore.user_claims
+2026-03-30 17:37:33,358 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:37:37,162 - INFO - Tabela gmcore.user_claims criada com sucesso no HML
+2026-03-30 17:37:37,163 - INFO - Processando tabela 27/30: core.user_logins -> gmcore.user_logins
+2026-03-30 17:37:37,181 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:37:41,024 - INFO - Tabela gmcore.user_logins criada com sucesso no HML
+2026-03-30 17:37:41,024 - INFO - Processando tabela 28/30: core.user_roles -> gmcore.user_roles
+2026-03-30 17:37:41,041 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:37:44,750 - INFO - Tabela gmcore.user_roles criada com sucesso no HML
+2026-03-30 17:37:44,750 - INFO - Processando tabela 29/30: core.user_tokens -> gmcore.user_tokens
+2026-03-30 17:37:44,762 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:37:53,381 - INFO - Tabela gmcore.user_tokens criada com sucesso no HML
+2026-03-30 17:37:53,382 - INFO - Processando tabela 30/30: core.users -> gmcore.users
+2026-03-30 17:37:53,399 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:37:57,285 - INFO - Tabela gmcore.users criada com sucesso no HML
+2026-03-30 17:37:58,679 - INFO - Processando tabela 1/11: financial.bank_slip_accounts -> gmfinancial.bank_slip_accounts
+2026-03-30 17:37:58,698 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:38:02,414 - INFO - Tabela gmfinancial.bank_slip_accounts criada com sucesso no HML
+2026-03-30 17:38:02,415 - INFO - Processando tabela 2/11: financial.billings -> gmfinancial.billings
+2026-03-30 17:38:02,431 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:38:06,259 - INFO - Tabela gmfinancial.billings criada com sucesso no HML
+2026-03-30 17:38:06,260 - INFO - Processando tabela 3/11: financial.customer_fiscal_code_configs -> gmfinancial.customer_fiscal_code_configs
+2026-03-30 17:38:06,277 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:38:10,288 - INFO - Tabela gmfinancial.customer_fiscal_code_configs criada com sucesso no HML
+2026-03-30 17:38:10,290 - INFO - Processando tabela 4/11: financial.invoice_amount_adjustments -> gmfinancial.invoice_amount_adjustments
+2026-03-30 17:38:10,306 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:38:14,187 - INFO - Tabela gmfinancial.invoice_amount_adjustments criada com sucesso no HML
+2026-03-30 17:38:14,188 - INFO - Processando tabela 5/11: financial.invoice_batch_errors -> gmfinancial.invoice_batch_errors
+2026-03-30 17:38:14,204 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:38:18,156 - INFO - Tabela gmfinancial.invoice_batch_errors criada com sucesso no HML
+2026-03-30 17:38:18,156 - INFO - Processando tabela 6/11: financial.invoice_batches -> gmfinancial.invoice_batches
+2026-03-30 17:38:18,168 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:38:22,060 - INFO - Tabela gmfinancial.invoice_batches criada com sucesso no HML
+2026-03-30 17:38:22,061 - INFO - Processando tabela 7/11: financial.invoice_items -> gmfinancial.invoice_items
+2026-03-30 17:38:22,079 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:38:26,504 - INFO - Tabela gmfinancial.invoice_items criada com sucesso no HML
+2026-03-30 17:38:26,506 - INFO - Processando tabela 8/11: financial.invoices -> gmfinancial.invoices
+2026-03-30 17:38:26,522 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:38:30,768 - INFO - Tabela gmfinancial.invoices criada com sucesso no HML
+2026-03-30 17:38:30,769 - INFO - Processando tabela 9/11: financial.service_fiscal_codes -> gmfinancial.service_fiscal_codes
+2026-03-30 17:38:30,786 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:38:34,613 - INFO - Tabela gmfinancial.service_fiscal_codes criada com sucesso no HML
+2026-03-30 17:38:34,614 - INFO - Processando tabela 10/11: financial.tax_service_configs -> gmfinancial.tax_service_configs
+2026-03-30 17:38:34,628 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:38:38,677 - INFO - Tabela gmfinancial.tax_service_configs criada com sucesso no HML
+2026-03-30 17:38:38,678 - INFO - Processando tabela 11/11: financial.taxes -> gmfinancial.taxes
+2026-03-30 17:38:38,696 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:38:42,561 - INFO - Tabela gmfinancial.taxes criada com sucesso no HML
+2026-03-30 17:38:43,984 - INFO - Processando tabela 1/10: pdv.cluster_products -> gmpdv.cluster_products
+2026-03-30 17:38:43,999 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:38:48,181 - INFO - Tabela gmpdv.cluster_products criada com sucesso no HML
+2026-03-30 17:38:48,182 - INFO - Processando tabela 2/10: pdv.clusters -> gmpdv.clusters
+2026-03-30 17:38:48,196 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:38:57,118 - INFO - Tabela gmpdv.clusters criada com sucesso no HML
+2026-03-30 17:38:57,119 - INFO - Processando tabela 3/10: pdv.products -> gmpdv.products
+2026-03-30 17:38:57,135 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:39:01,272 - INFO - Tabela gmpdv.products criada com sucesso no HML
+2026-03-30 17:39:01,273 - INFO - Processando tabela 4/10: pdv.promoter_service_tags -> gmpdv.promoter_service_tags
+2026-03-30 17:39:01,286 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:39:05,460 - INFO - Tabela gmpdv.promoter_service_tags criada com sucesso no HML
+2026-03-30 17:39:05,461 - INFO - Processando tabela 5/10: pdv.promoter_services -> gmpdv.promoter_services
+2026-03-30 17:39:05,471 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:39:09,573 - INFO - Tabela gmpdv.promoter_services criada com sucesso no HML
+2026-03-30 17:39:09,574 - INFO - Processando tabela 6/10: pdv.promoter_tasks -> gmpdv.promoter_tasks
+2026-03-30 17:39:09,591 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:39:13,379 - INFO - Tabela gmpdv.promoter_tasks criada com sucesso no HML
+2026-03-30 17:39:13,380 - INFO - Processando tabela 7/10: pdv.promoters -> gmpdv.promoters
+2026-03-30 17:39:13,391 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:39:17,341 - INFO - Tabela gmpdv.promoters criada com sucesso no HML
+2026-03-30 17:39:17,342 - INFO - Processando tabela 8/10: pdv.spot_tasks -> gmpdv.spot_tasks
+2026-03-30 17:39:17,361 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:39:21,577 - INFO - Tabela gmpdv.spot_tasks criada com sucesso no HML
+2026-03-30 17:39:21,578 - INFO - Processando tabela 9/10: pdv.spots -> gmpdv.spots
+2026-03-30 17:39:21,593 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:39:25,426 - INFO - Tabela gmpdv.spots criada com sucesso no HML
+2026-03-30 17:39:25,428 - INFO - Processando tabela 10/10: pdv.task_photos -> gmpdv.task_photos
+2026-03-30 17:39:25,450 - WARNING - pg_dump não encontrado, usando método alternativo
+2026-03-30 17:39:29,512 - INFO - Tabela gmpdv.task_photos criada com sucesso no HML
+2026-03-30 17:39:33,413 - INFO - Validação OK - PRD: gmcoredb (61 tabelas) = HML: supera_dev_seed (61 tabelas)

@@ -2,6 +2,8 @@
 
 Este documento descreve a ordem correta de execução das migrações para garantir integridade referencial dos dados.
 
+**Sequência macro (inclui billings após contracts):** [docs/migracao/SEQUENCIA_EXECUCAO.md](docs/migracao/SEQUENCIA_EXECUCAO.md)
+
 ## ⚠️ IMPORTANTE: Ordem Obrigatória
 
 As migrações devem ser executadas na seguinte ordem para evitar erros de chaves estrangeiras:
@@ -11,6 +13,7 @@ As migrações devem ser executadas na seguinte ordem para evitar erros de chave
 2. Customers (steps 2, 3, 4)
 3. Stores (steps 2, 3, 4)
 4. Contracts (todas as etapas)
+5. Billings (depois de contracts — ver docs/migracao/SEQUENCIA_EXECUCAO.md)
 ```
 
 ## 📋 Dependências Detalhadas

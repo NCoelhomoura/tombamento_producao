@@ -259,6 +259,133 @@ def create_schema_in_hml(hml_schema: str, drop_existing: bool = False) -> bool:
         raise
 
 
+def rewrite_nextval_default_for_hml(column_default, hml_schema: str):
+    """
+    Reescreve DEFAULT nextval('seq'::regclass) para usar o schema HML (gm*).
+    Sem isso, nextval aponta para sequência inexistente no HML.
+    """
+    if not column_default or "nextval" not in str(column_default).lower():
+        return column_default
+    s = str(column_default)
+
+    def repl(m):
+        inner = m.group(1).replace('"', "")
+        if "." in inner:
+            sch, seq = inner.split(".", 1)
+            h_sch = get_schema_mapping(sch)
+            return f"nextval('{h_sch}.{seq}'::regclass)"
+        return f"nextval('{hml_schema}.{inner}'::regclass)"
+
+    return re.sub(
+        r"nextval\(\s*'([^']+)'\s*::\s*regclass\s*\)",
+        repl,
+        s,
+        flags=re.IGNORECASE,
+    )
+
+
+def fetch_sequence_create_sql(cursor, seq_schema: str, seq_name: str) -> str:
+    """
+    Gera CREATE SEQUENCE IF NOT EXISTS no schema HML correspondente,
+    copiando parâmetros da sequência no PRD.
+    """
+    cursor.execute(
+        """
+        SELECT s.seqincrement, s.seqmin, s.seqmax, s.seqstart, s.seqcache, s.seqcycle
+        FROM pg_sequence s
+        JOIN pg_class c ON c.oid = s.seqrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'S' AND n.nspname = %s AND c.relname = %s
+        """,
+        (seq_schema, seq_name),
+    )
+    row = cursor.fetchone()
+    if not row:
+        cursor.execute(
+            """
+            SELECT s.seqincrement, s.seqmin, s.seqmax, s.seqstart, s.seqcache, s.seqcycle
+            FROM pg_sequence s
+            JOIN pg_class c ON c.oid = s.seqrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind = 'S' AND n.nspname = 'public' AND c.relname = %s
+            """,
+            (seq_name,),
+        )
+        row = cursor.fetchone()
+    if not row:
+        return None
+
+    inc, vmin, vmax, vstart, cache, cycle = row
+    hml_sch = get_schema_mapping(seq_schema)
+    cyc = "CYCLE" if cycle else "NO CYCLE"
+    return (
+        f'CREATE SEQUENCE IF NOT EXISTS "{hml_sch}"."{seq_name}" '
+        f"INCREMENT BY {inc} MINVALUE {vmin} MAXVALUE {vmax} "
+        f"START WITH {vstart} CACHE {cache} {cyc};"
+    )
+
+
+def collect_sequence_ddls_before_table(cursor, prd_schema: str, table_name: str, columns) -> List[str]:
+    """
+    Para colunas com DEFAULT nextval(...), cria CREATE SEQUENCE no HML antes do CREATE TABLE.
+    Usa pg_get_serial_sequence quando possível; senão, extrai o nome da sequência do default.
+    """
+    seen = set()
+    out: List[str] = []
+
+    for col in columns:
+        col_name = col[0]
+        column_default = col[6]
+        if not column_default or "nextval" not in str(column_default).lower():
+            continue
+
+        seq_schema = None
+        seq_base = None
+
+        try:
+            cursor.execute(
+                "SELECT pg_get_serial_sequence(%s, %s)",
+                (f"{prd_schema}.{table_name}", col_name),
+            )
+            r = cursor.fetchone()
+            if r and r[0]:
+                fq = str(r[0]).replace('"', "")
+                if "." in fq:
+                    seq_schema, seq_base = fq.split(".", 1)
+        except Exception:
+            pass
+
+        if not seq_schema or not seq_base:
+            m = re.search(
+                r"nextval\(\s*'([^']+)'\s*::\s*regclass\s*\)",
+                str(column_default),
+                re.I,
+            )
+            if not m:
+                continue
+            inner = m.group(1).replace('"', "")
+            if "." in inner:
+                seq_schema, seq_base = inner.split(".", 1)
+            else:
+                seq_schema, seq_base = prd_schema, inner
+
+        key = f"{seq_schema}.{seq_base}"
+        if key in seen:
+            continue
+        seen.add(key)
+
+        sql_seq = fetch_sequence_create_sql(cursor, seq_schema, seq_base)
+        if sql_seq:
+            out.append(sql_seq)
+        else:
+            logger.warning(
+                f"Sequência {seq_schema}.{seq_base} não encontrada no PRD "
+                f"(tabela {prd_schema}.{table_name}.{col_name})"
+            )
+
+    return out
+
+
 def get_table_ddl_pg_dump(table_name: str, prd_schema: str) -> str:
     """Obtém o DDL usando pg_dump (método mais confiável)"""
     config = DatabaseConnection.POSTGRESQL_PRD_CONFIG
@@ -384,6 +511,11 @@ def get_table_ddl(table_name: str, prd_schema: str) -> str:
         
         indexes = cursor.fetchall()
         
+        # Sequências usadas em DEFAULT nextval(...) — criar no HML antes do CREATE TABLE
+        sequence_ddls = collect_sequence_ddls_before_table(
+            cursor, prd_schema, table_name, columns
+        )
+        
         # Construir DDL
         ddl_parts = [f"CREATE TABLE {hml_schema}.{table_name} ("]
         
@@ -457,9 +589,10 @@ def get_table_ddl(table_name: str, prd_schema: str) -> str:
             if is_nullable == 'NO':
                 col_def += " NOT NULL"
             
-            # Adicionar DEFAULT se existir
+            # Adicionar DEFAULT se existir (nextval deve apontar para schema gm* no HML)
             if column_default:
-                default_clean = str(column_default).replace("::" + udt_name, "")
+                rewritten = rewrite_nextval_default_for_hml(column_default, hml_schema)
+                default_clean = str(rewritten).replace("::" + udt_name, "")
                 col_def += f" DEFAULT {default_clean}"
             
             column_defs.append(col_def)
@@ -490,6 +623,8 @@ def get_table_ddl(table_name: str, prd_schema: str) -> str:
         ddl_parts.append("\n);")
         
         ddl = "".join(ddl_parts)
+        if sequence_ddls:
+            ddl = "\n".join(sequence_ddls) + "\n\n" + ddl
         
         # Adicionar índices (após CREATE TABLE)
         index_ddls = []
@@ -516,6 +651,19 @@ def get_table_ddl(table_name: str, prd_schema: str) -> str:
         if conn:
             conn.close()
         raise
+
+
+def execute_hml_ddl_statements(cursor, ddl: str) -> None:
+    """
+    psycopg2 executa apenas um comando por execute(). DDL com CREATE SEQUENCE +
+    CREATE TABLE + índices precisa ser dividido.
+    """
+    ddl = ddl.strip()
+    if not ddl:
+        return
+    parts = [p.strip() for p in ddl.split(";") if p.strip()]
+    for stmt in parts:
+        cursor.execute(stmt + ";")
 
 
 def drop_table_in_hml(table_name: str, hml_schema: str) -> bool:
@@ -607,8 +755,8 @@ def create_table_in_hml(table_name: str, ddl: str, hml_schema: str, drop_existin
                 conn.close()
                 return False
         
-        # Executar DDL
-        cursor.execute(ddl)
+        # Executar DDL (vários comandos: sequências, tabela, índices)
+        execute_hml_ddl_statements(cursor, ddl)
         conn.commit()
         
         # Verificar se foi criada corretamente

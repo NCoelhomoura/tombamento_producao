@@ -7,11 +7,12 @@ import sys
 import os
 import uuid
 import json
+import hashlib
 import logging
 import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
-from psycopg2.extras import execute_values
+from psycopg2.extras import execute_values, Json
 
 # Adicionar diretório utils ao path
 utils_path = os.path.join(os.path.dirname(__file__), '..', 'utils')
@@ -19,6 +20,7 @@ if utils_path not in sys.path:
     sys.path.insert(0, utils_path)
 # ⚠️ CRÍTICO: Importar usando o mesmo caminho do orchestrator para garantir mesma referência
 from utils.database_connection import DatabaseConnection
+from utils.municipio_lookup import load_municipio_lookup, municipal_code_from_origem
 
 # ============================================================================
 # CONFIGURACAO DE SCHEMAS POR AMBIENTE
@@ -193,7 +195,10 @@ class CustomersMigration:
     
     def delete_table_with_filter(self, table_name: str, legacy_ids: List[int], schema: str = None):
         """
-        Faz DELETE em uma tabela usando filtro de legacy_id.
+        Faz DELETE em uma tabela usando filtro de legacy_id/legacy_ids.
+        Para customers (core.customers.legacy_ids jsonb): deleta registros
+        onde qualquer elemento do array legacy_ids está na lista fornecida.
+        Para outras tabelas: usa legacy_id com ANY.
         Não falha se não encontrar registros - apenas loga o total deletado.
         """
         if schema is None:
@@ -208,7 +213,19 @@ class CustomersMigration:
             conn = DatabaseConnection.get_postgresql_destino_connection()
             cursor = conn.cursor()
             
-            query = f"DELETE FROM {schema}.{table_name} WHERE legacy_id = ANY(%s)"
+            # customers usa legacy_ids (jsonb array); outras tabelas usam legacy_id (INTEGER)
+            if table_name == 'customers':
+                # Deleta se algum elemento de legacy_ids (jsonb array) estiver em legacy_ids (lista de inteiros)
+                query = f"""
+                    DELETE FROM {schema}.{table_name}
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements_text(legacy_ids) AS e(elem)
+                        WHERE (e.elem)::int = ANY(%s)
+                    )
+                """
+            else:
+                query = f"DELETE FROM {schema}.{table_name} WHERE legacy_id = ANY(%s)"
             cursor.execute(query, (legacy_ids,))
             deleted_count = cursor.rowcount
             conn.commit()
@@ -885,15 +902,34 @@ class CustomersMigration:
             cursor_pg = conn_pg.cursor()
             
             if id_cliente_list:
-                # Contar apenas os customers migrados nesta execução
-                cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.customers WHERE legacy_id = ANY(%s)", (id_cliente_list,))
+                # Linhas no destino que cobrem algum IdCliente do filtro
+                cursor_pg.execute(f"""
+                    SELECT COUNT(*) FROM {schema}.customers
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements_text(legacy_ids) AS e(elem)
+                        WHERE (e.elem)::int = ANY(%s)
+                    )
+                """, (id_cliente_list,))
+                destino_count = cursor_pg.fetchone()[0]
+                # Com dedup por CNPJ: soma dos tamanhos de legacy_ids deve bater com qtd de IdCliente na origem
+                cursor_pg.execute(f"""
+                    SELECT COALESCE(SUM(jsonb_array_length(legacy_ids)), 0) FROM {schema}.customers
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements_text(legacy_ids) AS e(elem)
+                        WHERE (e.elem)::int = ANY(%s)
+                    )
+                """, (id_cliente_list,))
+                total_legacy_slots = cursor_pg.fetchone()[0]
             else:
                 # Contar todos (fallback)
                 cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.customers")
-            destino_count = cursor_pg.fetchone()[0]
+                destino_count = cursor_pg.fetchone()[0]
+                total_legacy_slots = None
             
-            # Verificar legacy_id
-            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.customers WHERE legacy_id IS NOT NULL")
+            # Verificar legacy_ids preenchido (jsonb array) usando jsonb_array_length
+            cursor_pg.execute(f"SELECT COUNT(*) FROM {schema}.customers WHERE legacy_ids IS NOT NULL AND jsonb_array_length(legacy_ids) > 0")
             com_legacy_id = cursor_pg.fetchone()[0]
             
             # Verificar cnpj preenchido
@@ -907,12 +943,29 @@ class CustomersMigration:
             print(f"  Total de registros: {origem_count}")
             
             print(f"\nDESTINO (PostgreSQL {destino_nome} - {schema}.customers):")
-            print(f"  Total de registros: {destino_count}")
-            print(f"  Com legacy_id: {com_legacy_id}")
+            print(f"  Total de linhas (customers): {destino_count}")
+            if id_cliente_list and total_legacy_slots is not None:
+                print(f"  Soma de IdCliente em legacy_ids (dedup CNPJ): {total_legacy_slots}")
+            print(f"  Com legacy_ids: {com_legacy_id}")
             print(f"  Com cnpj: {com_cnpj}")
             
+            if id_cliente_list and total_legacy_slots is not None:
+                diferenca_ids = origem_count - int(total_legacy_slots)
+                if diferenca_ids == 0:
+                    print(f"\nOK - Cobertura IdCliente: origem={origem_count} bate com soma legacy_ids={total_legacy_slots}")
+                    print(f"  (Linhas no destino podem ser menores que a origem por deduplicação por CNPJ.)")
+                    logger.info(
+                        f"VALIDACAO ETAPA 2: OK cobertura - origem_ids={origem_count}, "
+                        f"legacy_slots={total_legacy_slots}, linhas={destino_count}"
+                    )
+                    return True
+                print(f"\nAVISO - Cobertura IdCliente: origem={origem_count}, soma legacy_ids={total_legacy_slots}, diff={diferenca_ids}")
+                logger.warning(
+                    f"VALIDACAO ETAPA 2: cobertura - origem={origem_count}, legacy_slots={total_legacy_slots}"
+                )
+                return False
+
             diferenca = origem_count - destino_count
-            
             if diferenca == 0:
                 print(f"\nOK - Todos os registros foram migrados com sucesso!")
                 logger.info(f"VALIDACAO ETAPA 2: OK - Origem: {origem_count}, Destino: {destino_count}")
@@ -928,6 +981,129 @@ class CustomersMigration:
             print(f"ERRO na validacao: {e}")
             return False
     
+    def validate_legacy_ids_jsonb_not_empty_after_step2(self):
+        """
+        CUST-003: após carga, nenhum registro em customers pode ter legacy_ids NULL ou array vazio.
+        """
+        schema = get_schema_atual()
+        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+        cursor_pg = conn_pg.cursor()
+        cursor_pg.execute(
+            f"""
+            SELECT COUNT(*) FROM {schema}.customers
+            WHERE legacy_ids IS NULL OR jsonb_array_length(legacy_ids) = 0
+            """
+        )
+        bad = cursor_pg.fetchone()[0]
+        cursor_pg.close()
+        conn_pg.close()
+        if bad > 0:
+            msg = (
+                f"[CUST-003] {bad} customer(s) com legacy_ids NULL ou array vazio — "
+                "revisar deduplicação/carga."
+            )
+            logger.error(msg)
+            raise ValueError(msg)
+        print("[CUST-003] OK — todos os customers com legacy_ids não vazio.")
+        logger.info("[CUST-003] validação legacy_ids OK")
+    
+    @staticmethod
+    def _cell_nonempty(v) -> bool:
+        if v is None:
+            return False
+        if isinstance(v, float) and pd.isna(v):
+            return False
+        if isinstance(v, str) and not str(v).strip():
+            return False
+        return True
+
+    @staticmethod
+    def _synthetic_unique_cnpj_placeholder(legacy_ids) -> str:
+        """
+        Destino (PRD): unique index ix_customers_cnpj. Vários clientes sem CNPJ legítimo
+        compartilham 00000000000000 após dedup — gera 14 dígitos determinísticos por legacy_ids.
+        """
+        ids = legacy_ids if isinstance(legacy_ids, (list, tuple)) else [legacy_ids]
+        tid = tuple(sorted(int(x) for x in ids))
+        h = int(hashlib.sha256(str(tid).encode("utf-8")).hexdigest(), 16) % (10**13)
+        return f"9{h:013d}"
+
+    def _deduplicate_customers_by_cnpj(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        CUST-001 / CUST-002 (DEDUPLICACAO_CNPJ_CLIENTES.md): uma linha por CNPJ normalizado
+        (14 dígitos, não só zeros); canônico = menor IdCliente; legacy_ids = todos os Id do grupo.
+        CPF (11 dígitos), CNPJ inválido/ausente: sem merge (uma linha por Id).
+        """
+        if df.empty:
+            return df
+
+        def group_key(row) -> str:
+            cp = row["cpf_cnpj"]
+            if pd.isna(cp) or cp is None:
+                return f"__id_{int(row['Id'])}"
+            s = str(cp).strip()
+            if len(s) == 14 and s.isdigit() and s != "0" * 14:
+                return s
+            return f"__id_{int(row['Id'])}"
+
+        df = df.copy()
+        df["_cnpj_grp"] = df.apply(group_key, axis=1)
+        n_before = len(df)
+
+        def merge_one(grp: pd.DataFrame) -> pd.Series:
+            grp = grp.sort_values("Id", ascending=True)
+            c0 = grp.iloc[0]
+
+            def fill(col: str):
+                v = c0[col]
+                if self._cell_nonempty(v):
+                    return v
+                for _, r in grp.iloc[1:].iterrows():
+                    rv = r[col]
+                    if self._cell_nonempty(rv):
+                        return rv
+                return v
+
+            ids_sorted = sorted(int(x) for x in grp["Id"].tolist())
+            legacy_ids = ids_sorted
+            cpf_merged = fill("cpf_cnpj")
+            if cpf_merged is None or (isinstance(cpf_merged, float) and pd.isna(cpf_merged)):
+                cpf_merged = "00000000000000"
+            else:
+                cpf_merged = str(cpf_merged).strip()
+            cnpj_st = "valid" if cpf_merged and cpf_merged != "00000000000000" else "invalid"
+
+            return pd.Series(
+                {
+                    "Id": c0["Id"],
+                    "legacy_ids": legacy_ids,
+                    "cpf_cnpj": cpf_merged,
+                    "cnpj_status": cnpj_st,
+                    "state_registration": fill("state_registration"),
+                    "municipal_registration": fill("municipal_registration"),
+                    "legal_name": fill("legal_name"),
+                    "trade_name": fill("trade_name"),
+                    "simple_opt": fill("simple_opt") if "simple_opt" in grp.columns else False,
+                    "status": fill("status"),
+                    "data_inclusao": fill("data_inclusao"),
+                    "data_alteracao": fill("data_alteracao"),
+                    "code": int(c0["code"]),
+                }
+            )
+
+        out = df.groupby("_cnpj_grp", group_keys=False).apply(merge_one)
+        out = out.reset_index(drop=True)
+        dropped = n_before - len(out)
+        if dropped > 0:
+            print(
+                f"[ETAPA 2] Deduplicação CNPJ (CUST-001): {n_before} linhas origem -> {len(out)} "
+                f"linhas destino ({dropped} IdCliente mesclados em grupos)"
+            )
+            logger.info(
+                f"[ETAPA 2] Dedup CNPJ: {n_before} -> {len(out)} rows ({dropped} merged)"
+            )
+        return out
+
     def step2_migrate_customers(self):
         """ETAPA 2: Migrar customers"""
         destino = DatabaseConnection.get_destino()
@@ -1320,7 +1496,7 @@ class CustomersMigration:
         df = pd.DataFrame.from_records(all_rows, columns=['Id', 'Codigo', 'TipoPessoa', 'CpfCnpj', 'InscricaoEstadual', 'InscricaoMunicipal', 'RazaoSocial', 'NomeFantasia', 'Ativo', 'DataInclusao', 'DataAlteracao', 'DataAtivacao'])
         
         # Aplicar transformações vetorizadas
-        df['legacy_id'] = df['Id']
+        # legacy_ids é preenchido após deduplicação por CNPJ (CUST-001)
         # Tratar code: se NULL, converter para 0
         df['code'] = df['Codigo'].fillna(0).astype(int)
         
@@ -1340,28 +1516,44 @@ class CustomersMigration:
         # Status (vetorizado)
         df['status'] = df['Ativo'].apply(lambda x: 'active' if x is True else 'inactive')
         
+        # PRD/HML: coluna obrigatória sem origem no legado — default para migração
+        df['simple_opt'] = False
+        
         # Datas
         df['data_inclusao'] = df['DataInclusao']
         df['data_alteracao'] = df['DataAlteracao'].fillna(df['DataInclusao'])
         
         # Remover linhas com erros (legal_name None após limpeza)
         df = df[df['legal_name'].notna()]
+
+        df = self._deduplicate_customers_by_cnpj(df)
+        
+        # Índice único no destino (ix_customers_cnpj): placeholder repetido estoura o insert
+        _ph = "00000000000000"
+        _m = df["cpf_cnpj"].astype(str).str.strip() == _ph
+        if _m.any():
+            df = df.copy()
+            df.loc[_m, "cpf_cnpj"] = df.loc[_m].apply(
+                lambda r: self._synthetic_unique_cnpj_placeholder(r["legacy_ids"]),
+                axis=1,
+            )
         
         # Converter DataFrame diretamente para lista de tuplas (otimizado)
+        legacy_ids_json = [Json(v) for v in df['legacy_ids'].tolist()]
         processed_tuples = list(zip(
-            df['legacy_id'].tolist(),
+            legacy_ids_json,
             df['cpf_cnpj'].tolist(),
             df['cnpj_status'].tolist(),
             df['state_registration'].tolist(),
             df['municipal_registration'].tolist(),
             df['legal_name'].tolist(),
             df['trade_name'].tolist(),
+            df['simple_opt'].tolist(),
             df['status'].tolist(),
             df['data_inclusao'].tolist(),
             df['data_alteracao'].tolist(),
             df['code'].tolist()
         ))
-        legacy_ids_list = df['legacy_id'].tolist()
         
         print(f"[ETAPA 2] {len(processed_tuples)} registros processados. Inserindo no banco (otimizado com execute_values)...")
         
@@ -1370,14 +1562,15 @@ class CustomersMigration:
         cursor_pg = conn_pg.cursor()
         
         # Query de insert usando gen_random_uuid() - formato para execute_values
+        # legacy_ids: jsonb array de inteiros (ex: [IdCliente])
         insert_query = f"""
         INSERT INTO {schema}.customers (
-            id, legacy_id, cnpj, cnpj_status, state_registration,
-            municipal_registration, legal_name, trade_name, status,
+            id, legacy_ids, cnpj, cnpj_status, state_registration,
+            municipal_registration, legal_name, trade_name, simple_opt, status,
             created_at, updated_at, code
         ) VALUES %s
         """
-        insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
         
         chunk_num = 0
         total_processed = 0
@@ -1402,8 +1595,19 @@ class CustomersMigration:
                         )
                         
                         # Coletar legacy_ids para lookup depois
-                        chunk_legacy_ids = [row[0] for row in chunk]  # primeiro elemento é legacy_id
-                        all_legacy_ids_inserted.extend(chunk_legacy_ids)
+                        # row[0] é Json([...]) -> precisamos extrair a lista interna de inteiros
+                        for row in chunk:
+                            ids_wrapper = row[0]
+                            # Desempacotar se for Json, senão usar o valor diretamente
+                            if isinstance(ids_wrapper, Json):
+                                ids_arr = ids_wrapper.adapted
+                            else:
+                                ids_arr = ids_wrapper
+                            if ids_arr:
+                                if isinstance(ids_arr, (list, tuple)):
+                                    all_legacy_ids_inserted.extend(ids_arr)
+                                else:
+                                    all_legacy_ids_inserted.append(ids_arr)
                         
                         total_processed += len(chunk)
                         self.stats['customers'] += len(chunk)
@@ -1434,12 +1638,18 @@ class CustomersMigration:
             if all_legacy_ids_inserted:
                 print(f"[ETAPA 2] Buscando UUIDs gerados para {len(all_legacy_ids_inserted)} registros...")
                 cursor_pg.execute(f"""
-                    SELECT id, legacy_id 
+                    SELECT id, legacy_ids 
                     FROM {schema}.customers 
-                    WHERE legacy_id = ANY(%s)
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements_text(legacy_ids) AS e(elem)
+                        WHERE (e.elem)::int = ANY(%s)
+                    )
                 """, (all_legacy_ids_inserted,))
-                for uuid_row, leg_id in cursor_pg.fetchall():
-                    self.customer_id_map[leg_id] = uuid_row
+                for uuid_row, leg_ids in cursor_pg.fetchall():
+                    if leg_ids:
+                        for leg_id in leg_ids:
+                            self.customer_id_map[leg_id] = uuid_row
                 print(f"[ETAPA 2] {len(self.customer_id_map)} UUIDs mapeados")
             
             print(f"\n[ETAPA 2] CONCLUIDA! Total de customers migrados: {self.stats['customers']}")
@@ -1447,6 +1657,7 @@ class CustomersMigration:
             
             # Validação e relatório de qualidade
             self.validate_step2_customers()
+            self.validate_legacy_ids_jsonb_not_empty_after_step2()
             
             # Fechar conexões
             cursor_pg.close()
@@ -1637,6 +1848,8 @@ class CustomersMigration:
             
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
+            print("[ETAPA 3] Carregando lookup Municipio (origem SQL Server)...")
+            municipio_lookup = load_municipio_lookup(cursor_sql)
             cursor_sql.execute(sql_query)
             
             # Carregar TODOS os dados na memória de uma vez (otimizado)
@@ -1669,15 +1882,11 @@ class CustomersMigration:
                         if not cep or cep == '0' * len(cep):
                             cep = '00000000'  # Valor padrão (campo é NOT NULL)
                         
-                        # Converter CodigoMunicipio para integer se possível
-                        municipal_code = 0  # Valor padrão (campo é NOT NULL)
-                        if row[7]:
-                            try:
-                                codigo_str = re.sub(r'[^\d]', '', str(row[7]))
-                                if codigo_str:
-                                    municipal_code = int(codigo_str[:10])  # Limitar a 10 dígitos
-                            except:
-                                pass
+                        # CodigoMunicipio na origem ou lookup Municipio (UF + Cidade ~ NomeMunicipio)
+                        municipal_code = municipal_code_from_origem(
+                            row[7], row[8], row[6],
+                            municipio_lookup=municipio_lookup,
+                        )
                         
                         # Converter latitude/longitude se possível
                         lat = None
@@ -1733,8 +1942,6 @@ class CustomersMigration:
                             row[20] if row[20] else row[19]  # updated_at
                         ))
                         
-                        self.stats['addresses'] += 1
-                        
                     except Exception as e:
                         error_msg = f"Erro ao preparar endereco principal cliente Id={legado_id}: {e}"
                         logger.error(error_msg)
@@ -1750,15 +1957,10 @@ class CustomersMigration:
                         if not cep or cep == '0' * len(cep):
                             cep = '00000000'  # Valor padrão (campo é NOT NULL)
                         
-                        # Converter CodigoMunicipioCobranca para integer se possível
-                        municipal_code = 0  # Valor padrão (campo é NOT NULL)
-                        if row[15]:
-                            try:
-                                codigo_str = re.sub(r'[^\d]', '', str(row[15]))
-                                if codigo_str:
-                                    municipal_code = int(codigo_str[:10])
-                            except:
-                                pass
+                        municipal_code = municipal_code_from_origem(
+                            row[15], row[16], row[14],
+                            municipio_lookup=municipio_lookup,
+                        )
                         
                         # Zone e Region são obrigatórios - usar neighborhood como zone e string vazia como region
                         zone_value = self.clean_string(row[12], 100) or ''  # BairroCobranca como zone (garantir que nunca seja None)
@@ -1800,8 +2002,6 @@ class CustomersMigration:
                             row[20] if row[20] else row[19]  # updated_at
                         ))
                         
-                        self.stats['addresses'] += 1
-                        
                     except Exception as e:
                         error_msg = f"Erro ao preparar endereco cobranca cliente Id={legado_id}: {e}"
                         logger.error(error_msg)
@@ -1809,6 +2009,27 @@ class CustomersMigration:
                         self.stats['errors'].append(error_msg)
                         chunk_errors += 1
                         continue
+            
+            # Vários IdCliente podem mapear para o mesmo UUID em gmcore.customers (dedup por CNPJ na ETAPA 2).
+            # A tabela tem UNIQUE (addressable_id, addressable_type, type) — evitar duas linhas main/billing para o mesmo customer.
+            if batch_values:
+                seen_addr_keys = set()
+                deduped_batch = []
+                for tup in batch_values:
+                    addr_key = (tup[1], tup[2], tup[3])  # addressable_id, addressable_type, type
+                    if addr_key in seen_addr_keys:
+                        continue
+                    seen_addr_keys.add(addr_key)
+                    deduped_batch.append(tup)
+                skipped = len(batch_values) - len(deduped_batch)
+                if skipped:
+                    msg = (
+                        f"[ETAPA 3] Dedup pos-merge CNPJ: {skipped} endereco(s) omitido(s) "
+                        f"(mesmo customer_id + type; mantido 1 por IdCliente ordenado na origem)."
+                    )
+                    logger.info(msg)
+                    print(msg)
+                batch_values = deduped_batch
             
             # Executar insert em batch (otimizado com execute_values)
             if batch_values:
@@ -2477,9 +2698,12 @@ class CustomersMigration:
                 logger.info("[ETAPA 6] Carregando mapeamento de customers...")
                 conn_pg = DatabaseConnection.get_postgresql_destino_connection()
                 cursor_pg = conn_pg.cursor()
-                cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.customers")
+                cursor_pg.execute(f"SELECT id, legacy_ids FROM {schema}.customers")
                 for row in cursor_pg.fetchall():
-                    self.customer_id_map[row[1]] = row[0]
+                    uuid_row, leg_ids = row[0], row[1]
+                    if leg_ids:
+                        for leg_id in leg_ids:
+                            self.customer_id_map[leg_id] = uuid_row
                 cursor_pg.close()
                 conn_pg.close()
                 print(f"[ETAPA 6] {len(self.customer_id_map)} customers carregados")
@@ -2860,9 +3084,12 @@ if __name__ == "__main__":
             schema = get_schema_atual()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.customers")
+            cursor_pg.execute(f"SELECT id, legacy_ids FROM {schema}.customers")
             for row in cursor_pg.fetchall():
-                migration.customer_id_map[row[1]] = row[0]
+                uuid_row, leg_ids = row[0], row[1]
+                if leg_ids:
+                    for leg_id in leg_ids:
+                        migration.customer_id_map[leg_id] = uuid_row
             cursor_pg.close()
             conn_pg.close()
             print(f"[ETAPA 3] {len(migration.customer_id_map)} customers carregados")
@@ -2929,9 +3156,12 @@ if __name__ == "__main__":
             schema = get_schema_atual()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.customers")
+            cursor_pg.execute(f"SELECT id, legacy_ids FROM {schema}.customers")
             for row in cursor_pg.fetchall():
-                migration.customer_id_map[row[1]] = row[0]
+                uuid_row, leg_ids = row[0], row[1]
+                if leg_ids:
+                    for leg_id in leg_ids:
+                        migration.customer_id_map[leg_id] = uuid_row
             cursor_pg.close()
             conn_pg.close()
             print(f"[ETAPA 4] {len(migration.customer_id_map)} customers carregados")

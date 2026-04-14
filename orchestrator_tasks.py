@@ -1,5 +1,13 @@
 """
-Orchestrator para gerenciar as tasks de migracao de dados
+Orchestrator para gerenciar as tasks de migracao de dados.
+
+Escopo agregado (JSON) e alinhamento com --id-orcamento / --destino / filtros:
+  docs/migracao/FILTRO_ESCOPO_ORQUESTRACAO.md
+Arquivo central: contracts/contracts_filter_main.json (aggregated_ids).
+
+Billings: após contracts step1, ContractsMigration.ensure_billings_after_step1()
+(migração em billing/billings_to_core; fallback placeholder). Usado também nos
+steps isolados contracts 2 e 8 deste orquestrador.
 """
 
 import sys
@@ -105,28 +113,34 @@ def run_customers_task(step=None, limit_rows=0, id_orcamento_filter=None,
             conn_pg.close()
             migration.step2_migrate_customers()
         elif step == '3':
-            # Carregar customers primeiro
+            # Carregar customers primeiro (core.customers usa legacy_ids jsonb, não legacy_id)
             from utils.database_connection import DatabaseConnection
             from customers.customers_to_core import get_schema_atual
             schema = get_schema_atual()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.customers")
+            cursor_pg.execute(f"SELECT id, legacy_ids FROM {schema}.customers")
             for row in cursor_pg.fetchall():
-                migration.customer_id_map[row[1]] = row[0]
+                uuid_row, leg_ids = row[0], row[1]
+                if leg_ids:
+                    for leg_id in leg_ids:
+                        migration.customer_id_map[leg_id] = uuid_row
             cursor_pg.close()
             conn_pg.close()
             migration.step3_migrate_addresses()
         elif step == '4':
-            # Carregar customers primeiro
+            # Carregar customers primeiro (legacy_ids jsonb)
             from utils.database_connection import DatabaseConnection
             from customers.customers_to_core import get_schema_atual
             schema = get_schema_atual()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.customers")
+            cursor_pg.execute(f"SELECT id, legacy_ids FROM {schema}.customers")
             for row in cursor_pg.fetchall():
-                migration.customer_id_map[row[1]] = row[0]
+                uuid_row, leg_ids = row[0], row[1]
+                if leg_ids:
+                    for leg_id in leg_ids:
+                        migration.customer_id_map[leg_id] = uuid_row
             cursor_pg.close()
             conn_pg.close()
             migration.step4_migrate_contacts()
@@ -144,15 +158,18 @@ def run_customers_task(step=None, limit_rows=0, id_orcamento_filter=None,
             conn_pg.close()
             migration.step5_migrate_customer_brands()
         elif step == '6':
-            # Carregar customers e customer_brands primeiro
+            # Carregar customers e customer_brands primeiro (legacy_ids jsonb)
             from utils.database_connection import DatabaseConnection
             from customers.customers_to_core import get_schema_atual
             schema = get_schema_atual()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
             cursor_pg = conn_pg.cursor()
-            cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.customers")
+            cursor_pg.execute(f"SELECT id, legacy_ids FROM {schema}.customers")
             for row in cursor_pg.fetchall():
-                migration.customer_id_map[row[1]] = row[0]
+                uuid_row, leg_ids = row[0], row[1]
+                if leg_ids:
+                    for leg_id in leg_ids:
+                        migration.customer_id_map[leg_id] = uuid_row
             cursor_pg.execute(f"SELECT id, name FROM {schema}.customer_brands")
             for row in cursor_pg.fetchall():
                 migration.customer_brands_id_map[row[1]] = row[0]
@@ -299,7 +316,7 @@ def run_contracts_task(step=None, limit_rows=0, id_orcamento_filter=None,
     Executa a task de migracao de contracts
     
     Args:
-        step: None para todas as etapas, ou '1', '2', '3', etc. para etapa especifica
+        step: None para todas as etapas, ou '1'–'10' (10 = contract_scenarios_brands no destino)
         limit_rows: 0 para todos os dados, > 0 para limitar quantidade
         id_orcamento_filter: Lista de IdOrcamento para filtrar (ex: [6192, 6193])
         data_aviso_previo_min: Data mínima para DataAvisoPrevio (string 'YYYY-MM-DD')
@@ -350,17 +367,16 @@ def run_contracts_task(step=None, limit_rows=0, id_orcamento_filter=None,
         if step == '1':
             migration.step1_migrate_contracts()
         elif step == '2':
+            # Garantir step1 (contracts) antes de billings (migração real ou placeholder)
+            filter_data = migration.load_filter_json()
+            if not filter_data or 'aggregated_ids' not in filter_data:
+                print("[ETAPA 2] Step1 não executado. Executando step1 primeiro...")
+                migration.step1_migrate_contracts()
+            migration.ensure_billings_after_step1()
             # Verificar se step9 foi executado (promoter_tasks deve estar migrado)
-            # Se não, executar step9 primeiro
             if not migration.promoter_task_map:
                 print("[ETAPA 2] Step9 (promoter_tasks) não executado. Executando step9 primeiro...")
-                # Garantir que step1 foi executado antes do step9
-                filter_data = migration.load_filter_json()
-                if not filter_data or 'aggregated_ids' not in filter_data:
-                    print("[ETAPA 2] Step1 não executado. Executando step1 primeiro...")
-                    migration.step1_migrate_contracts()
                 migration.step9_migrate_promoter_tasks()
-            
             # Carregar mapeamento de contracts
             schema = get_schema_atual()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
@@ -368,8 +384,6 @@ def run_contracts_task(step=None, limit_rows=0, id_orcamento_filter=None,
             if migration.should_include_legacy_id():
                 cursor_pg.execute(f"SELECT id, legacy_id FROM {schema}.contracts WHERE legacy_id IS NOT NULL")
             else:
-                # Em PRD, não há legacy_id, então precisamos de outra estratégia
-                # Por enquanto, vamos assumir que os dados já existem e precisamos buscar de outra forma
                 cursor_pg.execute(f"SELECT id FROM {schema}.contracts LIMIT 1")
             for row in cursor_pg.fetchall():
                 if len(row) == 2 and row[1] is not None:
@@ -447,6 +461,12 @@ def run_contracts_task(step=None, limit_rows=0, id_orcamento_filter=None,
             conn_pg.close()
             migration.step7_migrate_contract_partners()
         elif step == '8':
+            # Garantir step1 (contracts) antes de billings (migração real ou placeholder)
+            filter_data = migration.load_filter_json()
+            if not filter_data or 'aggregated_ids' not in filter_data:
+                print("[ETAPA 8] Step1 não executado. Executando step1 primeiro...")
+                migration.step1_migrate_contracts()
+            migration.ensure_billings_after_step1()
             # Carregar mapeamento de contracts
             schema = get_schema_atual()
             conn_pg = DatabaseConnection.get_postgresql_destino_connection()
@@ -468,9 +488,11 @@ def run_contracts_task(step=None, limit_rows=0, id_orcamento_filter=None,
                 print("[ETAPA 9] Executando step1 primeiro...")
                 migration.step1_migrate_contracts()
             migration.step9_migrate_promoter_tasks()
+        elif step == '10':
+            migration.step10_migrate_contract_scenarios_brands()
         else:
             print(f"ERRO: Etapa '{step}' invalida para contracts")
-            print("Etapas disponiveis: 1, 2, 3, 4, 5, 6, 7, 8, 9")
+            print("Etapas disponiveis: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10")
             return
     else:
         # Executar migração completa
@@ -763,7 +785,8 @@ def main():
         print("[INFO] Executando dependências automaticamente com os mesmos filtros...")
         print("="*80)
         
-        # 1. Executar Customers steps 1, 2, 5 e 6 (se necessário)
+        # 1. Executar Customers steps 1, 2, 3, 4, 5 e 6 (se necessário)
+        #     Steps 3 (addresses) e 4 (contacts) são obrigatórios para popular gmcore/core.addresses e contacts.
         print("\n[1/2] Executando Customers (dependência de Contracts)...")
         try:
             # Step 1 de customers (customer_segments) - necessário antes do step 2
@@ -781,6 +804,24 @@ def main():
                               status_pedido_filter=status_pedido_filter,
                               clear_data=clear_data)
             print("  [OK] Customers step 2 concluído")
+            
+            # Step 3 de customers (addresses na tabela polimórfica addresses)
+            print("  → Executando Customers step 3 (addresses)...")
+            run_customers_task(step='3', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
+                              data_aviso_previo_min=data_aviso_previo_min,
+                              data_inicio_operacao_max=data_inicio_operacao_max,
+                              status_pedido_filter=status_pedido_filter,
+                              clear_data=clear_data)
+            print("  [OK] Customers step 3 concluído")
+            
+            # Step 4 de customers (contacts)
+            print("  → Executando Customers step 4 (contacts)...")
+            run_customers_task(step='4', limit_rows=limit, id_orcamento_filter=id_orcamento_filter,
+                              data_aviso_previo_min=data_aviso_previo_min,
+                              data_inicio_operacao_max=data_inicio_operacao_max,
+                              status_pedido_filter=status_pedido_filter,
+                              clear_data=clear_data)
+            print("  [OK] Customers step 4 concluído")
             
             # Step 5 de customers (customer_brands) - necessário porque step2 com CASCADE limpa essa tabela
             print("  → Executando Customers step 5 (customer_brands)...")

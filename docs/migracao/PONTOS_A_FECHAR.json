@@ -1,0 +1,255 @@
+{
+  "meta": {
+    "schema_version": "1.5",
+    "title": "Pontos a fechar — migração CORE ← ERP",
+    "updated_at": "2026-03-29",
+    "description": "Decisões de negócio/modelo pendentes. Itens 'abertos' ou 'em_analise' bloqueiam implementação do respectivo escopo até resolução. Ao fechar: preencher 'resolution' e registrar a regra no dicionário ou código.",
+    "referencia_deduplicacao_cnpj": "docs/migracao/DEDUPLICACAO_CNPJ_CLIENTES.md",
+    "referencia_contracts_legacy_title": "docs/migracao/CONTRACTS_LEGACY_TITLE.md",
+    "referencia_billing_dictionary": "billing/billing_dictionary.txt",
+    "referencia_filtro_escopo_orquestracao": "docs/migracao/FILTRO_ESCOPO_ORQUESTRACAO.md",
+    "escopo_excluido": [
+      "2026-03-30: Preencher customer_brand em contract_scenarios a partir do cliente principal deduplicado — removido da lista de tarefas; não atuar."
+    ],
+    "status_values": [
+      "aberto",
+      "em_analise",
+      "fechado"
+    ]
+  },
+  "ordem_implementacao": {
+    "descricao": "Ordem lógica de implementação (A → D). Contracts antes de Billings. Ajuste de customer_brand em contract_scenarios foi removido do escopo (ver meta.escopo_excluido).",
+    "fases": [
+      {
+        "id": "A",
+        "titulo": "Customers — deduplicação CNPJ",
+        "resumo": "Cliente canônico = menor IdCliente (int) por CNPJ; merge em conflito alinhado ao canônico; JsonB com todos os legacy_ids; validação pós-dedup em código (CUST-003).",
+        "depende_de": []
+      },
+      {
+        "id": "B",
+        "titulo": "Mapeamento canônico e legacy_ids",
+        "resumo": "IdCliente(s) → cliente canônico; consistência do JsonB com a deduplicação (A).",
+        "depende_de": ["A"]
+      },
+      {
+        "id": "C",
+        "titulo": "Contracts — ajustes",
+        "resumo": "title = ViewOrcamentosLojas.NomeCliente; legacy_customer_id = IdCliente (view), alinhado a customers.legacy_ids; legacy_id = IdOrcamento; grão único por legacy_id (ver CONTRACTS_LEGACY_TITLE.md).",
+        "depende_de": ["A", "B"]
+      },
+      {
+        "id": "D",
+        "titulo": "Billings — nova migração (Financials)",
+        "resumo": "Apenas IdOrcamento na interseção ViewOrcamentosLojas.IdOrcamento ∩ contratos_ativos.id_orcamento (XLSX); ViewFaturamentoOrcamento + XLSX + customers; ver BILL-002.",
+        "depende_de": ["A", "B", "C"]
+      }
+    ],
+    "nota": "Ordem de execução de módulos no orquestrador: customers → stores → contracts → depois billings (ver docs/migracao/SEQUENCIA_EXECUCAO.md). Fase D (billings) exige contratos já ajustados (C)."
+  },
+  "escopo_requisitos": {
+    "nova_migracao_billings": {
+      "schema_destino": "gmfinancial (HML) / financial (PRD) — tabela billings",
+      "arquivo_xlsx": "billing/dados_externos/contratos_ativos.xlsx",
+      "dicionario_mapeamento": "billing/billing_dictionary.txt",
+      "regras_origem": [
+        "Escopo obrigatório: IdOrcamento deve existir em ViewOrcamentosLojas e em contratos_ativos.xlsx (coluna id_orcamento); fora da interseção não gera billing nesta migração (BILL-002).",
+        "Acessar ViewFaturamentoOrcamento (SQL Server) apenas para IdOrcamento no conjunto acima; complementar com XLSX e lookup em gmcore.customers (legacy_ids).",
+        "TRANS-001: com essa interseção, billings referencia customer_id já migrado e contrato no escopo; sem tabela intermediária adicional além do modelo atual."
+      ],
+      "campos": {
+        "customer_id": "Conforme mapeamento: hash do IdCliente canônico deduplicado (BILL-003); resolução do IdCliente → UUID em gmcore.customers",
+        "name": "Prioridade: nome na view / XLSX / customers (ver billing_dictionary); UI pode exibir como Title",
+        "observations": "Se não existir no ERP, NULL",
+        "calculation_type": ["four_weeks_in_month", "five_weeks_in_month"],
+        "contract_parameters_billing_day": "Coluna dia faturamento (origem/XLSX)",
+        "contract_parameters_due_day": "Coluna dia vencimento (origem/XLSX)",
+        "contract_parameters_billing_type": {
+          "current": "vigente",
+          "advance": "antecipado",
+          "retroactive": "retroativo"
+        },
+        "contract_parameters_thirteenth_salary_type": {
+          "monthly": null,
+          "two_installments": null,
+          "no_charge": null,
+          "_nota": "BILL-001 fechado: valor fixo monthly (sem mapeamento ERP adicional nesta fase)"
+        }
+      },
+      "fase1_valores_fixos": {
+        "contract_parameters_billing_type": "current",
+        "contract_parameters_thirteenth_salary_type": "monthly"
+      }
+    },
+    "ajustes_customers": [
+      "Deduplicar CNPJs",
+      "Garantir o máximo de dados possíveis ao mesclar registros de CNPJs duplicados",
+      "Coluna JsonB: todos os legacy_id de todos os ids (já feito — validar após dedup)"
+    ],
+    "ajustes_contracts": [
+      "contracts.legacy_id = IdOrcamento (um contrato = uma linha; sem duplicar legacy_id)",
+      "contracts.legacy_customer_id = IdCliente da ViewOrcamentosLojas (mesmo conceito dos ids em customers.legacy_ids; não usar IdOrcamento nesta coluna)",
+      "contracts.title = ViewOrcamentosLojas.NomeCliente original (incluir na SELECT do step 1; ex. MAX(v.NomeCliente) com GROUP BY IdOrcamento)",
+      "Grão: unicidade obrigatória de legacy_id; title e legacy_customer_id podem repetir entre contratos diferentes (vários IdOrcamento para o mesmo cliente)",
+      "Implementação pendente no código: ver docs/migracao/CONTRACTS_LEGACY_TITLE.md (hoje legacy_customer_id no batch está incorreto)"
+    ]
+  },
+  "categories": [
+    {
+      "id": "billings",
+      "label": "Billings / Financials",
+      "items": [
+        {
+          "id": "BILL-001",
+          "title": "Mapeamento contract_parameters_thirteenth_salary_type",
+          "question": "Qual regra de origem (ERP/XLSX) mapeia para monthly, two_installments e no charge no CORE?",
+          "options_notes": "Fechado: fase atual só monthly; tabela ERP completa fica para fase futura.",
+          "status": "fechado",
+          "blocks_implementation": false,
+          "owner": null,
+          "due_date": null,
+          "criteria_closed": "Decisão: fase atual com valor fixo no destino.",
+          "resolution": "2026-03-29: fixar sempre monthly em contract_parameters_thirteenth_salary_type nesta migração. Mapeamento ERP completo (two_installments / no_charge) fica fora de escopo até nova fase."
+        },
+        {
+          "id": "BILL-002",
+          "title": "Escopo billings: interseção view e XLSX",
+          "question": "Quais IdOrcamento entram na migração de billings quando há view e planilha separadas?",
+          "options_notes": "Chave no XLSX: id_orcamento. Escopo fechado: interseção com ViewOrcamentosLojas.",
+          "status": "fechado",
+          "blocks_implementation": false,
+          "owner": null,
+          "due_date": null,
+          "criteria_closed": "Comportamento definido e documentado em billing spec e escopo_requisitos.",
+          "resolution": "2026-03-29: processar billings somente para IdOrcamento presentes em ambos: ViewOrcamentosLojas.IdOrcamento e contratos_ativos.xlsx (id_orcamento). Fora dessa interseção não há billing nesta carga. Ver billing_dictionary.txt (nota de escopo no topo)."
+        },
+        {
+          "id": "BILL-003",
+          "title": "customer_id e hash",
+          "question": "O hash do IdCliente deduplicado deve ser o mesmo algoritmo/namespace usado em outro sistema ou novo específico desta migração?",
+          "options_notes": "Fechado: hash do canônico + UUID via legacy_ids (ver resolution).",
+          "status": "fechado",
+          "blocks_implementation": false,
+          "owner": null,
+          "due_date": null,
+          "criteria_closed": "Algoritmo e formato do ID documentados.",
+          "resolution": "2026-03-29: customer_id no destino segue o mapeamento já definido — hash do IdCliente canônico deduplicado (CUST-001), resolvendo para o UUID em gmcore.customers (lookup por legacy_ids). Ver billing_dictionary.txt e escopo_requisitos.nova_migracao_billings.campos.customer_id."
+        },
+        {
+          "id": "BILL-004",
+          "title": "Preencher billing_dictionary (financial.billings)",
+          "question": "Documentar mapeamentos View + XLSX + destino gmfinancial/financial.",
+          "options_notes": null,
+          "status": "fechado",
+          "blocks_implementation": false,
+          "owner": null,
+          "due_date": null,
+          "criteria_closed": "Arquivo billing/billing_dictionary.txt revisado com colunas XLSX e mapeamento por campo.",
+          "resolution": "Dicionário em billing/billing_dictionary.txt; fase 1: billing_type=current, thirteenth_salary_type=monthly (BILL-001). Escopo de IdOrcamento: interseção view ∩ XLSX (BILL-002), refletido nas notas do dicionário."
+        }
+      ]
+    },
+    {
+      "id": "customers",
+      "label": "Customers (deduplicação CNPJ)",
+      "items": [
+        {
+          "id": "CUST-001",
+          "title": "Critério do cliente principal",
+          "question": "Com múltiplos IdCliente para o mesmo CNPJ, qual vira canônico (principal)?",
+          "options_notes": "Fechado: menor IdCliente (ver resolution).",
+          "status": "fechado",
+          "blocks_implementation": false,
+          "owner": null,
+          "due_date": null,
+          "criteria_closed": "Regra única aplicável a todos os casos ou regra + exceções documentadas.",
+          "resolution": "2026-03-29: cliente canônico = menor IdCliente (inteiro) entre os registros do mesmo CNPJ — o mais antigo na numeração do ERP. Documentado em docs/migracao/DEDUPLICACAO_CNPJ_CLIENTES.md (secção 2.4)."
+        },
+        {
+          "id": "CUST-002",
+          "title": "Merge de campos em duplicados",
+          "question": "Ao mesclar registros duplicados, qual prioridade para preencher cada campo quando houver conflito?",
+          "options_notes": "Alinhar com 'preencher o máximo possível de dados dos CNPJs duplicados'.",
+          "status": "fechado",
+          "blocks_implementation": false,
+          "owner": null,
+          "due_date": null,
+          "criteria_closed": "Matriz campo × prioridade ou regra geral aprovada.",
+          "resolution": "2026-03-29: mesma lógica do canônico (CUST-001) — em conflito direto entre dois valores, prevalece o registro do IdCliente canônico (menor Id); nos demais casos, preencher com o máximo de dados não nulos dos duplicados (complementar o canônico)."
+        },
+        {
+          "id": "CUST-003",
+          "title": "JsonB legacy_ids",
+          "question": "Confirmar se está completo para todos os cenários pós-deduplicação ou se falta critério de inclusão.",
+          "options_notes": "Marcado como feito no escopo; validar apenas se dedup alterar lista de IDs.",
+          "status": "fechado",
+          "blocks_implementation": false,
+          "owner": null,
+          "due_date": null,
+          "criteria_closed": "Validação em amostra ou teste automatizado acordado.",
+          "resolution": "2026-03-29: critério de negócio fechado — o JsonB deve listar todos os IdCliente do grupo deduplicado. Implementação: adicionar validação no código (pipeline customers/dedup) que falhe ou reporte se legacy_ids não refletir essa regra após deduplicação."
+        }
+      ]
+    },
+    {
+      "id": "contracts",
+      "label": "Contracts",
+      "items": [
+        {
+          "id": "CONT-001",
+          "title": "Title com nome do cliente",
+          "question": "Nome exato da fonte (customer.razao_social, fantasia, etc.) e truncamento se exceder coluna?",
+          "options_notes": "Fechado em 2026-03-30: origem é a view, não só o cadastro de customers.",
+          "status": "fechado",
+          "blocks_implementation": false,
+          "owner": null,
+          "due_date": null,
+          "criteria_closed": "Campo origem e regra de fallback definidos.",
+          "resolution": "contracts.title = ViewOrcamentosLojas.NomeCliente (string da origem no contexto do IdOrcamento). Truncamento conforme DDL se necessário. Doc: docs/migracao/CONTRACTS_LEGACY_TITLE.md"
+        },
+        {
+          "id": "CONT-002",
+          "title": "legacy_customer_id",
+          "question": "Confirmar que legacy_customer_id deve ser sempre o IdCliente 'original' do CNPJ escolhido como referência de relacionamento com legacy_ids no JSON.",
+          "options_notes": "Alinhar com IdCliente da view; após dedup CUST-001, usar IdCliente de referência presente em legacy_ids.",
+          "status": "fechado",
+          "blocks_implementation": false,
+          "owner": null,
+          "due_date": null,
+          "criteria_closed": "Definição alinhada com regra do cliente principal.",
+          "resolution": "legacy_customer_id = IdCliente (ViewOrcamentosLojas.IdCliente), consistente com customers.legacy_ids. legacy_id = IdOrcamento (coluna distinta). Código atual ainda grava IdOrcamento em legacy_customer_id — corrigir conforme CONTRACTS_LEGACY_TITLE.md"
+        },
+        {
+          "id": "CONT-003",
+          "title": "Grão e unicidade na tabela contracts",
+          "question": "Garantir uma linha por contrato sem duplicar legacy_id; title e legacy_customer_id podem repetir entre contratos?",
+          "options_notes": null,
+          "status": "fechado",
+          "blocks_implementation": false,
+          "owner": null,
+          "due_date": null,
+          "criteria_closed": "Regra de unicidade documentada.",
+          "resolution": "Obrigatório: sem duplicar contracts.legacy_id (IdOrcamento). title e legacy_customer_id podem repetir entre linhas (vários contratos mesmo cliente). Ver CONTRACTS_LEGACY_TITLE.md secção Grão."
+        }
+      ]
+    },
+    {
+      "id": "transversal",
+      "label": "Transversal",
+      "items": [
+        {
+          "id": "TRANS-001",
+          "title": "Ordem de carga Billings vs FKs no CORE",
+          "question": "Validar no modelo de dados se billings exige apenas contracts/customers já migrados ou há outra dependência (ex. tabela intermediária).",
+          "options_notes": "Macro ordem em docs/migracao/SEQUENCIA_EXECUCAO.md.",
+          "status": "fechado",
+          "blocks_implementation": false,
+          "owner": null,
+          "due_date": null,
+          "criteria_closed": "Decisão de escopo e ordem de carga documentadas; revisão formal de diagrama com DBA é opcional.",
+          "resolution": "2026-03-29: Com BILL-002, billings só para IdOrcamento já no escopo (view ∩ XLSX), portanto customers e contracts do fluxo principal já cobrem as FKs esperadas; sem tabela intermediária adicional além do modelo atual. Ordem: customers → stores → contracts → billings."
+        }
+      ]
+    }
+  ]
+}

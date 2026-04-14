@@ -23,6 +23,7 @@ from psycopg2.extras import execute_values
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 # ⚠️ CRÍTICO: Importar usando o mesmo caminho do orchestrator para garantir mesma referência
 from utils.database_connection import DatabaseConnection
+from utils.municipio_lookup import load_municipio_lookup, municipal_code_from_origem
 
 # ============================================================================
 # CONFIGURACAO DE SCHEMAS POR AMBIENTE
@@ -3025,6 +3026,15 @@ class StoresMigration:
             print("\n[ETAPA 6] Limpando addresses de stores...")
         self.delete_polymorphic_table('addresses', 'Store', 'addressable_type')
         
+        print("[ETAPA 6] Carregando lookup Municipio (origem SQL Server)...")
+        conn_mun = DatabaseConnection.get_sql_server_prd_connection()
+        cur_mun = conn_mun.cursor()
+        try:
+            municipio_lookup = load_municipio_lookup(cur_mun)
+        finally:
+            cur_mun.close()
+            conn_mun.close()
+        
         # Buscar dados do SQL Server
         # Se houver limite, filtrar apenas estabelecimentos que foram migrados
         print("[ETAPA 6] Buscando dados do SQL Server...")
@@ -3213,8 +3223,17 @@ class StoresMigration:
         # Converter store_id para string
         df['store_id'] = df['store_id'].astype(str)
         
+        municipal_code_list = []
+        if len(df) > 0:
+            df['municipal_code'] = df.apply(
+                lambda r: municipal_code_from_origem(
+                    None, r['UF'], r['Cidade'], municipio_lookup=municipio_lookup
+                ),
+                axis=1,
+            )
+            municipal_code_list = df['municipal_code'].tolist()
+        
         # Converter DataFrame diretamente para lista de tuplas (otimizado)
-        municipal_code_default = [0] * len(df)  # municipal_code padrão 0
         addressable_type_default = ['Store'] * len(df)
         type_default = ['main'] * len(df)
         
@@ -3231,7 +3250,7 @@ class StoresMigration:
                 df['neighborhood'].tolist(),
                 df['city'].tolist(),
                 df['state'].tolist(),
-                municipal_code_default,
+                municipal_code_list,
                 df['lat'].tolist(),
                 df['lon'].tolist(),
                 df['zone'].tolist(),
@@ -3251,7 +3270,7 @@ class StoresMigration:
                 df['neighborhood'].tolist(),
                 df['city'].tolist(),
                 df['state'].tolist(),
-                municipal_code_default,
+                municipal_code_list,
                 df['lat'].tolist(),
                 df['lon'].tolist(),
                 df['zone'].tolist(),

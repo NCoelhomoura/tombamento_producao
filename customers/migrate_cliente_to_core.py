@@ -14,6 +14,7 @@ import logging
 # Adicionar diretório utils ao path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 from database_connection import DatabaseConnection
+from municipio_lookup import load_municipio_lookup, city_code_legacy_str
 
 # Configurar logging
 logging.basicConfig(
@@ -335,6 +336,15 @@ class ClienteMigration:
         logger.info("ETAPA 2: Migrando endereços")
         logger.info("="*60)
         
+        print("[ETAPA 2] Carregando lookup Municipio (origem SQL Server)...")
+        conn_mun = DatabaseConnection.get_sql_server_prd_connection()
+        cur_mun = conn_mun.cursor()
+        try:
+            municipio_lookup = load_municipio_lookup(cur_mun)
+        finally:
+            cur_mun.close()
+            conn_mun.close()
+        
         # Buscar dados do SQL Server
         print("[ETAPA 2] Buscando dados de enderecos do SQL Server...")
         sql_query = """
@@ -408,7 +418,12 @@ class ClienteMigration:
                             self.clean_string(cliente.get('Bairro')),
                             cep,
                             self.clean_string(cliente.get('Cidade')),
-                            str(cliente.get('CodigoMunicipio'))[:10] if cliente.get('CodigoMunicipio') else None,
+                            city_code_legacy_str(
+                                cliente.get('CodigoMunicipio'),
+                                cliente.get('UF'),
+                                cliente.get('Cidade'),
+                                municipio_lookup=municipio_lookup,
+                            ),
                             self.clean_string(cliente.get('UF'), 2),
                             'BR',
                             'active',
@@ -462,7 +477,12 @@ class ClienteMigration:
                             self.clean_string(cliente.get('BairroCobranca')),
                             cep,
                             self.clean_string(cliente.get('CidadeCobranca')),
-                            str(cliente.get('CodigoMunicipioCobranca'))[:10] if cliente.get('CodigoMunicipioCobranca') else None,
+                            city_code_legacy_str(
+                                cliente.get('CodigoMunicipioCobranca'),
+                                cliente.get('UFCobranca'),
+                                cliente.get('CidadeCobranca'),
+                                municipio_lookup=municipio_lookup,
+                            ),
                             self.clean_string(cliente.get('UFCobranca'), 2),
                             'BR',
                             'active',
@@ -970,10 +990,19 @@ class ClienteMigration:
         logger.info("ETAPA 6: Migrando sócios")
         logger.info("="*60)
         
+        print("[ETAPA 6] Carregando lookup Municipio (origem SQL Server)...")
+        conn_mun = DatabaseConnection.get_sql_server_prd_connection()
+        cur_mun = conn_mun.cursor()
+        try:
+            municipio_lookup = load_municipio_lookup(cur_mun)
+        finally:
+            cur_mun.close()
+            conn_mun.close()
+        
         print("[ETAPA 6] Buscando dados de socios do SQL Server...")
         sql_query = """
         SELECT 
-            Id, NomeSocio, CargoSocio, DataAtivacao, DataInativacao,
+            Id, Codigo, NomeSocio, CargoSocio, DataAtivacao, DataInativacao,
             EnderecoSocio, NumeroSocio, ComplementoSocio, BairroSocio,
             CEPSocio, CidadeSocio, CodigoMunicipioSocio, UFSocio,
             TelefoneSocio, CPFSocio, RGSocio, NacionalidadeSocio,
@@ -1146,7 +1175,12 @@ class ClienteMigration:
                             self.clean_string(cliente.get('BairroSocio')),
                             cep,
                             self.clean_string(cliente.get('CidadeSocio')),
-                            str(cliente.get('CodigoMunicipioSocio'))[:10] if cliente.get('CodigoMunicipioSocio') else None,
+                            city_code_legacy_str(
+                                cliente.get('CodigoMunicipioSocio'),
+                                cliente.get('UFSocio'),
+                                cliente.get('CidadeSocio'),
+                                municipio_lookup=municipio_lookup,
+                            ),
                             self.clean_string(cliente.get('UFSocio'), 2),
                             'BR',
                             'active',

@@ -1073,6 +1073,84 @@ MIGRACAO: ORCAMENTOLOJAS (ViewOrcamentosLojas + OrcamentoLojas) : CONTRACT_SCENA
     - OrcamentoLojas.IdOrcamentoLojaOriginal
 
 
+====================================================================================================
+TABELA DESTINO: CONTRACT_SCENARIOS_BRANDS
+TABELA ORIGEM (lógica): resultado no PostgreSQL a partir de customer_customer_brand + contracts + contract_scenarios
+====================================================================================================
+
+NOTA: Não há tabela equivalente no SQL Server. A carga usa **somente IDs já existentes no destino**:
+      - core.customer_brands.id (via customer_customer_brand.customer_brand_id)
+      - commercial.contract_scenarios.id
+      Tabela de junção (N:N). PK composta: (scenario_id, customer_brand_id).
+
+RESTRIÇÕES (PRD – introspectado):
+  - PRIMARY KEY (scenario_id, customer_brand_id)
+  - FOREIGN KEY scenario_id       -> commercial.contract_scenarios(id)
+  - FOREIGN KEY customer_brand_id -> core.customer_brands(id)
+
+
+ORIGEM DA LÓGICA (HML) — mesma regra; PRD = trocar prefixo gm por schema final
+----------------------------------------------------------------------------------------------------
+  Origem conceitual:
+    - gmcore.customer_customer_brand.customer_brand_id  (= core.customer_brands.id)
+    - gmcommercial.contract_scenarios.id                  (= cenários já gravados em contract_scenarios)
+
+  Query de referência (HML):
+
+    SELECT cb.customer_brand_id,
+           cs.id
+    FROM gmcore.customer_customer_brand cb
+    INNER JOIN gmcommercial.contracts c
+            ON c.customer_id = cb.customer_id
+    INNER JOIN gmcommercial.contract_scenarios cs
+            ON cs.contract_id = c.id;
+
+  Query equivalente (PRD — prefixo sem "gm"):
+
+    SELECT cb.customer_brand_id,
+           cs.id
+    FROM core.customer_customer_brand cb
+    INNER JOIN commercial.contracts c
+            ON c.customer_id = cb.customer_id
+    INNER JOIN commercial.contract_scenarios cs
+            ON cs.contract_id = c.id;
+
+  Resultado do SELECT alimenta a tabela destino:
+    - commercial.contract_scenarios_brands.customer_brand_id <- customer_brand_id
+    - commercial.contract_scenarios_brands.scenario_id       <- cs.id
+
+
+DESTINO - PostgreSQL PRD - Tabela: commercial.contract_scenarios_brands
+DESTINO - PostgreSQL HML - Tabela: gmcommercial.contract_scenarios_brands
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK   
+----------------------------------------------------------------------------------------------------
+scenario_id                              UUID                           -               NAO        SIM (composto)
+customer_brand_id                        UUID                           -               NAO        SIM (composto)
+
+
+MIGRACAO: (DESTINO) CUSTOMER_CUSTOMER_BRAND + CONTRACTS + CONTRACT_SCENARIOS : CONTRACT_SCENARIOS_BRANDS
+----------------------------------------------------------------------------------------------------
+  PRÉ-REQUISITO: customers, customer_customer_brand, contracts e contract_scenarios já migrados para o mesmo ambiente.
+
+  core.customer_customer_brand.customer_brand_id (FK -> core.customer_brands.id)
+      : commercial.contract_scenarios_brands.customer_brand_id
+
+  commercial.contract_scenarios.id (via join cs.contract_id = c.id)
+      : commercial.contract_scenarios_brands.scenario_id
+
+  REGRAS:
+  1) Popular a partir do SELECT DISTINCT acima (se necessário) para evitar duplicatas de PK.
+  2) Em PRD: schemas core + commercial sem prefixo gm (conforme queries de referência).
+  3) Dependências: migração de contracts (customer_id) e de contract_scenarios (contract_id); vínculo cliente–marca em customer_customer_brand.
+
+  ORIGEM SQL SERVER:
+    - Não aplicável diretamente; a origem de negócio já foi materializada nas tabelas do PostgreSQL destino.
+
+  CAMPOS DESTINO NAO MAPEADOS:
+    - Nenhum (apenas scenario_id e customer_brand_id).
+
+
 MIGRACAO: ORCAMENTO + FATURAMENTOORCAMENTOCOMISSAO : CONTRACT_SELLERS
 ----------------------------------------------------------------------------------------------------
   [GERADO AUTOMATICAMENTE] : supera_dev_seed.gmcommercial.contract_sellers.id

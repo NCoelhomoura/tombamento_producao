@@ -1,0 +1,151 @@
+====================================================================================================
+DICIONARIO DE MIGRACAO DE DADOS - BILLING
+====================================================================================================
+
+ORIGEM: SQL Server PRD (Database: FINANCEIRO)
+DESTINO: PostgreSQL — HML supera_dev_seed.gmfinancial | PRD gmcoredb.financial (tabela billings identica)
+
+====================================================================================================
+
+NOTA: Escopo de billings (PONTOS BILL-002): apenas IdOrcamento presentes em ViewOrcamentosLojas
+      e em contratos_ativos.xlsx (id_orcamento) — interseção obrigatória. O conjunto de orçamentos
+      da migração deve estar alinhado a contracts/contracts_filter_main.json (aggregated_ids) e aos
+      mesmos parâmetros do orchestrator_tasks.py (--id-orcamento, --destino, etc.); ver
+      docs/migracao/FILTRO_ESCOPO_ORQUESTRACAO.md.
+
+====================================================================================================
+TABELA DESTINO: BILLINGS
+TABELA ORIGEM: ViewFaturamentoOrcamento (principal) + XLSX contratos_ativos + gmcore.customers
+====================================================================================================
+
+ORIGEM - SQL Server PRD - View: ViewFaturamentoOrcamento
+----------------------------------------------------------------------------------------------------
+Validado em 2026-03-30 (FINANCEIRO, INFORMATION_SCHEMA + script billing/validate_billing_dictionary_sources.py).
+Total: 118 colunas na view (listagem completa via script ou query acima).
+
+Campos relevantes para a logica de migracao (nomes exatos no PRD):
+Nome                                     Tipo (resumo)           Uso na migracao
+----------------------------------------------------------------------------------------------------
+IdOrcamento                              int                     Chave com contracts / filtro de escopo
+IdCliente                                int                     Cruzamento com customers.legacy_ids -> customer_id (UUID)
+NomeCliente                              nvarchar(255)           Fallback para billings.name (ver MAPEAMENTO)
+DataFaturamento                          datetime                Data de faturamento (nao e "dia" 1-31)
+DataVencimento                           datetime                Data de vencimento (nao e "dia" 1-31)
+TipoCalculoFaturamento                   int                     Codigo ERP; mapeamento opcional futuro (hoje calculation_type vem do XLSX)
+ModoFaturamento                          nvarchar(1)             Modo (ex.: vigencia) — avaliar se alinha a contract_parameters_billing_type depois da fase 1
+
+NOTA: A view NAO expoe colunas inteiras DiaFaturamento / DiaVencimento (como ViewOrcamentosLojas).
+      billings.contract_parameters_billing_day / due_day (inteiros 1-31): origem obrigatoria XLSX
+      (dia_faturamento / dia_vencimento). Celula vazia/NULL no XLSX: default conforme DDL ou regra.
+----------------------------------------------------------------------------------------------------
+
+ORIGEM - Arquivo Excel (repositorio): billing/dados_externos/contratos_ativos.xlsx
+----------------------------------------------------------------------------------------------------
+Aba: Clientes_2026_03_13 (validar nome da aba em exportacoes futuras)
+Chave: id_orcamento = IdOrcamento (SQL Server)
+
+Nome                                     Tipo (amostra)      Nullable   Uso
+----------------------------------------------------------------------------------------------------
+id_orcamento                             int                 NAO        Join com IdOrcamento
+status_orcamento                         texto               SIM
+data_inicio_operacao                     data                SIM
+qtde_lojas                               int                 SIM
+nome_cliente                             texto               SIM        Fallback para name
+orcamento_ativo                          bool                SIM        billings.is_active
+cnpj_cliente                             texto               SIM
+dia_faturamento                          int                 SIM        billings.contract_parameters_billing_day (origem principal)
+dia_vencimento                           int                 SIM        billings.contract_parameters_due_day (origem principal)
+tipo_faturamento                         num                 SIM
+tipo_faturamento_descricao               texto               SIM        calculation_type; vazio/NULL -> four_weeks_in_month
+maior_data_planejada                     data                SIM
+ultima_data_visita_executada             data                SIM
+----------------------------------------------------------------------------------------------------
+
+NOTA: Fora da interseção ViewOrcamentosLojas ∩ XLSX id_orcamento não há linha de billing nesta migração.
+
+DESTINO - PostgreSQL - Tabela: billings (gmfinancial em HML, financial em PRD — mesma estrutura)
+----------------------------------------------------------------------------------------------------
+Nome                                     Tipo                           Tamanho         Nullable   PK
+----------------------------------------------------------------------------------------------------
+id                                       UUID                           -               NAO        SIM
+customer_id                              UUID                           -               NAO        NAO
+name                                     CHARACTER VARYING              -               NAO        NAO
+observations                             TEXT                           -               SIM        NAO
+deleted_at                               TIMESTAMP WITH TIME ZONE       -               SIM        NAO
+is_active                                BOOLEAN                        -               NAO        NAO
+created_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO
+updated_at                               TIMESTAMP WITH TIME ZONE       -               NAO        NAO
+calculation_type                         TEXT                           -               NAO        NAO
+contract_parameters_billing_day          INTEGER                        32              NAO        NAO
+contract_parameters_billing_type         TEXT                           -               NAO        NAO
+contract_parameters_due_day              INTEGER                        32              NAO        NAO
+contract_parameters_thirteenth_salary_type TEXT                         -               NAO        NAO
+
+NOTA: UI pode exibir name como "Title".
+NOTA: observations — sempre NULL; nao ha campo equivalente na origem (view/XLSX) para esta migracao.
+
+CAMPOS DISPONIVEIS:
+  Origem: ViewFaturamentoOrcamento (estrutura validada no PRD) + XLSX (colunas acima) + gmcore.customers
+  Destino (billings): id, customer_id, name, observations, deleted_at, is_active, created_at,
+    updated_at, calculation_type, contract_parameters_billing_day, contract_parameters_billing_type,
+    contract_parameters_due_day, contract_parameters_thirteenth_salary_type
+
+====================================================================================================
+MAPEAMENTO DETALHADO DE CAMPOS
+====================================================================================================
+
+Formato: origem : billings.<campo>  (aplicar em gmfinancial.billings HML e financial.billings PRD)
+
+  [GERADO AUTOMATICAMENTE] : billings.id
+
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - IdCliente (view) -> hash do IdCliente canônico deduplicado (CUST-001/BILL-003) -> gmcore.customers.legacy_ids -> gmcore.customers.id] : billings.customer_id
+
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - prioridade: View (nome cliente orcamento) > XLSX.nome_cliente > gmcore.customers.legal_name/trade_name] : billings.name
+
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre NULL (informacao inexistente na origem)] : billings.observations
+
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre NULL na carga inicial] : billings.deleted_at
+
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - XLSX.orcamento_ativo (bool -> is_active); celula vazia/null: default true ou conforme regra] : billings.is_active
+
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - datetime migracao ou origem se disponivel] : billings.created_at
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - datetime migracao ou origem se disponivel] : billings.updated_at
+
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - XLSX.tipo_faturamento_descricao ("4 Week" -> four_weeks_in_month; "5 Week" -> five_weeks_in_month); vazio ou NULL na coluna: four_weeks_in_month] : billings.calculation_type
+
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - XLSX.dia_faturamento (origem obrigatoria); celula vazia/null: default conforme DDL ou regra] : billings.contract_parameters_billing_day
+
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - XLSX.dia_vencimento (origem obrigatoria); celula vazia/null: default conforme DDL ou regra] : billings.contract_parameters_due_day
+
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - FASE 1: sempre current; depois mapear vigente/antecipado/retroativo] : billings.contract_parameters_billing_type
+
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre monthly (BILL-001 fechado)] : billings.contract_parameters_thirteenth_salary_type
+
+====================================================================================================
+TABELA DESTINO: INVOICES
+TABELA ORIGEM: [A DEFINIR]
+====================================================================================================
+
+[A DEFINIR]
+
+====================================================================================================
+TABELA DESTINO: INVOICE_AMOUNT_ADJUSTMENTS
+TABELA ORIGEM: [A DEFINIR]
+====================================================================================================
+
+[A DEFINIR]
+
+====================================================================================================
+NOTAS E OBSERVACOES
+====================================================================================================
+
+- Ordem de execucao: docs/migracao/SEQUENCIA_EXECUCAO.md (billings apos contracts).
+- Dependencias: customers, contracts; escopo/filtro: docs/migracao/FILTRO_ESCOPO_ORQUESTRACAO.md (contracts_filter_main.json + orchestrator)
+- Deduplicacao CNPJ: docs/migracao/DEDUPLICACAO_CNPJ_CLIENTES.md
+- Placeholder em contracts_to_core (_ensure_billing_placeholders): remover quando migracao real de billings estiver ativa.
+- Decisoes de negocio fechadas: docs/migracao/PONTOS_A_FECHAR.json (billings/customers/transversal).
+
+TAREFA:
+[ ] Implementar migracao de billings conforme este dicionario
+
+====================================================================================================

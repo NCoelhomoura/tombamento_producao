@@ -2,7 +2,7 @@
 Script de migração de dados: SQL Server PRD -> PostgreSQL Destino
 Migra dados das tabelas: contracts, contract_scenarios, contract_scenario_stores, 
 contract_sellers, contract_team_members, contract_contacts, contract_partners, 
-contract_additional_charges
+contract_additional_charges; contract_scenarios_brands é populada no destino (etapa 10).
 """
 
 import sys
@@ -12,15 +12,20 @@ import json
 import logging
 import pandas as pd
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Set
 from psycopg2.extras import execute_values
 
+# Raiz do projeto (para import billing.billings_to_core)
+_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 # Adicionar diretório utils ao path
 utils_path = os.path.join(os.path.dirname(__file__), '..', 'utils')
 if utils_path not in sys.path:
     sys.path.insert(0, utils_path)
 # ⚠️ CRÍTICO: Importar usando o mesmo caminho do orchestrator para garantir mesma referência
 from utils.database_connection import DatabaseConnection
+from billing.billings_to_core import XLSX_DEFAULT, _load_xlsx_index
 
 # ============================================================================
 # CONFIGURACAO DE SCHEMAS POR AMBIENTE
@@ -82,6 +87,17 @@ except Exception:
 
 # Tamanho do chunk para processamento
 CHUNK_SIZE = 20000
+
+
+def _int_from_contratos_xlsx(val, default: int = 1) -> int:
+    """Converte célula numérica do XLSX (dia_faturamento / dia_vencimento) para int."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return default
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return default
+
 
 # ============================================================================
 # FUNÇÕES COMPARTILHADAS PARA PROMOTER_TASKS (UNIFICADAS)
@@ -179,15 +195,22 @@ class ContractsMigration:
             'contract_contacts': 0,
             'contract_partners': 0,
             'contract_additional_charges': 0,
+            'contract_scenarios_brands': 0,
             'promoter_tasks': 0,
+            'billings': 0,
+            'customers_total_destino': None,
+            'customers_total_legacy_ids_nos_grupos': None,
+            'customers_indicador_mesclados': None,
             'errors': []
         }
         self.contract_id_map = {}      # Map: legado_id (IdOrcamento) -> uuid
+        self.contract_billing_map = {}  # Map: contract_id (uuid) -> billing_id (uuid) - placeholder até migração de billings
         self.customer_id_map = {}      # Map: legado_id -> uuid (carregado de customers)
         self.store_id_map = {}         # Map: legado_id -> uuid (carregado de stores)
         self.scenario_id_map = {}      # Map: legado_id (IdOrcamentoLoja) -> uuid
         self.promoter_task_map = {}    # Map: (IdTarefa, NomeTarefa_normalizado) -> uuid (promoter_tasks.id)
         self.limit_rows = limit_rows   # 0 = todos, > 0 = limitar quantidade
+        self._xlsx_by_orcamento_cache = None  # lazy: contratos_ativos.xlsx (id_orcamento -> linha)
         
         # Filtros opcionais
         self.id_orcamento_filter = id_orcamento_filter if id_orcamento_filter else []
@@ -352,6 +375,119 @@ class ContractsMigration:
             logger.error(f"Erro ao salvar arquivo de filtros: {e}")
             print(f"AVISO - Erro ao salvar arquivo de filtros: {e}")
     
+    def _collect_destino_stats_snapshot(self):
+        """
+        Contagens no PostgreSQL destino: billings e customers (dedup / legacy_ids).
+        Preenche self.stats para o resumo final.
+        """
+        destino = DatabaseConnection.get_destino()
+        schema_core = "gmcore" if destino == "HML" else "core"
+        schema_fin = "gmfinancial" if destino == "HML" else "financial"
+        try:
+            conn = DatabaseConnection.get_postgresql_destino_connection()
+            cur = conn.cursor()
+            cur.execute(f"SELECT COUNT(*) FROM {schema_fin}.billings")
+            self.stats["billings"] = cur.fetchone()[0]
+            cur.execute(
+                f"""
+                SELECT
+                    COUNT(*)::bigint,
+                    COALESCE(
+                        SUM(jsonb_array_length(legacy_ids)) FILTER (
+                            WHERE legacy_ids IS NOT NULL AND jsonb_array_length(legacy_ids) > 0
+                        ),
+                        0
+                    )::bigint
+                FROM {schema_core}.customers
+                """
+            )
+            row = cur.fetchone()
+            n_dest = int(row[0] or 0)
+            n_leg = int(row[1] or 0)
+            self.stats["customers_total_destino"] = n_dest
+            self.stats["customers_total_legacy_ids_nos_grupos"] = n_leg
+            self.stats["customers_indicador_mesclados"] = max(0, n_leg - n_dest)
+            cur.close()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"[STATS] Snapshot destino (billings/customers): {e}")
+
+    def save_migration_execution_stats_json(self, duration_seconds: Optional[float] = None):
+        """
+        Grava/atualiza docs/migracao/migration_execution_stats.json com o último run e histórico.
+        """
+        path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "docs", "migracao", "migration_execution_stats.json")
+        )
+        destino = DatabaseConnection.get_destino()
+        filt = self.load_filter_json() or {}
+        agg = (filt.get("aggregated_ids") or {}) if isinstance(filt, dict) else {}
+        entry = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "destino": destino,
+            "duracao_segundos": duration_seconds,
+            "filtro_escopo": {
+                "id_orcamento_no_json": len(agg.get("IdOrcamento") or []),
+                "id_cliente_no_json": len(agg.get("IdCliente") or []),
+            },
+            "estatisticas": {
+                "contracts": self.stats["contracts"],
+                "billings_total_destino": self.stats.get("billings"),
+                "promoter_tasks": self.stats["promoter_tasks"],
+                "contract_scenarios": self.stats["contract_scenarios"],
+                "contract_scenario_stores": self.stats["contract_scenario_stores"],
+                "contract_sellers": self.stats["contract_sellers"],
+                "contract_team_members": self.stats["contract_team_members"],
+                "contract_contacts": self.stats["contract_contacts"],
+                "contract_partners": self.stats["contract_partners"],
+                "contract_additional_charges": self.stats["contract_additional_charges"],
+                "contract_scenarios_brands": self.stats["contract_scenarios_brands"],
+                "customers": {
+                    "total_customers_deduplicados": self.stats.get("customers_total_destino"),
+                    "total_customers_duplicados_legacy_extras": self.stats.get(
+                        "customers_indicador_mesclados"
+                    ),
+                    "total_legacy_ids_referenciados_nos_grupos": self.stats.get(
+                        "customers_total_legacy_ids_nos_grupos"
+                    ),
+                },
+                "contract_billing_map_entradas": len(self.contract_billing_map),
+                "erros_count": len(self.stats["errors"]),
+            },
+        }
+        historico = []
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    prev = json.load(f)
+                historico = prev.get("historico") or []
+            except Exception:
+                historico = []
+        historico.insert(0, entry)
+        historico = historico[:20]
+        out = {
+            "meta": {
+                "titulo": "Estatísticas de execução — migração contracts (e snapshot destino)",
+                "ultima_atualizacao": entry["timestamp"],
+                "arquivo": "docs/migracao/migration_execution_stats.json",
+                "notas": {
+                    "total_customers_deduplicados": "COUNT(*) em gmcore.customers (HML) ou core.customers (PRD).",
+                    "total_legacy_ids_referenciados_nos_grupos": "Soma de jsonb_array_length(legacy_ids) em todas as linhas.",
+                    "total_customers_duplicados_legacy_extras": "max(0, soma_legacy_ids - linhas): quantidade de IDs legados extras agrupados no mesmo registro (dedup por CNPJ).",
+                },
+            },
+            "ultima_execucao": entry,
+            "historico": historico,
+        }
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(out, f, indent=2, ensure_ascii=False)
+            print(f"\n[STATS] Estatísticas gravadas em: {path}")
+            logger.info(f"[STATS] migration_execution_stats.json atualizado")
+        except Exception as e:
+            logger.warning(f"[STATS] Não foi possível gravar migration_execution_stats.json: {e}")
+
     def load_filter_json(self) -> Optional[Dict]:
         """
         Carrega arquivo JSON com filtros e IDs agregados
@@ -371,6 +507,84 @@ class ContractsMigration:
         except Exception as e:
             logger.error(f"Erro ao carregar arquivo de filtros: {e}")
             return None
+
+    def _ensure_contratos_xlsx_loaded(self) -> None:
+        if self._xlsx_by_orcamento_cache is not None:
+            return
+        path = os.environ.get("BILLING_CONTRATOS_XLSX", XLSX_DEFAULT)
+        _, self._xlsx_by_orcamento_cache = _load_xlsx_index(path)
+
+    def get_xlsx_id_orcamento_set(self) -> Set[int]:
+        self._ensure_contratos_xlsx_loaded()
+        if not self._xlsx_by_orcamento_cache:
+            return set()
+        return set(self._xlsx_by_orcamento_cache.keys())
+
+    def _effective_id_orcamento_list_xlsx_intersection(self, ids: Optional[List[int]]) -> List[int]:
+        """(ids ou escopo amplo) ∩ IdOrcamento do contratos_ativos.xlsx (linhas com orcamento_ativo)."""
+        self._ensure_contratos_xlsx_loaded()
+        xlsx_ids = self.get_xlsx_id_orcamento_set()
+        if not xlsx_ids:
+            raise ValueError(
+                "contratos_ativos.xlsx sem IdOrcamento ou arquivo ausente — "
+                "verifique BILLING_CONTRATOS_XLSX e billing/dados_externos/contratos_ativos.xlsx"
+            )
+        if not ids:
+            return sorted(xlsx_ids)
+        return sorted(set(ids) & xlsx_ids)
+
+    def _load_id_orcamento_from_destino_contracts_only(self) -> List[int]:
+        schema = get_schema_atual()
+        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+        cursor_pg = conn_pg.cursor()
+        out: List[int] = []
+        try:
+            if self.should_include_legacy_id():
+                cursor_pg.execute(
+                    f"SELECT DISTINCT legacy_id FROM {schema}.contracts WHERE legacy_id IS NOT NULL"
+                )
+                out = [row[0] for row in cursor_pg.fetchall()]
+        finally:
+            cursor_pg.close()
+            conn_pg.close()
+        return out
+
+    def _resolve_id_orcamento_list_for_steps(self) -> List[int]:
+        """
+        IdOrcamento efetivos para etapas 2–9, 10 e billings: (JSON ou CLI ou destino) ∩ XLSX ativos.
+        """
+        filter_data = self.load_filter_json()
+        ids: List[int] = []
+        if filter_data and filter_data.get("aggregated_ids"):
+            ids = list(filter_data["aggregated_ids"].get("IdOrcamento") or [])
+        if ids:
+            return self._effective_id_orcamento_list_xlsx_intersection(ids)
+        if self.id_orcamento_filter:
+            return self._effective_id_orcamento_list_xlsx_intersection(list(self.id_orcamento_filter))
+        dest = self._load_id_orcamento_from_destino_contracts_only()
+        if dest:
+            return self._effective_id_orcamento_list_xlsx_intersection(dest)
+        return self._effective_id_orcamento_list_xlsx_intersection(None)
+
+    def _apply_xlsx_scope_intersection(self) -> None:
+        """Restringe self.id_orcamento_filter à interseção com contratos_ativos.xlsx (antes do preview)."""
+        if not self.get_xlsx_id_orcamento_set():
+            raise ValueError(
+                "contratos_ativos.xlsx sem IdOrcamento (orcamento_ativo) ou arquivo ausente — "
+                "verifique BILLING_CONTRATOS_XLSX."
+            )
+        before = list(self.id_orcamento_filter) if self.id_orcamento_filter else []
+        self.id_orcamento_filter = self._effective_id_orcamento_list_xlsx_intersection(
+            before if before else None
+        )
+        if not self.id_orcamento_filter:
+            raise ValueError("Interseção IdOrcamento × XLSX vazia — ajuste filtros ou planilha.")
+        nx = len(self.get_xlsx_id_orcamento_set())
+        print(
+            f"[ETAPA 1] Escopo ∩ contratos_ativos.xlsx: {len(self.id_orcamento_filter)} IdOrcamento "
+            f"(planilha: {nx}; filtro CLI antes: {len(before)})"
+        )
+        logger.info(f"[ETAPA 1] id_orcamento_filter após ∩ XLSX: {len(self.id_orcamento_filter)}")
     
     def convert_status_pedido(self, status_pedido: Optional[int]) -> str:
         """Converte StatusPedido (int) para status (string)"""
@@ -630,6 +844,8 @@ class ContractsMigration:
             except Exception as e:
                 logger.warning(f"Nao foi possivel criar/verificar coluna legacy_id: {e}")
         
+        self._apply_xlsx_scope_intersection()
+        
         # Buscar dados do SQL Server primeiro para identificar quais customers são necessários
         # ⚠️ IMPORTANTE: Usar SELECT DISTINCT para garantir que todos os IdOrcamento únicos sejam coletados
         print("[ETAPA 1] Buscando dados do SQL Server para identificar customers necessários...")
@@ -766,10 +982,12 @@ class ContractsMigration:
         else:
             conn_customers = DatabaseConnection.get_postgresql_hml_destino_connection()
         cursor_customers = conn_customers.cursor()
-        cursor_customers.execute(f"SELECT id, legacy_id FROM {schema_customers}.customers WHERE legacy_id IS NOT NULL")
+        cursor_customers.execute(f"SELECT id, legacy_ids FROM {schema_customers}.customers WHERE legacy_ids IS NOT NULL AND jsonb_array_length(legacy_ids) > 0")
         for row in cursor_customers.fetchall():
-            if row[1] is not None:
-                self.customer_id_map[row[1]] = row[0]
+            uuid_row, leg_ids = row[0], row[1]
+            if leg_ids:
+                for leg_id in leg_ids:
+                    self.customer_id_map[leg_id] = uuid_row
         cursor_customers.close()
         conn_customers.close()
         print(f"OK - {len(self.customer_id_map)} customers existentes carregados")
@@ -801,10 +1019,12 @@ class ContractsMigration:
                 else:
                     conn_customers = DatabaseConnection.get_postgresql_hml_destino_connection()
                 cursor_customers = conn_customers.cursor()
-                cursor_customers.execute(f"SELECT id, legacy_id FROM {schema_customers}.customers WHERE legacy_id IS NOT NULL")
+                cursor_customers.execute(f"SELECT id, legacy_ids FROM {schema_customers}.customers WHERE legacy_ids IS NOT NULL AND jsonb_array_length(legacy_ids) > 0")
                 for row in cursor_customers.fetchall():
-                    if row[1] is not None:
-                        self.customer_id_map[row[1]] = row[0]
+                    uuid_row, leg_ids = row[0], row[1]
+                    if leg_ids:
+                        for leg_id in leg_ids:
+                            self.customer_id_map[leg_id] = uuid_row
                 cursor_customers.close()
                 conn_customers.close()
                 print(f"OK - {len(self.customer_id_map)} customers carregados após migração")
@@ -829,7 +1049,8 @@ class ContractsMigration:
         sql_query = """
         SELECT 
             v.IdOrcamento,
-            MAX(v.IdCliente) AS IdCliente,
+            MIN(v.IdCliente) AS IdCliente,
+            MAX(v.NomeCliente) AS NomeCliente,
             MAX(v.DiaFaturamento) AS DiaFaturamento,
             MAX(v.DiaVencimento) AS DiaVencimento,
             MAX(v.StatusPedido) AS StatusPedido,
@@ -1092,7 +1313,23 @@ class ContractsMigration:
                 print("\n[ETAPA 1] Limpando registros filtrados da tabela contracts...")
                 self.delete_table_with_filter('contracts', legacy_ids_to_delete)
         
+        # contratos_ativos.xlsx (cache já carregado em _apply_xlsx_scope_intersection): dia_faturamento / dia_vencimento
+        self._ensure_contratos_xlsx_loaded()
+        xlsx_by_orcamento = self._xlsx_by_orcamento_cache or {}
+        if xlsx_by_orcamento:
+            print(
+                f"[ETAPA 1] XLSX contratos: {len(xlsx_by_orcamento)} IdOrcamento — "
+                "contract_parameters_billing_day/due_day de dia_faturamento/dia_vencimento quando houver linha."
+            )
+        else:
+            print(
+                "[ETAPA 1] AVISO: XLSX sem linhas — billing_day/due_day usam ViewOrcamentosLojas."
+            )
+            logger.warning("[ETAPA 1] XLSX vazio; billing_day/due_day da view SQL")
+        
         # Processar tudo em memória e preparar batch_values
+        # customer_id = UUID gmcore.customers.id (via customer_id_map[IdCliente])
+        # legacy_id = IdOrcamento (legado_id)
         batch_values = []
         legacy_ids_list = []
         
@@ -1100,7 +1337,9 @@ class ContractsMigration:
             try:
                 legado_id = row[0]  # IdOrcamento
                 code = row[0]  # IdOrcamento
-                customer_legacy_id = row[1]  # IdCliente
+                customer_legacy_id = row[1]  # IdCliente (MIN por grupo — alinhado CUST-001)
+                nome_cliente_view = row[2]  # NomeCliente (MAX por grupo — CONTRACTS_LEGACY_TITLE)
+                # Índices após NomeCliente: 3 DiaFaturamento, 4 DiaVencimento, 5 StatusPedido, ...
                 
                 # Mapear customer_id
                 customer_uuid = self.customer_id_map.get(customer_legacy_id)
@@ -1111,42 +1350,62 @@ class ContractsMigration:
                     continue
                 
                 # Preparar valores
-                billing_day = row[2] if row[2] is not None else 1
-                due_day = row[3] if row[3] is not None else 1
-                billing_type = self.map_billing_type(row[8])  # ModoFaturamento
-                operation_type = self.map_operation_type(row[9])  # TipoOrcamento
-                thirteenth_salary_type = self.map_thirteenth_salary_type(row[10])  # TipoCalculoDecimoTerceiro
-                trade_type = self.map_trade_type(row[11])  # TradeMarketing
-                start_date = row[5] if row[5] is not None else row[6]  # DataInicioOperacao ou DataInclusaoOrcamento como fallback
+                # contract_parameters_*: prioridade contratos_ativos.xlsx (dia_faturamento, dia_vencimento); senão VIEW
+                xlsx_row = xlsx_by_orcamento.get(legado_id) if xlsx_by_orcamento else None
+                if xlsx_row is not None:
+                    billing_day = _int_from_contratos_xlsx(xlsx_row.get("dia_faturamento"), 1)
+                    due_day = _int_from_contratos_xlsx(xlsx_row.get("dia_vencimento"), 1)
+                else:
+                    billing_day = row[3] if row[3] is not None else 1
+                    due_day = row[4] if row[4] is not None else 1
+                billing_type = self.map_billing_type(row[9])  # ModoFaturamento
+                operation_type = self.map_operation_type(row[10])  # TipoOrcamento
+                thirteenth_salary_type = self.map_thirteenth_salary_type(row[11])  # TipoCalculoDecimoTerceiro
+                trade_type = self.map_trade_type(row[12])  # TradeMarketing
+                start_date = row[6] if row[6] is not None else row[7]  # DataInicioOperacao ou DataInclusaoOrcamento como fallback
                 if start_date is None:
                     start_date = datetime.now()  # Se ainda for None, usar data atual
                 # anterior
                 # status = self.convert_status_pedido(row[4])  # StatusPedido
                 status = 'active'
-                created_at = row[6] if row[6] else datetime.now()  # DataInclusaoOrcamento
-                updated_at = row[7] if row[7] else datetime.now()  # DataAlteracaoOrcamento
+                created_at = row[7] if row[7] else datetime.now()  # DataInclusaoOrcamento
+                updated_at = row[8] if row[8] else datetime.now()  # DataAlteracaoOrcamento
+                title = self.clean_string(nome_cliente_view, max_length=255)
                 
                 if include_legacy:
+                    # contracts (PRD) estrutura atual:
+                    # id, legacy_id, code, customer_id,
+                    # contract_parameters_billing_day, contract_parameters_due_day,
+                    # contract_parameters_billing_type, operation_type,
+                    # contract_parameters_thirteenth_salary_type, trade_type,
+                    # start_date, end_date, status, deleted_at,
+                    # observations, expected_amount, created_at, updated_at,
+                    # title, legacy_customer_id
                     batch_values.append((
-                        legado_id,  # legacy_id
-                        str(customer_uuid),
-                        billing_day,
-                        due_day,
-                        billing_type,
+                        legado_id,           # legacy_id
+                        code,                # code
+                        str(customer_uuid),  # customer_id
+                        billing_day,         # contract_parameters_billing_day
+                        due_day,             # contract_parameters_due_day
+                        billing_type,        # contract_parameters_billing_type
                         operation_type,
-                        thirteenth_salary_type,
+                        thirteenth_salary_type,  # contract_parameters_thirteenth_salary_type
                         trade_type,
                         start_date,
+                        None,                # end_date
                         status,
-                        None,  # deleted_at sempre NULL
+                        None,                # deleted_at
+                        None,                # observations
+                        0,                   # expected_amount (por enquanto)
                         created_at,
                         updated_at,
-                        code,
-                        0  # expected_amount sempre 0 por enquanto
+                        title,               # title = NomeCliente (view)
+                        customer_legacy_id   # legacy_customer_id = IdCliente (não IdOrcamento)
                     ))
                     legacy_ids_list.append(legado_id)
                 else:
                     batch_values.append((
+                        code,                # code (sem legacy_id)
                         str(customer_uuid),
                         billing_day,
                         due_day,
@@ -1155,12 +1414,15 @@ class ContractsMigration:
                         thirteenth_salary_type,
                         trade_type,
                         start_date,
+                        None,                # end_date
                         status,
-                        None,  # deleted_at sempre NULL
+                        None,                # deleted_at
+                        None,                # observations
+                        0,                   # expected_amount
                         created_at,
                         updated_at,
-                        str(customer_uuid),
-                        0  # expected_amount sempre 0 por enquanto
+                        title,               # title
+                        customer_legacy_id   # legacy_customer_id = IdCliente
                     ))
                     legacy_ids_list.append(legado_id)
                 
@@ -1177,24 +1439,46 @@ class ContractsMigration:
         cursor_pg = conn_pg.cursor()
         
         # Query de insert usando gen_random_uuid() - formato para execute_values
+        # Estrutura atual da tabela commercial.contracts:
+        # id, legacy_id, code, customer_id,
+        # contract_parameters_billing_day, contract_parameters_due_day,
+        # contract_parameters_billing_type, operation_type,
+        # contract_parameters_thirteenth_salary_type, trade_type,
+        # start_date, end_date, status, deleted_at,
+        # observations, expected_amount, created_at, updated_at,
+        # title, legacy_customer_id
         if include_legacy:
             insert_query = f"""
             INSERT INTO {schema}.contracts (
-                id, legacy_id, customer_id, billing_day, due_day,
-                billing_type, operation_type, thirteenth_salary_type, trade_type,
-                start_date, status, deleted_at, created_at, updated_at, code, expected_amount
+                id, legacy_id, code, customer_id,
+                contract_parameters_billing_day, contract_parameters_due_day,
+                contract_parameters_billing_type, operation_type,
+                contract_parameters_thirteenth_salary_type, trade_type,
+                start_date, end_date, status, deleted_at,
+                observations, expected_amount, created_at, updated_at,
+                title, legacy_customer_id
             ) VALUES %s
             """
-            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            insert_template = (
+                "(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+                "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            )
         else:
             insert_query = f"""
             INSERT INTO {schema}.contracts (
-                id, customer_id, billing_day, due_day,
-                billing_type, operation_type, thirteenth_salary_type, trade_type,
-                start_date, status, deleted_at, created_at, updated_at, code, expected_amount
+                id, code, customer_id,
+                contract_parameters_billing_day, contract_parameters_due_day,
+                contract_parameters_billing_type, operation_type,
+                contract_parameters_thirteenth_salary_type, trade_type,
+                start_date, end_date, status, deleted_at,
+                observations, expected_amount, created_at, updated_at,
+                title, legacy_customer_id
             ) VALUES %s
             """
-            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            insert_template = (
+                "(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+                "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            )
         
         chunk_num = 0
         total_processed = 0
@@ -1564,10 +1848,11 @@ class ContractsMigration:
             else:
                 conn_pg = DatabaseConnection.get_postgresql_hml_destino_connection()
             cursor_pg = conn_pg.cursor()
-            
-            # Verificar se já existe no banco
-            cursor_pg.execute("""
-                SELECT id FROM pdv.promoter_tasks WHERE name = %s
+            schema_pdv = get_schema_pdv()
+
+            # Verificar se já existe no banco (PRD: pdv.*, HML: gmpdv.*)
+            cursor_pg.execute(f"""
+                SELECT id FROM {schema_pdv}.promoter_tasks WHERE name = %s
             """, (DEFAULT_TASK_NAME,))
             existing = cursor_pg.fetchone()
             
@@ -1582,8 +1867,8 @@ class ContractsMigration:
                 task_uuid = str(task_uuid_obj)
                 now = datetime.now()
                 
-                cursor_pg.execute("""
-                    INSERT INTO pdv.promoter_tasks 
+                cursor_pg.execute(f"""
+                    INSERT INTO {schema_pdv}.promoter_tasks 
                     (id, name, task_type, is_active, deleted_at, created_at, updated_at)
                     VALUES (%s::uuid, %s, %s, %s, %s, %s, %s)
                 """, (
@@ -1629,30 +1914,15 @@ class ContractsMigration:
         # Usar função compartilhada para mapeamento de task_type
         # (task_type_mapping está dentro da função get_task_type_from_nome_tarefa)
         
-        # Carregar filtros do step1 (se existir)
         filter_data = self.load_filter_json()
-        id_orcamento_filter_list = []
-        
-        if filter_data and 'aggregated_ids' in filter_data:
-            id_orcamento_filter_list = filter_data['aggregated_ids'].get('IdOrcamento', [])
-            logger.info(f"[ETAPA 9] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-            print(f"[ETAPA 9] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-        else:
-            logger.warning("[ETAPA 9] Arquivo de filtros não encontrado. Buscando todos os IdOrcamento de contracts...")
-            # Se não há JSON, buscar todos os IdOrcamento de contracts
-            try:
-                schema = get_schema_atual()
-                conn_pg = DatabaseConnection.get_postgresql_destino_connection()
-                cursor_pg = conn_pg.cursor()
-                if self.should_include_legacy_id():
-                    cursor_pg.execute(f"SELECT DISTINCT legacy_id FROM {schema}.contracts WHERE legacy_id IS NOT NULL")
-                    id_orcamento_filter_list = [row[0] for row in cursor_pg.fetchall()]
-                cursor_pg.close()
-                conn_pg.close()
-            except Exception as e:
-                logger.error(f"Erro ao buscar IdOrcamento de contracts: {e}")
-                print(f"ERRO ao buscar IdOrcamento: {e}")
-                return
+        try:
+            id_orcamento_filter_list = self._resolve_id_orcamento_list_for_steps()
+        except ValueError as e:
+            logger.error(f"[ETAPA 9] {e}")
+            print(f"ERRO - {e}")
+            return
+        logger.info(f"[ETAPA 9] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
+        print(f"[ETAPA 9] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
         
         if not id_orcamento_filter_list:
             logger.warning("[ETAPA 9] Nenhum IdOrcamento encontrado. Pulando migração de promoter_tasks.")
@@ -1727,12 +1997,6 @@ class ContractsMigration:
                     data_inicio_str = data_inicio_operacao_to_use.strftime('%Y-%m-%d')
                 where_conditions.append("CONVERT(DATE, v.DataInicioOperacao) <= ?")
                 query_params.append(data_inicio_str)
-            
-            # Filtro IdOrcamento (se passado diretamente)
-            if self.id_orcamento_filter:
-                placeholders = ','.join(['?' for _ in self.id_orcamento_filter])
-                where_conditions.append(f"v.IdOrcamento IN ({placeholders})")
-                query_params.extend(self.id_orcamento_filter)
             
             where_clause = ""
             if where_conditions:
@@ -1924,6 +2188,157 @@ class ContractsMigration:
             if conn_pg:
                 conn_pg.close()
     
+    # =========================================================================
+    # BILLINGS (financial / gmfinancial) + fallback placeholder
+    # =========================================================================
+    def _reload_customer_id_map_from_destino(self):
+        """Recarrega customer_id_map a partir de gmcore/core.customers (legacy_ids). Usado após step1 isolado."""
+        destino = DatabaseConnection.get_destino()
+        schema_customers = "gmcore" if destino == "HML" else "core"
+        if destino == "PRD":
+            conn = DatabaseConnection.get_postgresql_prd_destino_connection()
+        else:
+            conn = DatabaseConnection.get_postgresql_hml_destino_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SELECT id, legacy_ids FROM {schema_customers}.customers
+            WHERE legacy_ids IS NOT NULL AND jsonb_array_length(legacy_ids) > 0
+            """
+        )
+        self.customer_id_map.clear()
+        for uuid_row, leg_ids in cursor.fetchall():
+            if leg_ids:
+                for leg_id in leg_ids:
+                    self.customer_id_map[leg_id] = uuid_row
+        cursor.close()
+        conn.close()
+        logger.info(
+            f"[BILLINGS] customer_id_map recarregado: {len(self.customer_id_map)} chaves"
+        )
+
+    def _reload_contract_id_map_from_destino(self):
+        """Recarrega contract_id_map (legacy_id IdOrcamento -> UUID) a partir do destino."""
+        schema = get_schema_atual()
+        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+        cursor_pg = conn_pg.cursor()
+        self.contract_id_map.clear()
+        if self.should_include_legacy_id():
+            cursor_pg.execute(
+                f"SELECT id, legacy_id FROM {schema}.contracts WHERE legacy_id IS NOT NULL"
+            )
+            for row in cursor_pg.fetchall():
+                if row[1] is not None:
+                    self.contract_id_map[row[1]] = row[0]
+        cursor_pg.close()
+        conn_pg.close()
+        logger.info(
+            f"[BILLINGS] contract_id_map recarregado: {len(self.contract_id_map)} contratos"
+        )
+
+    def ensure_billings_after_step1(self):
+        """
+        Migração real em billing/billings_to_core (escopo JSON ∩ XLSX) ou placeholders
+        se mapa continuar vazio. Preenche contract_billing_map.
+        Chamado pelo run() completo e pelo orchestrator_tasks (steps 2 e 8).
+        """
+        if not self.customer_id_map:
+            self._reload_customer_id_map_from_destino()
+        if not self.contract_id_map:
+            self._reload_contract_id_map_from_destino()
+        n_bill_map = 0
+        try:
+            from billing.billings_to_core import migrate_billings_for_contracts
+
+            n_bill_map = migrate_billings_for_contracts(self)
+        except Exception as e:
+            logger.exception(f"[BILLINGS] Migração financeira falhou: {e}")
+        if n_bill_map == 0:
+            self._ensure_billing_placeholders_for_contracts()
+
+    def _ensure_billing_placeholders_for_contracts(self):
+        """Cria um billing placeholder por customer dos contracts migrados. Preenche contract_billing_map."""
+        destino = DatabaseConnection.get_destino()
+        schema = get_schema_atual()
+        schema_financial = 'gmfinancial' if destino == 'HML' else 'financial'
+        
+        print("\n[BILLING PLACEHOLDER] Garantindo billings para customers dos contracts...")
+        logger.info("[BILLING PLACEHOLDER] Iniciando criação de placeholders")
+        
+        try:
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            
+            try:
+                id_orcamento_filter_list = self._resolve_id_orcamento_list_for_steps()
+            except ValueError as e:
+                logger.error(f"[BILLING PLACEHOLDER] {e}")
+                id_orcamento_filter_list = []
+            
+            if id_orcamento_filter_list:
+                placeholders = ','.join(['%s' for _ in id_orcamento_filter_list])
+                cursor_pg.execute(f"""
+                    SELECT id, customer_id FROM {schema}.contracts
+                    WHERE legacy_id IN ({placeholders})
+                """, id_orcamento_filter_list)
+            else:
+                cursor_pg.execute(f"SELECT id, customer_id FROM {schema}.contracts")
+            
+            contract_rows = cursor_pg.fetchall()
+            if not contract_rows:
+                print("[BILLING PLACEHOLDER] AVISO: Nenhum contract encontrado (tabela vazia ou filtro sem match)")
+                logger.warning("[BILLING PLACEHOLDER] Nenhum contract encontrado")
+            customer_billing_map = {}  # customer_id -> billing_id
+            
+            for contract_uuid, customer_uuid in contract_rows:
+                if not customer_uuid:
+                    continue
+                cid = str(customer_uuid)
+                if cid in customer_billing_map:
+                    self.contract_billing_map[str(contract_uuid)] = customer_billing_map[cid]
+                    continue
+                
+                # Verificar se já existe billing para este customer
+                cursor_pg.execute(
+                    f"SELECT id FROM {schema_financial}.billings WHERE customer_id = %s LIMIT 1",
+                    (cid,)
+                )
+                row = cursor_pg.fetchone()
+                if row:
+                    billing_id = str(row[0])
+                else:
+                    # Inserir placeholder
+                    now = datetime.now()
+                    cursor_pg.execute(f"""
+                        INSERT INTO {schema_financial}.billings (
+                            id, customer_id, name, observations, deleted_at, is_active,
+                            created_at, updated_at, calculation_type,
+                            contract_parameters_billing_day, contract_parameters_billing_type,
+                            contract_parameters_due_day, contract_parameters_thirteenth_salary_type
+                        ) VALUES (
+                            gen_random_uuid(), %s, %s, NULL, NULL, true,
+                            %s, %s, '', 0, '', 0, ''
+                        )
+                        RETURNING id
+                    """, (cid, 'Placeholder - Migração', now, now))
+                    billing_id = str(cursor_pg.fetchone()[0])
+                
+                customer_billing_map[cid] = billing_id
+                self.contract_billing_map[str(contract_uuid)] = billing_id
+            
+            conn_pg.commit()
+            cursor_pg.close()
+            conn_pg.close()
+            
+            print(f"[BILLING PLACEHOLDER] OK - {len(customer_billing_map)} billings (contract_billing_map: {len(self.contract_billing_map)} contratos)")
+            logger.info(f"[BILLING PLACEHOLDER] {len(customer_billing_map)} billings criados/encontrados")
+        except Exception as e:
+            logger.error(f"[BILLING PLACEHOLDER] Erro: {e}")
+            raise
+    # =========================================================================
+    # FIM BLOCO TEMPORÁRIO - BILLING PLACEHOLDERS
+    # =========================================================================
+    
     def step2_migrate_contract_scenarios(self):
         """ETAPA 2: Migrar contract_scenarios"""
         destino = DatabaseConnection.get_destino()
@@ -1981,27 +2396,14 @@ class ContractsMigration:
         # Não precisamos mais carregar mapeamento de stores para step2
         # (será usado apenas no step3 para contract_scenario_stores)
         
-        # Carregar filtros do step1 (se existir)
-        filter_data = self.load_filter_json()
-        id_orcamento_filter_list = []
-        
-        if filter_data and 'aggregated_ids' in filter_data:
-            id_orcamento_filter_list = filter_data['aggregated_ids'].get('IdOrcamento', [])
-            logger.info(f"[ETAPA 2] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-            print(f"[ETAPA 2] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-        else:
-            logger.warning("[ETAPA 2] Arquivo de filtros não encontrado. Buscando todos os IdOrcamento de contracts...")
-            # Se não há JSON, buscar todos os IdOrcamento de contracts
-            try:
-                conn_pg = DatabaseConnection.get_postgresql_destino_connection()
-                cursor_pg = conn_pg.cursor()
-                if include_legacy:
-                    cursor_pg.execute(f"SELECT DISTINCT legacy_id FROM {schema}.contracts WHERE legacy_id IS NOT NULL")
-                    id_orcamento_filter_list = [row[0] for row in cursor_pg.fetchall()]
-                cursor_pg.close()
-                conn_pg.close()
-            except Exception as e:
-                logger.error(f"Erro ao buscar IdOrcamento de contracts: {e}")
+        try:
+            id_orcamento_filter_list = self._resolve_id_orcamento_list_for_steps()
+        except ValueError as e:
+            logger.error(f"[ETAPA 2] {e}")
+            print(f"ERRO - {e}")
+            raise
+        logger.info(f"[ETAPA 2] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
+        print(f"[ETAPA 2] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
         
         # Limpar tabela (TRUNCATE ou DELETE baseado em filtros)
         if not id_orcamento_filter_list or self.clear_data:
@@ -2479,6 +2881,14 @@ class ContractsMigration:
         df['contract_id'] = df['contract_id'].astype(str)
         df['promoter_task_id'] = df['promoter_task_id'].astype(str)
         
+        # Filtrar apenas rows com billing_id (contract_billing_map do placeholder - BLOCO TEMPORÁRIO)
+        df = df[df['contract_id'].isin(self.contract_billing_map)].copy()
+        df_original = df_original.loc[df.index].copy() if len(df) > 0 else df_original.iloc[0:0]
+        if len(df) == 0:
+            print("[ETAPA 2] AVISO: Nenhum registro com billing_id. Verifique contract_billing_map.")
+            logger.warning("[ETAPA 2] Nenhum registro com billing_id após filtro")
+            return
+        
         # Converter end_date (pode ser None) para lista tratando NaT/NaN
         def convert_nat_to_none(val):
             if val is None:
@@ -2491,21 +2901,30 @@ class ContractsMigration:
         end_date_list = [convert_nat_to_none(x) for x in df['end_date']]
         
         # Converter DataFrame diretamente para lista de tuplas (otimizado)
-        # ⚠️ IMPORTANTE: store_id foi removido da tabela, sempre inserir sem store_id
-        # ⚠️ IMPORTANTE: end_date é adicionado agora (pode ser NULL)
+        # ⚠️ IMPORTANTE: estrutura atual de commercial.contract_scenarios (PRD):
+        # id, legacy_id, contract_id, promoter_task_id, frequency, hours, hour_value,
+        # start_date, end_date, status, deleted_at, expected_amount, created_at, updated_at, billing_id
+        # billing_id do contract_billing_map (placeholder - BLOCO TEMPORÁRIO)
+        expected_amount_series = df['hours'] * df['hour_value']
+        expected_amount_series = expected_amount_series.fillna(0.0)
+        expected_amount_list = expected_amount_series.tolist()
+        billing_id_list = [self.contract_billing_map[cid] for cid in df['contract_id']]
         if include_legacy:
             processed_tuples = list(zip(
+                df['legacy_id'].tolist(),
                 df['contract_id'].tolist(),
                 df['promoter_task_id'].tolist(),
                 df['frequency'].tolist(),
                 df['hours'].tolist(),
                 df['hour_value'].tolist(),
                 df['start_date'].tolist(),
+                end_date_list,
                 df['status'].tolist(),
+                [None] * len(df),            # deleted_at
+                expected_amount_list,        # expected_amount
                 df['created_at'].tolist(),
                 df['updated_at'].tolist(),
-                end_date_list,
-                df['legacy_id'].tolist()
+                billing_id_list              # billing_id (um por customer - BLOCO TEMPORÁRIO)
             ))
         else:
             processed_tuples = list(zip(
@@ -2515,10 +2934,13 @@ class ContractsMigration:
                 df['hours'].tolist(),
                 df['hour_value'].tolist(),
                 df['start_date'].tolist(),
+                end_date_list,
                 df['status'].tolist(),
+                [None] * len(df),            # deleted_at
+                expected_amount_list,        # expected_amount
                 df['created_at'].tolist(),
                 df['updated_at'].tolist(),
-                end_date_list
+                billing_id_list              # billing_id (um por customer - BLOCO TEMPORÁRIO)
             ))
         legacy_ids_list = df['legacy_id'].tolist()
         
@@ -2529,23 +2951,31 @@ class ContractsMigration:
         cursor_pg = conn_pg.cursor()
         
         # Query de insert usando gen_random_uuid() - formato para execute_values
-        # ⚠️ IMPORTANTE: store_id foi removido da tabela, end_date foi adicionado
+        # ⚠️ IMPORTANTE: estrutura atual de commercial.contract_scenarios (PRD):
+        # id, legacy_id, contract_id, promoter_task_id, frequency, hours, hour_value,
+        # start_date, end_date, status, deleted_at, expected_amount, created_at, updated_at, billing_id
         if include_legacy:
             insert_query = f"""
             INSERT INTO {schema}.contract_scenarios (
-                id, contract_id, promoter_task_id, frequency, hours, hour_value,
-                start_date, status, created_at, updated_at, end_date, legacy_id
+                id, legacy_id, contract_id, promoter_task_id, frequency, hours, hour_value,
+                start_date, end_date, status, deleted_at, expected_amount, created_at, updated_at, billing_id
             ) VALUES %s
             """
-            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            insert_template = (
+                "(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+                "%s, %s, %s, %s, %s)"
+            )
         else:
             insert_query = f"""
             INSERT INTO {schema}.contract_scenarios (
                 id, contract_id, promoter_task_id, frequency, hours, hour_value,
-                start_date, status, created_at, updated_at, end_date
+                start_date, end_date, status, deleted_at, expected_amount, created_at, updated_at, billing_id
             ) VALUES %s
             """
-            insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            insert_template = (
+                "(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+                "%s, %s, %s, %s)"
+            )
         
         chunk_num = 0
         total_processed = 0
@@ -3068,14 +3498,14 @@ class ContractsMigration:
                 logger.warning(f"Nao foi possivel criar/verificar coluna legacy_id: {e}")
                 include_legacy = False
         
-        # Carregar filtros do step1 (se existir)
-        filter_data = self.load_filter_json()
-        id_orcamento_filter_list = []
-        
-        if filter_data and 'aggregated_ids' in filter_data:
-            id_orcamento_filter_list = filter_data['aggregated_ids'].get('IdOrcamento', [])
-            logger.info(f"[ETAPA 3] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-            print(f"[ETAPA 3] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
+        try:
+            id_orcamento_filter_list = self._resolve_id_orcamento_list_for_steps()
+        except ValueError as e:
+            logger.error(f"[ETAPA 3] {e}")
+            print(f"ERRO - {e}")
+            raise
+        logger.info(f"[ETAPA 3] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
+        print(f"[ETAPA 3] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
         
         # Limpar tabela (TRUNCATE ou DELETE baseado em filtros)
         if not id_orcamento_filter_list or self.clear_data:
@@ -3737,18 +4167,14 @@ class ContractsMigration:
         print("\n[ETAPA 4] Limpando tabela contract_sellers...")
         self.truncate_table('contract_sellers')
         
-        # Carregar filtros do step1 (se existir)
-        filter_data = self.load_filter_json()
-        id_orcamento_filter_list = []
-        
-        if filter_data and 'aggregated_ids' in filter_data:
-            id_orcamento_filter_list = filter_data['aggregated_ids'].get('IdOrcamento', [])
-            logger.info(f"[ETAPA 4] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-            print(f"[ETAPA 4] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-        elif len(self.id_orcamento_filter) > 0:
-            id_orcamento_filter_list = self.id_orcamento_filter
-            logger.info(f"[ETAPA 4] Usando {len(id_orcamento_filter_list)} IdOrcamento dos filtros aplicados")
-            print(f"[ETAPA 4] Usando {len(id_orcamento_filter_list)} IdOrcamento dos filtros aplicados")
+        try:
+            id_orcamento_filter_list = self._resolve_id_orcamento_list_for_steps()
+        except ValueError as e:
+            logger.error(f"[ETAPA 4] {e}")
+            print(f"ERRO - {e}")
+            raise
+        logger.info(f"[ETAPA 4] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
+        print(f"[ETAPA 4] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
         
         # PARTE 1: Migrar sellers de Orcamento (IdUsuarioVendedor)
         print("[ETAPA 4] Migrando sellers de Orcamento...")
@@ -4115,18 +4541,14 @@ class ContractsMigration:
             logger.warning(f"Erro ao carregar users: {e}")
             print(f"AVISO - Nao foi possivel carregar users: {e}")
         
-        # Carregar filtros do contracts (se existir)
-        filter_data = self.load_filter_json()
-        id_orcamento_filter_list = []
-        
-        if filter_data and 'aggregated_ids' in filter_data:
-            id_orcamento_filter_list = filter_data['aggregated_ids'].get('IdOrcamento', [])
-            logger.info(f"[ETAPA 5] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-            print(f"[ETAPA 5] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-        elif self.id_orcamento_filter:
-            id_orcamento_filter_list = self.id_orcamento_filter
-            logger.info(f"[ETAPA 5] Usando {len(id_orcamento_filter_list)} IdOrcamento dos filtros aplicados")
-            print(f"[ETAPA 5] Usando {len(id_orcamento_filter_list)} IdOrcamento dos filtros aplicados")
+        try:
+            id_orcamento_filter_list = self._resolve_id_orcamento_list_for_steps()
+        except ValueError as e:
+            logger.error(f"[ETAPA 5] {e}")
+            print(f"ERRO - {e}")
+            raise
+        logger.info(f"[ETAPA 5] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
+        print(f"[ETAPA 5] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
         
         # Limpar tabela (TRUNCATE ou DELETE baseado em filtros)
         if not id_orcamento_filter_list:
@@ -4454,18 +4876,14 @@ class ContractsMigration:
         logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
-        # Carregar filtros do contracts (se existir)
-        filter_data = self.load_filter_json()
-        id_orcamento_filter_list = []
-        
-        if filter_data and 'aggregated_ids' in filter_data:
-            id_orcamento_filter_list = filter_data['aggregated_ids'].get('IdOrcamento', [])
-            logger.info(f"[ETAPA 6] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-            print(f"[ETAPA 6] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-        elif self.id_orcamento_filter:
-            id_orcamento_filter_list = self.id_orcamento_filter
-            logger.info(f"[ETAPA 6] Usando {len(id_orcamento_filter_list)} IdOrcamento dos filtros aplicados")
-            print(f"[ETAPA 6] Usando {len(id_orcamento_filter_list)} IdOrcamento dos filtros aplicados")
+        try:
+            id_orcamento_filter_list = self._resolve_id_orcamento_list_for_steps()
+        except ValueError as e:
+            logger.error(f"[ETAPA 6] {e}")
+            print(f"ERRO - {e}")
+            raise
+        logger.info(f"[ETAPA 6] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
+        print(f"[ETAPA 6] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
         
         # Limpar tabela (TRUNCATE ou DELETE baseado em filtros)
         if not id_orcamento_filter_list:
@@ -4771,18 +5189,14 @@ class ContractsMigration:
         
         # NOTA: Tabela persons não existe em PRD. Campo person_id será sempre preenchido com UUID do Sys Admin.
         
-        # Carregar filtros do contracts (se existir)
-        filter_data = self.load_filter_json()
-        id_orcamento_filter_list = []
-        
-        if filter_data and 'aggregated_ids' in filter_data:
-            id_orcamento_filter_list = filter_data['aggregated_ids'].get('IdOrcamento', [])
-            logger.info(f"[ETAPA 7] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-            print(f"[ETAPA 7] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-        elif self.id_orcamento_filter:
-            id_orcamento_filter_list = self.id_orcamento_filter
-            logger.info(f"[ETAPA 7] Usando {len(id_orcamento_filter_list)} IdOrcamento dos filtros aplicados")
-            print(f"[ETAPA 7] Usando {len(id_orcamento_filter_list)} IdOrcamento dos filtros aplicados")
+        try:
+            id_orcamento_filter_list = self._resolve_id_orcamento_list_for_steps()
+        except ValueError as e:
+            logger.error(f"[ETAPA 7] {e}")
+            print(f"ERRO - {e}")
+            raise
+        logger.info(f"[ETAPA 7] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
+        print(f"[ETAPA 7] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
         
         # Limpar tabela (TRUNCATE ou DELETE baseado em filtros)
         if not id_orcamento_filter_list:
@@ -4861,6 +5275,26 @@ class ContractsMigration:
         
         print(f"[ETAPA 7] {len(all_rows)} registros carregados. Processando conversões...")
         
+        # Obter person_id válido da tabela people (FK obrigatória)
+        schema_core = 'gmcore' if destino == 'HML' else 'core'
+        person_uuid = None
+        try:
+            conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+            cursor_pg = conn_pg.cursor()
+            cursor_pg.execute(f"SELECT id FROM {schema_core}.people LIMIT 1")
+            row_person = cursor_pg.fetchone()
+            cursor_pg.close()
+            conn_pg.close()
+            if row_person:
+                person_uuid = str(row_person[0])
+                logger.info(f"[ETAPA 7] person_id obtido de people: {person_uuid}")
+            else:
+                logger.warning("[ETAPA 7] Tabela people vazia - contract_partners nao sera migrado (FK person_id)")
+                print("[ETAPA 7] AVISO: Tabela people vazia. Nenhum contract_partner sera inserido.")
+        except Exception as e:
+            logger.warning(f"[ETAPA 7] Erro ao obter person_id de people: {e} - contract_partners nao sera migrado")
+            print(f"[ETAPA 7] AVISO: Erro ao obter person_id: {e}. Nenhum contract_partner sera inserido.")
+        
         # Processar tudo em memória e preparar batch_values
         batch_values = []
         missing_contracts = []  # Coletar IdOrcamento não encontrados
@@ -4875,9 +5309,8 @@ class ContractsMigration:
                     missing_contracts.append(legado_id_orcamento)
                     continue
                 
-                # person_id sempre usa UUID do Sys Admin (tabela persons não existe em PRD)
-                SYS_ADMIN_USER_UUID = 'b1d3a1a3-580b-4db4-92e1-0b7cb66ffe9f'
-                person_uuid = SYS_ADMIN_USER_UUID
+                if not person_uuid:
+                    continue
                 
                 batch_values.append((
                     str(contract_uuid),
@@ -5073,7 +5506,7 @@ class ContractsMigration:
             return False
     
     def step8_migrate_contract_additional_charges(self):
-        """ETAPA 8: Migrar contract_additional_charges"""
+        """ETAPA 8: Migrar contract_additional_charges (depende de billings - migração de billing ainda não implementada)"""
         destino = DatabaseConnection.get_destino()
         schema = get_schema_atual()
         print("\n" + "="*80)
@@ -5084,18 +5517,18 @@ class ContractsMigration:
         logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
         
-        # Carregar filtros do contracts (se existir)
-        filter_data = self.load_filter_json()
-        id_orcamento_filter_list = []
+        # Carregar billing placeholders se não estiver populado (ex: step 8 executado isolado)
+        if not self.contract_billing_map:
+            self._ensure_billing_placeholders_for_contracts()
         
-        if filter_data and 'aggregated_ids' in filter_data:
-            id_orcamento_filter_list = filter_data['aggregated_ids'].get('IdOrcamento', [])
-            logger.info(f"[ETAPA 8] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-            print(f"[ETAPA 8] Carregados {len(id_orcamento_filter_list)} IdOrcamento do arquivo de filtros")
-        elif self.id_orcamento_filter:
-            id_orcamento_filter_list = self.id_orcamento_filter
-            logger.info(f"[ETAPA 8] Usando {len(id_orcamento_filter_list)} IdOrcamento dos filtros aplicados")
-            print(f"[ETAPA 8] Usando {len(id_orcamento_filter_list)} IdOrcamento dos filtros aplicados")
+        try:
+            id_orcamento_filter_list = self._resolve_id_orcamento_list_for_steps()
+        except ValueError as e:
+            logger.error(f"[ETAPA 8] {e}")
+            print(f"ERRO - {e}")
+            raise
+        logger.info(f"[ETAPA 8] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
+        print(f"[ETAPA 8] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
         
         # Limpar tabela (TRUNCATE ou DELETE baseado em filtros)
         if not id_orcamento_filter_list:
@@ -5197,6 +5630,7 @@ class ContractsMigration:
         print(f"[ETAPA 8] {len(all_rows)} registros carregados. Processando conversões...")
         
         # Processar tudo em memória e preparar batch_values (pode gerar múltiplos charges por linha)
+        # billing_id do contract_billing_map (placeholder - BLOCO TEMPORÁRIO)
         batch_values = []
         missing_contracts = []  # Coletar IdOrcamento não encontrados
         
@@ -5207,6 +5641,10 @@ class ContractsMigration:
                 contract_uuid = self.contract_id_map.get(legado_id_orcamento)
                 if not contract_uuid:
                     missing_contracts.append(legado_id_orcamento)
+                    continue
+                
+                billing_id_valid = self.contract_billing_map.get(str(contract_uuid))
+                if not billing_id_valid:
                     continue
                 
                 created_at_base = row[9] if row[9] else datetime.now()
@@ -5223,9 +5661,8 @@ class ContractsMigration:
 
                     batch_values.append((
                         str(contract_uuid),
+                        billing_id_valid,
                         row[1] if row[1] else 0.0,
-                        # anterior
-                        # 'epi',
                         'other',
                         billing_model_epi,
                         row[5] if row[5] else created_at_base,  # InicioCobrancaEPI ou DataInclusao
@@ -5236,6 +5673,7 @@ class ContractsMigration:
                 if row[2] and row[2] > 0:
                     batch_values.append((
                         str(contract_uuid),
+                        billing_id_valid,
                         row[2],
                         # anterior
                         # 'trade_marketing',
@@ -5251,6 +5689,7 @@ class ContractsMigration:
                 if row[3] and row[3] > 0:
                     batch_values.append((
                         str(contract_uuid),
+                        billing_id_valid,
                         row[3],
                         # anterior
                         # 'others',
@@ -5266,6 +5705,7 @@ class ContractsMigration:
                 if row[6] and row[6] > 0:
                     batch_values.append((
                         str(contract_uuid),
+                        billing_id_valid,
                         row[6],
                         # anterior
                         # 'interest',
@@ -5281,6 +5721,7 @@ class ContractsMigration:
                 if row[7] and row[7] > 0:
                     batch_values.append((
                         str(contract_uuid),
+                        billing_id_valid,
                         row[7],
                         # anterior
                         # 'discount',
@@ -5296,6 +5737,7 @@ class ContractsMigration:
                 if row[8] and row[8] > 0:
                     batch_values.append((
                         str(contract_uuid),
+                        billing_id_valid,
                         row[8],
                         # anterior
                         # 'fine',
@@ -5326,12 +5768,13 @@ class ContractsMigration:
         cursor_pg = conn_pg.cursor()
         
         # Query de insert usando gen_random_uuid() - formato para execute_values
+        # billing_id obrigatório em PRD (FK para financial.billings)
         insert_query = f"""
         INSERT INTO {schema}.contract_additional_charges (
-            id, contract_id, amount, charge_type, billing_model, created_at, updated_at
+            id, contract_id, billing_id, amount, charge_type, billing_model, created_at, updated_at
         ) VALUES %s
         """
-        insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s)"
+        insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s)"
         
         chunk_num = 0
         total_processed = 0
@@ -5392,6 +5835,62 @@ class ContractsMigration:
                     pass
             raise
     
+    def step10_migrate_contract_scenarios_brands(self):
+        """
+        ETAPA 10: Popular contract_scenarios_brands no destino (sem SQL Server).
+        TRUNCATE + INSERT DISTINCT (junção não polimórfica).
+        scenario_id = contract_scenarios.id; customer_brand_id = customer_customer_brand.customer_brand_id.
+        """
+        destino = DatabaseConnection.get_destino()
+        schema = get_schema_atual()
+        schema_core = "gmcore" if destino == "HML" else "core"
+        print("\n" + "=" * 80)
+        print("ETAPA 10: POPULANDO CONTRACT_SCENARIOS_BRANDS (DESTINO)")
+        print("=" * 80)
+        logger.info("=" * 80)
+        logger.info("ETAPA 10: Populando contract_scenarios_brands")
+        logger.info(f"Ambiente: {destino} | Schema commercial: {schema} | Schema core: {schema_core}")
+        logger.info("=" * 80)
+        
+        try:
+            id_orcamento_filter_list = self._resolve_id_orcamento_list_for_steps()
+        except ValueError as e:
+            logger.error(f"[ETAPA 10] {e}")
+            print(f"ERRO - {e}")
+            raise
+        logger.info(f"[ETAPA 10] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
+        print(f"[ETAPA 10] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
+        
+        # Tabela de junção (não polimórfica): TRUNCATE + INSERT DISTINCT a partir do estado atual no destino.
+        print("\n[ETAPA 10] TRUNCATE contract_scenarios_brands...")
+        self.truncate_table("contract_scenarios_brands")
+        
+        insert_sql = f"""
+        INSERT INTO {schema}.contract_scenarios_brands (scenario_id, customer_brand_id)
+        SELECT DISTINCT cs.id, cb.customer_brand_id
+        FROM {schema_core}.customer_customer_brand cb
+        INNER JOIN {schema}.contracts c ON c.customer_id = cb.customer_id
+        INNER JOIN {schema}.contract_scenarios cs ON cs.contract_id = c.id
+        """
+        
+        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+        cursor_pg = conn_pg.cursor()
+        try:
+            cursor_pg.execute(insert_sql)
+            inserted = cursor_pg.rowcount if cursor_pg.rowcount is not None else 0
+            conn_pg.commit()
+            self.stats["contract_scenarios_brands"] = inserted
+            print(f"\n[ETAPA 10] CONCLUIDA! contract_scenarios_brands inseridos: {inserted}")
+            logger.info(f"[ETAPA 10] CONCLUIDA! contract_scenarios_brands inseridos: {inserted}")
+        except Exception as e:
+            conn_pg.rollback()
+            logger.error(f"[ETAPA 10] Erro ao inserir contract_scenarios_brands: {e}")
+            print(f"ERRO - [ETAPA 10] {e}")
+            raise
+        finally:
+            cursor_pg.close()
+            conn_pg.close()
+    
     def run(self):
         """Executa a migração completa"""
         destino = DatabaseConnection.get_destino()
@@ -5419,6 +5918,7 @@ class ContractsMigration:
         
         try:
             self.step1_migrate_contracts()
+            self.ensure_billings_after_step1()
             self.step9_migrate_promoter_tasks()  # Executar antes do step2
             self.step2_migrate_contract_scenarios()
             self.step3_migrate_contract_scenario_stores()
@@ -5427,9 +5927,13 @@ class ContractsMigration:
             self.step6_migrate_contract_contacts()
             self.step7_migrate_contract_partners()
             self.step8_migrate_contract_additional_charges()
+            self.step10_migrate_contract_scenarios_brands()
             
             end_time = datetime.now()
             duration = end_time - start_time
+            
+            self._collect_destino_stats_snapshot()
+            self.save_migration_execution_stats_json(duration_seconds=duration.total_seconds())
             
             print("\n" + "="*80)
             print("MIGRACAO CONCLUIDA COM SUCESSO!")
@@ -5438,9 +5942,15 @@ class ContractsMigration:
             logger.info("MIGRACAO CONCLUIDA COM SUCESSO!")
             logger.info("="*80)
             
+            cd = self.stats.get("customers_total_destino")
+            cl = self.stats.get("customers_total_legacy_ids_nos_grupos")
+            cm = self.stats.get("customers_indicador_mesclados")
+            bl = self.stats.get("billings")
+            
             print(f"\nDuracao total: {duration}")
             print(f"\nESTATISTICAS FINAIS:")
             print(f"  Contracts: {self.stats['contracts']}")
+            print(f"  Billings (total destino {destino}): {bl}")
             print(f"  Promoter Tasks: {self.stats['promoter_tasks']}")
             print(f"  Contract Scenarios: {self.stats['contract_scenarios']}")
             print(f"  Contract Scenario Stores: {self.stats['contract_scenario_stores']}")
@@ -5449,11 +5959,15 @@ class ContractsMigration:
             print(f"  Contract Contacts: {self.stats['contract_contacts']}")
             print(f"  Contract Partners: {self.stats['contract_partners']}")
             print(f"  Contract Additional Charges: {self.stats['contract_additional_charges']}")
-            print(f"  Promoter Tasks: {self.stats['promoter_tasks']}")
+            print(f"  Contract Scenarios Brands: {self.stats['contract_scenarios_brands']}")
+            print(f"  Total Customers Deduplicados (registros em {destino}): {cd}")
+            print(f"  Total Customers Duplicados (legacy_ids extras agregados por CNPJ): {cm}")
+            print(f"  Total legacy_ids referenciados (soma nos grupos): {cl}")
             print(f"  Erros: {len(self.stats['errors'])}")
             
             logger.info(f"Duracao: {duration}")
             logger.info(f"Contracts: {self.stats['contracts']}")
+            logger.info(f"Billings (destino): {bl}")
             logger.info(f"Contract Scenarios: {self.stats['contract_scenarios']}")
             logger.info(f"Contract Scenario Stores: {self.stats['contract_scenario_stores']}")
             logger.info(f"Contract Sellers: {self.stats['contract_sellers']}")
@@ -5461,7 +5975,11 @@ class ContractsMigration:
             logger.info(f"Contract Contacts: {self.stats['contract_contacts']}")
             logger.info(f"Contract Partners: {self.stats['contract_partners']}")
             logger.info(f"Contract Additional Charges: {self.stats['contract_additional_charges']}")
+            logger.info(f"Contract Scenarios Brands: {self.stats['contract_scenarios_brands']}")
             logger.info(f"Promoter Tasks: {self.stats['promoter_tasks']}")
+            logger.info(
+                f"Customers dedup/legacy: destino={cd}, legacy_ids_soma={cl}, extras_mesclados={cm}"
+            )
             logger.info(f"Erros: {len(self.stats['errors'])}")
             
             if self.stats['errors']:
