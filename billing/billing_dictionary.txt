@@ -39,7 +39,7 @@ NOTA: A view NAO expoe colunas inteiras DiaFaturamento / DiaVencimento (como Vie
       (dia_faturamento / dia_vencimento). Celula vazia/NULL no XLSX: default conforme DDL ou regra.
 ----------------------------------------------------------------------------------------------------
 
-ORIGEM - Arquivo Excel (repositorio): billing/dados_externos/contratos_ativos.xlsx
+ORIGEM - Arquivo Excel (repositorio): contratos_ativos.xlsx (raiz do repositório app_migracao_core)
 ----------------------------------------------------------------------------------------------------
 Aba: Clientes_2026_03_13 (validar nome da aba em exportacoes futuras)
 Chave: id_orcamento = IdOrcamento (SQL Server)

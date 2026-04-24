@@ -7,12 +7,13 @@ contract_additional_charges; contract_scenarios_brands é populada no destino (e
 
 import sys
 import os
+import re
 import uuid
 import json
 import logging
 import pandas as pd
-from datetime import datetime
-from typing import List, Dict, Optional, Tuple, Set
+from datetime import date, datetime
+from typing import Any, List, Dict, Optional, Tuple, Set
 from psycopg2.extras import execute_values
 
 # Raiz do projeto (para import billing.billings_to_core)
@@ -25,7 +26,13 @@ if utils_path not in sys.path:
     sys.path.insert(0, utils_path)
 # ⚠️ CRÍTICO: Importar usando o mesmo caminho do orchestrator para garantir mesma referência
 from utils.database_connection import DatabaseConnection
-from billing.billings_to_core import XLSX_DEFAULT, _load_xlsx_index
+from billing.billings_to_core import (
+    XLSX_DEFAULT,
+    _load_xlsx_index,
+    contract_parameters_billing_type_from_xlsx_row,
+    contract_parameters_thirteenth_salary_type_from_xlsx_row,
+    farmer_hunter_logins_from_xlsx_row,
+)
 
 # ============================================================================
 # CONFIGURACAO DE SCHEMAS POR AMBIENTE
@@ -54,6 +61,89 @@ def get_schema_pdv():
         return 'pdv'
     else:
         return 'gmpdv'  # HML: prefixo "gm" + schema
+
+
+def _sql_server_to_charge_start_date(*candidates) -> date:
+    """Primeiro datetime/date não nulo (Orcamento); senão hoje (coluna start_date NOT NULL)."""
+    for val in candidates:
+        if val is None:
+            continue
+        if isinstance(val, datetime):
+            return val.date()
+        if isinstance(val, date):
+            return val
+    return date.today()
+
+
+def _scalar_to_float_for_hour_value(val, default: float = 0.0) -> float:
+    if val is None:
+        return default
+    try:
+        if pd.isna(val):
+            return default
+    except TypeError:
+        pass
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
+def compute_scenario_hour_value(valor_negociado, frequencia, horas) -> float:
+    """
+    contract_dictionary: Round(ValorNegociado / (Frequencia * Horas * 4), 2).
+    """
+    vn = _scalar_to_float_for_hour_value(valor_negociado, 0.0)
+    fq = _scalar_to_float_for_hour_value(frequencia, 0.0)
+    h = _scalar_to_float_for_hour_value(horas, 0.0)
+    denom = fq * h * 4.0
+    if denom == 0.0:
+        return 0.0
+    return round(vn / denom, 2)
+
+
+def format_hour_value_key(hour_value) -> str:
+    """String estável para chave de cenário (2 decimais), alinhada ao hour_value gravado."""
+    try:
+        if hour_value is None:
+            return "0.00"
+        if pd.isna(hour_value):
+            return "0.00"
+        return f"{float(hour_value):.2f}"
+    except (TypeError, ValueError):
+        return "0.00"
+
+
+def _normalize_br_cpf_cnpj_digits(digits: str) -> Optional[str]:
+    """Chave estável para CPF/CNPJ (só dígitos). Origem usa zeros à esquerda (ex.: 07599886842) → zfill(11); CNPJ zfill(14)."""
+    if not digits:
+        return None
+    L = len(digits)
+    if L <= 11:
+        return digits.zfill(11)
+    if L <= 14:
+        return digits.zfill(14)
+    return digits
+
+
+# Expressão T-SQL: mesmo resultado que compute_scenario_hour_value (ViewOrcamentosLojas v)
+SQL_VIEW_HOUR_VALUE_CALC = """
+CASE
+    WHEN ISNULL(CAST(v.Frequencia AS FLOAT), 0) * ISNULL(TRY_CAST(v.Horas AS FLOAT), 0) * 4.0 = 0
+        OR (ISNULL(CAST(v.Frequencia AS FLOAT), 0) * ISNULL(TRY_CAST(v.Horas AS FLOAT), 0) * 4.0) IS NULL
+        THEN CAST(0 AS DECIMAL(18, 2))
+    ELSE CAST(
+        ROUND(
+            ISNULL(v.ValorNegociado, 0) / NULLIF(
+                CAST(v.Frequencia AS FLOAT) * ISNULL(TRY_CAST(v.Horas AS FLOAT), 0) * 4.0, 0
+            ),
+            2
+        ) AS DECIMAL(18, 2))
+END
+""".replace("\n", " ").strip()
+
+SQL_LIMITED_HOUR_VALUE_CALC = SQL_VIEW_HOUR_VALUE_CALC.replace("v.", "limited.")
+
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -511,7 +601,7 @@ class ContractsMigration:
     def _ensure_contratos_xlsx_loaded(self) -> None:
         if self._xlsx_by_orcamento_cache is not None:
             return
-        path = os.environ.get("BILLING_CONTRATOS_XLSX", XLSX_DEFAULT)
+        path = os.environ.get("CONTRATOS_ATIVOS_FILE", XLSX_DEFAULT)
         _, self._xlsx_by_orcamento_cache = _load_xlsx_index(path)
 
     def get_xlsx_id_orcamento_set(self) -> Set[int]:
@@ -527,7 +617,7 @@ class ContractsMigration:
         if not xlsx_ids:
             raise ValueError(
                 "contratos_ativos.xlsx sem IdOrcamento ou arquivo ausente — "
-                "verifique BILLING_CONTRATOS_XLSX e billing/dados_externos/contratos_ativos.xlsx"
+                "verifique CONTRATOS_ATIVOS_FILE e contratos_ativos.xlsx na raiz do projeto"
             )
         if not ids:
             return sorted(xlsx_ids)
@@ -571,7 +661,7 @@ class ContractsMigration:
         if not self.get_xlsx_id_orcamento_set():
             raise ValueError(
                 "contratos_ativos.xlsx sem IdOrcamento (orcamento_ativo) ou arquivo ausente — "
-                "verifique BILLING_CONTRATOS_XLSX."
+                "verifique CONTRATOS_ATIVOS_FILE."
             )
         before = list(self.id_orcamento_filter) if self.id_orcamento_filter else []
         self.id_orcamento_filter = self._effective_id_orcamento_list_xlsx_intersection(
@@ -1352,15 +1442,23 @@ class ContractsMigration:
                 # Preparar valores
                 # contract_parameters_*: prioridade contratos_ativos.xlsx (dia_faturamento, dia_vencimento); senão VIEW
                 xlsx_row = xlsx_by_orcamento.get(legado_id) if xlsx_by_orcamento else None
+                fallback_billing_type = self.map_billing_type(row[9])  # ModoFaturamento (fallback)
+                fallback_thirteenth = self.map_thirteenth_salary_type(row[11])  # TipoCalculoDecimoTerceiro (fallback)
                 if xlsx_row is not None:
                     billing_day = _int_from_contratos_xlsx(xlsx_row.get("dia_faturamento"), 1)
                     due_day = _int_from_contratos_xlsx(xlsx_row.get("dia_vencimento"), 1)
+                    billing_type = contract_parameters_billing_type_from_xlsx_row(
+                        xlsx_row, fallback_billing_type
+                    )
+                    thirteenth_salary_type = contract_parameters_thirteenth_salary_type_from_xlsx_row(
+                        xlsx_row, fallback_thirteenth
+                    )
                 else:
                     billing_day = row[3] if row[3] is not None else 1
                     due_day = row[4] if row[4] is not None else 1
-                billing_type = self.map_billing_type(row[9])  # ModoFaturamento
+                    billing_type = fallback_billing_type
+                    thirteenth_salary_type = fallback_thirteenth
                 operation_type = self.map_operation_type(row[10])  # TipoOrcamento
-                thirteenth_salary_type = self.map_thirteenth_salary_type(row[11])  # TipoCalculoDecimoTerceiro
                 trade_type = self.map_trade_type(row[12])  # TradeMarketing
                 start_date = row[6] if row[6] is not None else row[7]  # DataInicioOperacao ou DataInclusaoOrcamento como fallback
                 if start_date is None:
@@ -1684,14 +1782,17 @@ class ContractsMigration:
             # Filtro IdCliente (obrigatório conforme query base)
             where_conditions.append("v.IdCliente IS NOT NULL")
             
-            # Construir query de contagem com DISTINCT
+            # Construir query de contagem com DISTINCT (hour_value = fórmula contract_dictionary)
+            hour_key_sql = (
+                "ISNULL(CAST((" + SQL_VIEW_HOUR_VALUE_CALC + ") AS VARCHAR(50)), '0.00')"
+            )
             if where_conditions:
                 count_query = f"""
                 SELECT COUNT(DISTINCT 
                     CAST(v.IdOrcamento AS VARCHAR) + '|' + 
                     ISNULL(CAST(v.Frequencia AS VARCHAR), '') + '|' + 
                     ISNULL(CAST(v.Horas AS VARCHAR), '') + '|' + 
-                    ISNULL(CAST(v.ValorHora AS VARCHAR), '0.0') + '|' + 
+                    {hour_key_sql} + '|' + 
                     ISNULL(CONVERT(VARCHAR, v.DataInicioOperacao, 120), '') + '|' + 
                     ISNULL(CONVERT(VARCHAR, v.DataAvisoPrevio, 120), '')
                 )
@@ -1701,35 +1802,38 @@ class ContractsMigration:
                 """
                 cursor_sql.execute(count_query, query_params)
             elif self.limit_rows > 0:
-                # Contar cenários únicos com LIMIT
+                # Contar cenários únicos com LIMIT (hour_key com alias limited)
+                hour_key_limited = (
+                    "ISNULL(CAST((" + SQL_LIMITED_HOUR_VALUE_CALC + ") AS VARCHAR(50)), '0.00')"
+                )
                 count_query = f"""
                 SELECT COUNT(DISTINCT 
-                    CAST(v.IdOrcamento AS VARCHAR) + '|' + 
-                    ISNULL(CAST(v.Frequencia AS VARCHAR), '') + '|' + 
-                    ISNULL(CAST(v.Horas AS VARCHAR), '') + '|' + 
-                    ISNULL(CAST(v.ValorHora AS VARCHAR), '0.0') + '|' + 
-                    ISNULL(CONVERT(VARCHAR, v.DataInicioOperacao, 120), '') + '|' + 
-                    ISNULL(CONVERT(VARCHAR, v.DataAvisoPrevio, 120), '')
+                    CAST(limited.IdOrcamento AS VARCHAR) + '|' + 
+                    ISNULL(CAST(limited.Frequencia AS VARCHAR), '') + '|' + 
+                    ISNULL(CAST(limited.Horas AS VARCHAR), '') + '|' + 
+                    {hour_key_limited} + '|' + 
+                    ISNULL(CONVERT(VARCHAR, limited.DataInicioOperacao, 120), '') + '|' + 
+                    ISNULL(CONVERT(VARCHAR, limited.DataAvisoPrevio, 120), '')
                 )
                 FROM (
                     SELECT DISTINCT TOP {self.limit_rows}
-                        v.IdOrcamento, v.Frequencia, v.Horas, v.ValorHora, 
+                        v.IdOrcamento, v.Frequencia, v.Horas, v.ValorNegociado,
                         v.DataInicioOperacao, v.DataAvisoPrevio
                     FROM ViewOrcamentosLojas v
                     INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
                     WHERE v.IdCliente IS NOT NULL
-                    ORDER BY v.IdOrcamento, v.Frequencia, v.Horas, v.ValorHora, v.DataInicioOperacao, v.DataAvisoPrevio
+                    ORDER BY v.IdOrcamento, v.Frequencia, v.Horas, v.ValorNegociado, v.DataInicioOperacao, v.DataAvisoPrevio
                 ) AS limited
                 """
                 cursor_sql.execute(count_query)
             else:
                 # Contar todos os cenários únicos
-                count_query = """
+                count_query = f"""
                 SELECT COUNT(DISTINCT 
                     CAST(v.IdOrcamento AS VARCHAR) + '|' + 
                     ISNULL(CAST(v.Frequencia AS VARCHAR), '') + '|' + 
                     ISNULL(CAST(v.Horas AS VARCHAR), '') + '|' + 
-                    ISNULL(CAST(v.ValorHora AS VARCHAR), '0.0') + '|' + 
+                    {hour_key_sql} + '|' + 
                     ISNULL(CONVERT(VARCHAR, v.DataInicioOperacao, 120), '') + '|' + 
                     ISNULL(CONVERT(VARCHAR, v.DataAvisoPrevio, 120), '')
                 )
@@ -2414,19 +2518,16 @@ class ContractsMigration:
             print("\n[ETAPA 2] Preparando limpeza de contract_scenarios...")
         
         # Buscar dados do SQL Server usando ViewOrcamentosLojas
-        # ⚠️ IMPORTANTE: Criar CENÁRIOS ÚNICOS usando DISTINCT baseado em IdOrcamento, Frequencia, Horas, ValorHora, DataInicioOperacao e DataAvisoPrevio
-        # Usar GROUP BY com MAX() para colunas datetime (DataInclusaoOrcamentoLojas e DataAlteracaoOrcamentoLojas) 
-        # que podem ter valores diferentes para o mesmo cenário único, interferindo no DISTINCT
+        # CENÁRIOS ÚNICOS: IdOrcamento, Frequencia, Horas, ValorNegociado, datas (+ hour_value derivado da fórmula contract_dictionary)
+        # MAX() para DataInclusao/DataAlteracao quando várias lojas compartilham o mesmo cenário
         print("[ETAPA 2] Buscando dados do SQL Server para criar cenários únicos...")
-        # ⚠️ IMPORTANTE: Criar CENÁRIOS ÚNICOS usando GROUP BY baseado em IdOrcamento, Frequencia, Horas, ValorHora, DataInicioOperacao e DataAvisoPrevio
-        # MAX() usado APENAS para colunas datetime (DataInclusaoOrcamentoLojas, DataAlteracaoOrcamentoLojas)
-        print("[ETAPA 2] Buscando dados do SQL Server para criar cenários únicos...")
-        sql_query = """
+        sql_query = f"""
         SELECT 
             v.IdOrcamento,
             v.Frequencia,
             v.Horas,
-            v.ValorHora,
+            v.ValorNegociado,
+            MAX({SQL_VIEW_HOUR_VALUE_CALC}) AS hour_value_calc,
             CONVERT(DATE,v.DataInicioOperacao) AS DataInicioOperacao,
             CONVERT(DATE,v.DataAvisoPrevio) AS DataAvisoPrevio,
             v.NomeTarefa,
@@ -2483,12 +2584,12 @@ class ContractsMigration:
         
         # ⚠️ IMPORTANTE: Adicionar GROUP BY com todas as colunas não agregadas
         # Isso garante que apenas cenários únicos sejam retornados, usando MAX() para as datas datetime
-        sql_query += """
+        sql_query += f"""
         GROUP BY 
             v.IdOrcamento,
             v.Frequencia,
             v.Horas,
-            v.ValorHora,
+            v.ValorNegociado,
             CONVERT(DATE,v.DataInicioOperacao),
             CONVERT(DATE,v.DataAvisoPrevio),
             v.NomeTarefa,
@@ -2500,17 +2601,16 @@ class ContractsMigration:
             v.IdOrcamento, 
             v.Frequencia, 
             v.Horas, 
-            v.ValorHora, 
+            v.ValorNegociado, 
             CONVERT(DATE,v.DataInicioOperacao), 
             CONVERT(DATE,v.DataAvisoPrevio)
         """
         
         # Adicionar LIMIT se especificado
         if self.limit_rows > 0:
-            # Substituir ORDER BY completo incluindo GROUP BY
             sql_query = sql_query.replace(
-                "ORDER BY \n            v.IdOrcamento, \n            v.Frequencia, \n            v.Horas, \n            v.ValorHora, \n            CONVERT(DATE,v.DataInicioOperacao), \n            CONVERT(DATE,v.DataAvisoPrevio)\n        ",
-                f"ORDER BY \n            v.IdOrcamento, \n            v.Frequencia, \n            v.Horas, \n            v.ValorHora, \n            CONVERT(DATE,v.DataInicioOperacao), \n            CONVERT(DATE,v.DataAvisoPrevio)\n        OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY"
+                "ORDER BY \n            v.IdOrcamento, \n            v.Frequencia, \n            v.Horas, \n            v.ValorNegociado, \n            CONVERT(DATE,v.DataInicioOperacao), \n            CONVERT(DATE,v.DataAvisoPrevio)\n        ",
+                f"ORDER BY \n            v.IdOrcamento, \n            v.Frequencia, \n            v.Horas, \n            v.ValorNegociado, \n            CONVERT(DATE,v.DataInicioOperacao), \n            CONVERT(DATE,v.DataAvisoPrevio)\n        OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY",
             )
         
         # Log da query completa para debug/teste no SSMS
@@ -2578,8 +2678,9 @@ class ContractsMigration:
         # Processar conversões em massa usando DataFrame (vetorizado)
         try:
             df = pd.DataFrame.from_records(all_rows, columns=[
-                'IdOrcamento', 'Frequencia', 'Horas', 'ValorHora', 'DataInicioOperacao', 'DataAvisoPrevio',
-                'NomeTarefa', 'NomeCliente', 'StatusPedido', 'DataInclusaoOrcamentoLojas', 
+                'IdOrcamento', 'Frequencia', 'Horas', 'ValorNegociado', 'hour_value_calc',
+                'DataInicioOperacao', 'DataAvisoPrevio',
+                'NomeTarefa', 'NomeCliente', 'StatusPedido', 'DataInclusaoOrcamentoLojas',
                 'DataAlteracaoOrcamentoLojas', 'IdTarefa', 'IdCliente'
             ])
             
@@ -2591,7 +2692,10 @@ class ContractsMigration:
             logger.info(f"[ETAPA 2] Registros carregados do SQL: {len(df)}")
             
             # Colunas para fazer DISTINCT (combinação única)
-            distinct_cols = ['IdOrcamento', 'Frequencia', 'Horas', 'ValorHora', 'DataInicioOperacao', 'DataAvisoPrevio']
+            distinct_cols = [
+                'IdOrcamento', 'Frequencia', 'Horas', 'ValorNegociado', 'hour_value_calc',
+                'DataInicioOperacao', 'DataAvisoPrevio',
+            ]
             
             # Normalizar valores antes de fazer DISTINCT para garantir match correto
             # Criar colunas temporárias normalizadas para comparação (no próprio df)
@@ -2601,8 +2705,9 @@ class ContractsMigration:
                     # Para datas, converter para string no formato YYYY-MM-DD (tratando NULL)
                     df[f'{col}_norm'] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d')
                     df[f'{col}_norm'] = df[f'{col}_norm'].fillna('')
-                elif col == 'ValorHora':
-                    # Para ValorHora, converter para float e depois string para normalização
+                elif col == 'ValorNegociado':
+                    df[f'{col}_norm'] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).astype(float).astype(str)
+                elif col == 'hour_value_calc':
                     df[f'{col}_norm'] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).astype(float).astype(str)
                 elif col == 'Horas':
                     # Para Horas, converter para string (pode vir como nvarchar)
@@ -2631,10 +2736,15 @@ class ContractsMigration:
             print(f"[ETAPA 2] Tipos de dados inferidos pelo pandas:")
             print(f"  IdTarefa: {df['IdTarefa'].dtype} (NULLs: {df['IdTarefa'].isna().sum()})")
             print(f"  Frequencia: {df['Frequencia'].dtype} (NULLs: {df['Frequencia'].isna().sum()})")
-            print(f"  ValorHora: {df['ValorHora'].dtype} (NULLs: {df['ValorHora'].isna().sum()})")
+            print(f"  ValorNegociado: {df['ValorNegociado'].dtype} (NULLs: {df['ValorNegociado'].isna().sum()})")
+            print(f"  hour_value_calc: {df['hour_value_calc'].dtype} (NULLs: {df['hour_value_calc'].isna().sum()})")
             print(f"  StatusPedido: {df['StatusPedido'].dtype} (NULLs: {df['StatusPedido'].isna().sum()})")
             print(f"  DataAvisoPrevio: {df['DataAvisoPrevio'].dtype} (NULLs: {df['DataAvisoPrevio'].isna().sum()})")
-            logger.info(f"[ETAPA 2] Tipos inferidos - IdTarefa: {df['IdTarefa'].dtype}, Frequencia: {df['Frequencia'].dtype}, ValorHora: {df['ValorHora'].dtype}, StatusPedido: {df['StatusPedido'].dtype}, DataAvisoPrevio: {df['DataAvisoPrevio'].dtype}")
+            logger.info(
+                f"[ETAPA 2] Tipos inferidos - IdTarefa: {df['IdTarefa'].dtype}, Frequencia: {df['Frequencia'].dtype}, "
+                f"ValorNegociado/hour_value_calc: {df['ValorNegociado'].dtype}, StatusPedido: {df['StatusPedido'].dtype}, "
+                f"DataAvisoPrevio: {df['DataAvisoPrevio'].dtype}"
+            )
         except Exception as e:
             logger.error(f"[ETAPA 2] ERRO ao criar DataFrame: {e}")
             print(f"[ETAPA 2] ERRO ao criar DataFrame: {e}")
@@ -2820,24 +2930,20 @@ class ContractsMigration:
             raise
         df['hours'] = self.convert_hours_to_float_vectorized(df['Horas'])
         
-        # Converter ValorHora para numérico e garantir que seja 0.0 se vazio (campo NOT NULL)
+        # hour_value: Round(ValorNegociado / (Frequencia * Horas * 4), 2) — contract_dictionary
         try:
-            print("[ETAPA 2] Convertendo ValorHora...")
-            # Converter para numérico primeiro (tratando NaN e valores não numéricos)
-            valor_hora_numeric = pd.to_numeric(df['ValorHora'], errors='coerce')
-            print(f"[ETAPA 2] ValorHora após to_numeric: tipo={valor_hora_numeric.dtype}, NULLs={valor_hora_numeric.isna().sum()}")
-            # Preencher NaN com 0.0 (campo NOT NULL na tabela destino)
-            df['hour_value'] = valor_hora_numeric.fillna(0.0)
-            # Garantir que seja float
-            df['hour_value'] = df['hour_value'].astype(float)
-            print(f"[ETAPA 2] ValorHora convertido com sucesso: tipo={df['hour_value'].dtype}, NULLs={df['hour_value'].isna().sum()}")
-            logger.info(f"[ETAPA 2] ValorHora convertido - tipo: {df['hour_value'].dtype}, NULLs: {df['hour_value'].isna().sum()}")
+            print("[ETAPA 2] Calculando hour_value (ValorNegociado / (Frequencia*Horas*4), 2 dec.)...")
+            df['hour_value'] = df.apply(
+                lambda r: compute_scenario_hour_value(
+                    r['ValorNegociado'], r['Frequencia'], r['Horas']
+                ),
+                axis=1,
+            ).astype(float)
+            print(f"[ETAPA 2] hour_value OK: tipo={df['hour_value'].dtype}, NULLs={df['hour_value'].isna().sum()}")
+            logger.info(f"[ETAPA 2] hour_value - tipo: {df['hour_value'].dtype}, NULLs: {df['hour_value'].isna().sum()}")
         except Exception as e:
-            logger.error(f"[ETAPA 2] ERRO ao converter ValorHora: {e}")
-            print(f"[ETAPA 2] ERRO ao converter ValorHora: {e}")
-            print(f"[ETAPA 2] Tipo original: {df['ValorHora'].dtype}")
-            print(f"[ETAPA 2] Valores únicos (primeiros 10): {df['ValorHora'].unique()[:10]}")
-            # Em caso de erro, usar 0.0 como fallback
+            logger.error(f"[ETAPA 2] ERRO ao calcular hour_value: {e}")
+            print(f"[ETAPA 2] ERRO ao calcular hour_value: {e}")
             df['hour_value'] = 0.0
             print("[ETAPA 2] Usando valor padrão 0.0 para hour_value devido ao erro")
         
@@ -3023,9 +3129,9 @@ class ContractsMigration:
                         continue
             
             # ⚠️ IMPORTANTE: Criar mapa de cenários baseado na combinação única
-            # Chave: (IdOrcamento, Frequencia, Horas, ValorHora, DataInicioOperacao, DataAvisoPrevio)
+            # Chave: (IdOrcamento, Frequencia, Horas, hour_value calculado, DataInicioOperacao, DataAvisoPrevio)
             # Valor: UUID do scenario
-            # ⚠️ IMPORTANTE: Usar os valores brutos do DataFrame original ANTES das conversões para garantir normalização idêntica ao step3
+            # ⚠️ IMPORTANTE: Usar os valores brutos do DataFrame original (mesma normalização do step3)
             print(f"[ETAPA 2] Criando mapa de cenários baseado na combinação única...")
             logger.info(f"[ETAPA 2] Criando mapa de cenários para step3...")
             
@@ -3074,12 +3180,10 @@ class ContractsMigration:
                     horas_str = str(horas_float)
                 except (ValueError, TypeError):
                     horas_str = ''
-                # ⚠️ IMPORTANTE: Converter para float primeiro, depois para string (mesmo do step3)
-                try:
-                    valor_hora_float = float(row['ValorHora']) if pd.notna(row['ValorHora']) else 0.0
-                    valor_hora_str = str(valor_hora_float)
-                except (ValueError, TypeError):
-                    valor_hora_str = '0.0'
+                hv = compute_scenario_hour_value(
+                    row['ValorNegociado'], row['Frequencia'], row['Horas']
+                )
+                valor_hora_str = format_hour_value_key(hv)
                 start_date_str = row['DataInicioOperacao'].strftime('%Y-%m-%d') if pd.notna(row['DataInicioOperacao']) else ''
                 # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do step3)
                 end_date_str = row['DataAvisoPrevio'].strftime('%Y-%m-%d') if pd.notna(row['DataAvisoPrevio']) else None
@@ -3162,12 +3266,7 @@ class ContractsMigration:
                     horas_str = str(horas_float)
                 except (ValueError, TypeError):
                     horas_str = ''
-                # ⚠️ IMPORTANTE: Converter para float primeiro, depois para string (mesmo do create_scenario_key_from_df)
-                try:
-                    valor_hora_float = float(hour_value) if hour_value is not None else 0.0
-                    valor_hora_str = str(valor_hora_float)
-                except (ValueError, TypeError):
-                    valor_hora_str = '0.0'
+                valor_hora_str = format_hour_value_key(hour_value)
                 start_date_str = start_date.strftime('%Y-%m-%d') if start_date else ''
                 # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do create_scenario_key_from_df)
                 end_date_str = end_date.strftime('%Y-%m-%d') if end_date else None
@@ -3406,7 +3505,7 @@ class ContractsMigration:
                         # Criar chave única baseada na combinação
                         freq_str = str(frequency) if frequency else ''
                         horas_str = str(hours) if hours else ''
-                        valor_hora_str = str(float(hour_value)) if hour_value else '0.0'
+                        valor_hora_str = format_hour_value_key(hour_value)
                         start_date_str = start_date.strftime('%Y-%m-%d') if start_date else ''
                         end_date_str = end_date.strftime('%Y-%m-%d') if end_date else None
                         
@@ -3524,7 +3623,7 @@ class ContractsMigration:
             v.IdEstabelecimento,
             v.Frequencia,
             v.Horas,
-            v.ValorHora,
+            v.ValorNegociado,
             v.DataInicioOperacao,
             v.DataAvisoPrevio,
             v.DataInclusaoOrcamentoLojas,
@@ -3602,8 +3701,8 @@ class ContractsMigration:
         
         # Processar conversões em massa usando DataFrame (vetorizado)
         df = pd.DataFrame.from_records(all_rows, columns=[
-            'IdOrcamentoLoja', 'IdOrcamento', 'IdEstabelecimento', 'Frequencia', 'Horas', 
-            'ValorHora', 'DataInicioOperacao', 'DataAvisoPrevio',
+            'IdOrcamentoLoja', 'IdOrcamento', 'IdEstabelecimento', 'Frequencia', 'Horas',
+            'ValorNegociado', 'DataInicioOperacao', 'DataAvisoPrevio',
             'DataInclusaoOrcamentoLojas', 'DataAlteracaoOrcamentoLojas', 'Ativo'
         ])
         
@@ -3656,12 +3755,10 @@ class ContractsMigration:
                 horas_str = str(horas_float)
             except (ValueError, TypeError):
                 horas_str = ''
-            # ⚠️ IMPORTANTE: Converter para float primeiro, depois para string (mesmo do step2)
-            try:
-                valor_hora_float = float(row['ValorHora']) if pd.notna(row['ValorHora']) else 0.0
-                valor_hora_str = str(valor_hora_float)
-            except (ValueError, TypeError):
-                valor_hora_str = '0.0'
+            hv = compute_scenario_hour_value(
+                row['ValorNegociado'], row['Frequencia'], row['Horas']
+            )
+            valor_hora_str = format_hour_value_key(hv)
             start_date_str = row['DataInicioOperacao'].strftime('%Y-%m-%d') if pd.notna(row['DataInicioOperacao']) else ''
             # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do step2)
             end_date_str = row['DataAvisoPrevio'].strftime('%Y-%m-%d') if pd.notna(row['DataAvisoPrevio']) else None
@@ -3742,12 +3839,7 @@ class ContractsMigration:
                 hours_val = str(hours_float)
             except (ValueError, TypeError):
                 hours_val = ''
-            # ⚠️ IMPORTANTE: Converter para float primeiro, depois para string (mesmo do create_scenario_key)
-            try:
-                hour_value_float = float(hour_value) if hour_value is not None else 0.0
-                hour_value_val = str(hour_value_float)
-            except (ValueError, TypeError):
-                hour_value_val = '0.0'
+            hour_value_val = format_hour_value_key(hour_value)
             start_date_val = start_date.strftime('%Y-%m-%d') if start_date else ''
             # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do create_scenario_key)
             end_date_val = end_date.strftime('%Y-%m-%d') if end_date else None
@@ -3786,12 +3878,10 @@ class ContractsMigration:
                 horas_reg = str(horas_float_reg)
             except (ValueError, TypeError):
                 horas_reg = ''
-            # ⚠️ IMPORTANTE: Converter para float primeiro, depois para string (mesmo do create_scenario_key)
-            try:
-                valor_hora_float = float(row['ValorHora']) if pd.notna(row['ValorHora']) else 0.0
-                valor_hora_reg = str(valor_hora_float)
-            except (ValueError, TypeError):
-                valor_hora_reg = '0.0'
+            hv_reg = compute_scenario_hour_value(
+                row['ValorNegociado'], row['Frequencia'], row['Horas']
+            )
+            valor_hora_reg = format_hour_value_key(hv_reg)
             start_date_reg = row['DataInicioOperacao'].strftime('%Y-%m-%d') if pd.notna(row['DataInicioOperacao']) else ''
             # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do create_scenario_key)
             end_date_reg = row['DataAvisoPrevio'].strftime('%Y-%m-%d') if pd.notna(row['DataAvisoPrevio']) else None
@@ -3824,7 +3914,7 @@ class ContractsMigration:
                 logger.warning(
                     f"[ETAPA 3] VALIDACAO FALHOU para IdOrcamentoLoja={row['IdOrcamentoLoja']}, "
                     f"IdOrcamento={row['IdOrcamento']}, scenario_id={scenario_uuid}. "
-                    f"Registro: IdOrcamento={row['IdOrcamento']}, Frequencia={freq_reg}, Horas={horas_reg}, ValorHora={valor_hora_reg}, "
+                    f"Registro: IdOrcamento={row['IdOrcamento']}, Frequencia={freq_reg}, Horas={horas_reg}, hour_value={valor_hora_reg}, "
                     f"DataInicio={start_date_reg}, DataAviso={end_date_reg}. "
                     f"Scenario: legacy_id={scenario_data.get('legacy_id')}, frequency={scenario_data['frequency']}, hours={scenario_data['hours']}, "
                     f"hour_value={scenario_data['hour_value']}, start_date={scenario_data['start_date']}, "
@@ -4016,7 +4106,7 @@ class ContractsMigration:
             filter_ids = self._get_filter_ids_for_validation()
             id_orcamento_list = filter_ids.get('IdOrcamento', [])
             
-            # Contar origem: Orcamento (IdUsuarioVendedor) + FaturamentoOrcamentoComissao
+            # Contar origem: Orcamento (IdUsuarioVendedor) [+ FaturamentoOrcamentoComissao desativado na migração]
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
             
@@ -4043,26 +4133,27 @@ class ContractsMigration:
                 cursor_sql.execute("SELECT COUNT(*) FROM Orcamento WHERE IdUsuarioVendedor IS NOT NULL")
             origem_orcamento = cursor_sql.fetchone()[0]
             
-            # Contar FaturamentoOrcamentoComissao
-            if id_orcamento_list:
-                placeholders = ','.join(['?' for _ in id_orcamento_list])
-                cursor_sql.execute(f"""
-                    SELECT COUNT(*) 
-                    FROM FaturamentoOrcamentoComissao 
-                    WHERE IdOrcamento IN ({placeholders})
-                """, id_orcamento_list)
-            elif self.limit_rows > 0:
-                cursor_sql.execute(f"""
-                    SELECT COUNT(*) 
-                    FROM (
-                        SELECT TOP {self.limit_rows} Id 
-                        FROM FaturamentoOrcamentoComissao 
-                        ORDER BY Id
-                    ) AS limited
-                """)
-            else:
-                cursor_sql.execute("SELECT COUNT(*) FROM FaturamentoOrcamentoComissao")
-            origem_comissao = cursor_sql.fetchone()[0]
+            # # Contar FaturamentoOrcamentoComissao (desativado: seller_type commission não existe no destino)
+            # if id_orcamento_list:
+            #     placeholders = ','.join(['?' for _ in id_orcamento_list])
+            #     cursor_sql.execute(f"""
+            #         SELECT COUNT(*)
+            #         FROM FaturamentoOrcamentoComissao
+            #         WHERE IdOrcamento IN ({placeholders})
+            #     """, id_orcamento_list)
+            # elif self.limit_rows > 0:
+            #     cursor_sql.execute(f"""
+            #         SELECT COUNT(*)
+            #         FROM (
+            #             SELECT TOP {self.limit_rows} Id
+            #             FROM FaturamentoOrcamentoComissao
+            #             ORDER BY Id
+            #         ) AS limited
+            #     """)
+            # else:
+            #     cursor_sql.execute("SELECT COUNT(*) FROM FaturamentoOrcamentoComissao")
+            # origem_comissao = cursor_sql.fetchone()[0]
+            origem_comissao = 0
             
             origem_total = origem_orcamento + origem_comissao
             cursor_sql.close()
@@ -4090,7 +4181,7 @@ class ContractsMigration:
             
             print(f"\nORIGEM (SQL Server PRD):")
             print(f"  Orcamentos com vendedor: {origem_orcamento}")
-            print(f"  Comissoes: {origem_comissao}")
+            print(f"  Comissoes (migracao desativada): {origem_comissao}")
             print(f"  Total esperado: {origem_total}")
             
             print(f"\nDESTINO (PostgreSQL {destino_nome} - {schema}.contract_sellers):")
@@ -4113,7 +4204,7 @@ class ContractsMigration:
             return False
     
     def step4_migrate_contract_sellers(self):
-        """ETAPA 4: Migrar contract_sellers"""
+        """ETAPA 4: Migrar contract_sellers (Farmer/Hunter a partir de contratos_ativos.xlsx + users.login/user_name)."""
         destino = DatabaseConnection.get_destino()
         schema = get_schema_atual()
         print("\n" + "="*80)
@@ -4123,50 +4214,153 @@ class ContractsMigration:
         logger.info("ETAPA 4: Migrando contract_sellers")
         logger.info(f"Ambiente: {destino} | Schema: {schema} | Limite: {'TODOS' if self.limit_rows == 0 else self.limit_rows}")
         logger.info("="*80)
-        
-        # Carregar mapeamento de users
-        print("[ETAPA 4] Carregando mapeamento de users...")
-        user_id_map = {}
+
+        schema_users = "gmcore" if destino == "HML" else "core"
+        if destino == "PRD":
+            conn_users = DatabaseConnection.get_postgresql_prd_destino_connection()
+        else:
+            conn_users = DatabaseConnection.get_postgresql_hml_destino_connection()
+        cursor_users = conn_users.cursor()
+
+        # Mapa login normalizado (minúsculo) -> user id; df_login_user_id = dicionário tabular para debug/join
+        login_to_user_id: Dict[str, Any] = {}
         try:
-            schema_users = 'gmcore' if destino == 'HML' else 'core'
-            # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
-            if destino == 'PRD':
-                conn_users = DatabaseConnection.get_postgresql_prd_destino_connection()
-            else:
-                conn_users = DatabaseConnection.get_postgresql_hml_destino_connection()
-            cursor_users = conn_users.cursor()
-            
-            # Verificar se a coluna legacy_id existe
-            cursor_users.execute(f"""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_schema = '{schema_users}' 
-                AND table_name = 'users' 
-                AND column_name = 'legacy_id'
-            """)
-            has_legacy_id = cursor_users.fetchone() is not None
-            
-            if has_legacy_id:
-                cursor_users.execute(f"SELECT id, legacy_id FROM {schema_users}.users WHERE legacy_id IS NOT NULL")
-                for row in cursor_users.fetchall():
-                    if row[1] is not None:
-                        user_id_map[row[1]] = row[0]
-                print(f"OK - {len(user_id_map)} users carregados")
-                logger.info(f"Carregados {len(user_id_map)} users para mapeamento")
-            else:
-                print(f"AVISO - Tabela {schema_users}.users nao possui coluna legacy_id. Nao sera possivel mapear IdUsuarioVendedor.")
-                logger.warning(f"Tabela {schema_users}.users nao possui coluna legacy_id. Mapeamento de users nao sera possivel.")
-            
-            cursor_users.close()
-            conn_users.close()
+            cursor_users.execute(
+                f"""
+                SELECT id, user_name, normalized_user_name, email
+                FROM {schema_users}.users
+                """
+            )
+            rows_users = cursor_users.fetchall()
+            for uid, un, nun, em in rows_users:
+                for cand in (un, nun, em):
+                    if cand is None or (isinstance(cand, str) and not str(cand).strip()):
+                        continue
+                    k = str(cand).strip().lower()
+                    if k and k not in login_to_user_id:
+                        login_to_user_id[k] = uid
+            df_login_user_id = pd.DataFrame(
+                [{"login_norm": k, "user_id": v} for k, v in sorted(login_to_user_id.items())]
+            )
+            print(f"[ETAPA 4] Mapa login→user_id: {len(login_to_user_id)} chaves (df_login_user_id com {len(df_login_user_id)} linhas)")
+            logger.info(f"[ETAPA 4] login_to_user_id keys: {len(login_to_user_id)}")
+            self.df_login_user_id = df_login_user_id
         except Exception as e:
-            logger.warning(f"Erro ao carregar users: {e}")
-            print(f"AVISO - Nao foi possivel carregar users: {e}")
-        
-        # Truncate
+            logger.error(f"[ETAPA 4] Erro ao montar mapa de users: {e}")
+            df_login_user_id = pd.DataFrame(columns=["login_norm", "user_id"])
+            self.df_login_user_id = df_login_user_id
+            rows_users = []
+
+        # CPF na planilha (coluna "login"): Usuario.Cpf na origem → users.legacy_id = Usuario.Id
+        legacy_id_to_user_id: Dict[int, Any] = {}
+        cpf_digits_to_user_id: Dict[str, Any] = {}
+        try:
+            cursor_users.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = %s AND table_name = 'users' AND column_name = 'legacy_id'
+                """,
+                (schema_users,),
+            )
+            if cursor_users.fetchone():
+                cursor_users.execute(
+                    f"SELECT id, legacy_id FROM {schema_users}.users WHERE legacy_id IS NOT NULL"
+                )
+                for uid, leg in cursor_users.fetchall():
+                    if leg is not None:
+                        try:
+                            legacy_id_to_user_id[int(leg)] = uid
+                        except (TypeError, ValueError):
+                            continue
+                print(f"[ETAPA 4] Mapa legacy_id (Usuario.Id)→user_id: {len(legacy_id_to_user_id)} linhas")
+        except Exception as e:
+            logger.warning(f"[ETAPA 4] Nao foi possivel carregar legacy_id em users: {e}")
+
+        if legacy_id_to_user_id:
+            try:
+                conn_sql_u = DatabaseConnection.get_sql_server_prd_connection()
+                cur_sql_u = conn_sql_u.cursor()
+                cur_sql_u.execute(
+                    """
+                    SELECT Id, Cpf
+                    FROM Usuario
+                    WHERE Cpf IS NOT NULL AND LTRIM(RTRIM(CAST(Cpf AS NVARCHAR(64)))) <> ''
+                    """
+                )
+                for id_usuario, cpf in cur_sql_u.fetchall():
+                    uid_pg = legacy_id_to_user_id.get(int(id_usuario))
+                    if uid_pg is None:
+                        continue
+                    digits = re.sub(r"\D", "", str(cpf))
+                    key = _normalize_br_cpf_cnpj_digits(digits)
+                    if not key:
+                        continue
+                    if key not in cpf_digits_to_user_id:
+                        cpf_digits_to_user_id[key] = uid_pg
+                cur_sql_u.close()
+                conn_sql_u.close()
+                print(f"[ETAPA 4] Mapa CPF (digitos)→user_id (via Usuario): {len(cpf_digits_to_user_id)} chaves")
+                logger.info(f"[ETAPA 4] cpf_digits_to_user_id: {len(cpf_digits_to_user_id)}")
+            except Exception as e:
+                logger.warning(f"[ETAPA 4] Nao foi possivel montar mapa CPF Usuario→user: {e}")
+
+        # Usuário admin (fallback quando ambos logins ausentes/inválidos)
+        admin_user_id = None
+        try:
+            cursor_users.execute(
+                f"""
+                SELECT id FROM {schema_users}.users
+                WHERE LOWER(TRIM(user_name)) = LOWER(%s)
+                   OR LOWER(TRIM(COALESCE(email, ''))) = LOWER(%s)
+                ORDER BY id
+                LIMIT 1
+                """,
+                ("sysadmin@superaholdings.com.br", "sysadmin@superaholdings.com.br"),
+            )
+            r = cursor_users.fetchone()
+            if r:
+                admin_user_id = r[0]
+                print(f"[ETAPA 4] Fallback admin user_id: {admin_user_id}")
+                logger.info(f"[ETAPA 4] admin_user_id (sysadmin): {admin_user_id}")
+        except Exception as e:
+            logger.warning(f"[ETAPA 4] Nao foi possivel resolver admin: {e}")
+
+        if admin_user_id is None and rows_users:
+            admin_user_id = rows_users[0][0]
+            logger.warning(f"[ETAPA 4] Usando primeiro user da lista como fallback admin: {admin_user_id}")
+
+        cursor_users.close()
+        conn_users.close()
+
+        def _lookup_user_by_login(login: Optional[str]):
+            if login is None:
+                return None
+            try:
+                if pd.isna(login):
+                    return None
+            except TypeError:
+                pass
+            if isinstance(login, float) and login == int(login):
+                s = str(int(login))
+            else:
+                s = str(login).strip()
+            if not s:
+                return None
+            r = login_to_user_id.get(s.lower())
+            if r is not None:
+                return r
+            digits = re.sub(r"\D", "", s)
+            if len(digits) < 10:
+                return None
+            key = _normalize_br_cpf_cnpj_digits(digits)
+            if not key:
+                return None
+            return cpf_digits_to_user_id.get(key)
+
         print("\n[ETAPA 4] Limpando tabela contract_sellers...")
-        self.truncate_table('contract_sellers')
-        
+        self.truncate_table("contract_sellers")
+
         try:
             id_orcamento_filter_list = self._resolve_id_orcamento_list_for_steps()
         except ValueError as e:
@@ -4175,158 +4369,71 @@ class ContractsMigration:
             raise
         logger.info(f"[ETAPA 4] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
         print(f"[ETAPA 4] {len(id_orcamento_filter_list)} IdOrcamento (escopo ∩ XLSX)")
-        
-        # PARTE 1: Migrar sellers de Orcamento (IdUsuarioVendedor)
-        print("[ETAPA 4] Migrando sellers de Orcamento...")
-        sql_query_orcamento = """
-        SELECT 
-            Id,
-            IdUsuarioVendedor
-        FROM Orcamento
-        WHERE IdUsuarioVendedor IS NOT NULL
-        """
-        
-        query_params_orcamento = []
-        if id_orcamento_filter_list:
-            placeholders = ','.join(['?' for _ in id_orcamento_filter_list])
-            sql_query_orcamento += f" AND Id IN ({placeholders})"
-            query_params_orcamento.extend(id_orcamento_filter_list)
-        
-        sql_query_orcamento += " ORDER BY Id"
-        
-        if self.limit_rows > 0:
-            sql_query_orcamento = sql_query_orcamento.replace("ORDER BY Id", 
-                f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
-        
-        conn_sql = DatabaseConnection.get_sql_server_prd_connection()
-        cursor_sql = conn_sql.cursor()
-        if query_params_orcamento:
-            cursor_sql.execute(sql_query_orcamento, query_params_orcamento)
-        else:
-            cursor_sql.execute(sql_query_orcamento)
-        
-        # Carregar TODOS os dados na memória de uma vez (otimizado)
-        print("[ETAPA 4] Carregando dados de Orcamento na memória...")
-        all_rows_orcamento = cursor_sql.fetchall()
-        cursor_sql.close()
-        conn_sql.close()
-        
-        # PARTE 2: Migrar sellers de FaturamentoOrcamentoComissao
-        print("[ETAPA 4] Migrando sellers de FaturamentoOrcamentoComissao...")
-        sql_query_comissao = """
-        SELECT 
-            foc.IdOrcamento,
-            foc.IdUsuarioVendedor,
-            foc.DataInclusao,
-            foc.DataAlteracao
-        FROM FaturamentoOrcamentoComissao foc
-        """
-        
-        query_params_comissao = []
-        if id_orcamento_filter_list:
-            placeholders = ','.join(['?' for _ in id_orcamento_filter_list])
-            sql_query_comissao += f" WHERE foc.IdOrcamento IN ({placeholders})"
-            query_params_comissao.extend(id_orcamento_filter_list)
-        
-        sql_query_comissao += " ORDER BY foc.Id"
-        
-        if self.limit_rows > 0:
-            sql_query_comissao = sql_query_comissao.replace("ORDER BY foc.Id", 
-                f"ORDER BY foc.Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
-        
-        conn_sql = DatabaseConnection.get_sql_server_prd_connection()
-        cursor_sql = conn_sql.cursor()
-        if query_params_comissao:
-            cursor_sql.execute(sql_query_comissao, query_params_comissao)
-        else:
-            cursor_sql.execute(sql_query_comissao)
-        
-        # Carregar TODOS os dados na memória de uma vez (otimizado)
-        print("[ETAPA 4] Carregando dados de Comissao na memória...")
-        all_rows_comissao = cursor_sql.fetchall()
-        cursor_sql.close()
-        conn_sql.close()
-        
-        print(f"[ETAPA 4] {len(all_rows_orcamento)} registros de Orcamento e {len(all_rows_comissao)} registros de Comissao carregados. Processando conversões...")
-        
-        # Processar tudo em memória e preparar batch_values
-        batch_values = []
-        missing_contracts_orcamento = []  # Coletar IdOrcamento não encontrados
-        
-        # Processar Orcamento
-        for row in all_rows_orcamento:
-            try:
-                legado_id_orcamento = row[0]  # Id
-                legado_id_usuario = row[1]  # IdUsuarioVendedor
-                
-                # Mapear contract_id
-                contract_uuid = self.contract_id_map.get(legado_id_orcamento)
-                if not contract_uuid:
-                    missing_contracts_orcamento.append(legado_id_orcamento)
-                    continue
-                
-                # Mapear user_id
-                user_uuid = user_id_map.get(legado_id_usuario)
-                if not user_uuid:
-                    error_msg = f"User nao encontrado: IdUsuarioVendedor={legado_id_usuario} para Orcamento={legado_id_orcamento}"
-                    logger.warning(error_msg)
-                    self.stats['errors'].append(error_msg)
-                    continue
-                
-                batch_values.append((
-                    str(contract_uuid),
-                    str(user_uuid),
-                    'hunter',  # seller_type para Orcamento
-                    datetime.now(),
-                    datetime.now()
-                ))
-                
-            except Exception as e:
-                error_msg = f"Erro ao preparar contract_seller de Orcamento Id={row[0]}: {e}"
-                logger.error(error_msg)
-                self.stats['errors'].append(error_msg)
+
+        xlsx_path = os.environ.get("CONTRATOS_ATIVOS_FILE", XLSX_DEFAULT)
+        _, xlsx_by_id = _load_xlsx_index(xlsx_path)
+        print(f"[ETAPA 4] contratos_ativos.xlsx: {len(xlsx_by_id)} linhas no índice ({xlsx_path})")
+
+        batch_values: List[Tuple[str, str, str, datetime, datetime]] = []
+        missing_contracts: List[int] = []
+        rows_debug: List[Dict[str, Any]] = []
+
+        now = datetime.now()
+        for oid in id_orcamento_filter_list:
+            contract_uuid = self.contract_id_map.get(oid)
+            if not contract_uuid:
+                missing_contracts.append(oid)
                 continue
-        
-        # Processar Comissao
-        missing_contracts_comissao = []  # Coletar IdOrcamento não encontrados
-        for row in all_rows_comissao:
-            try:
-                legado_id_orcamento = row[0]  # IdOrcamento
-                legado_id_usuario = row[1]  # IdUsuarioVendedor
-                
-                # Mapear contract_id
-                contract_uuid = self.contract_id_map.get(legado_id_orcamento)
-                if not contract_uuid:
-                    missing_contracts_comissao.append(legado_id_orcamento)
+
+            row = xlsx_by_id.get(oid)
+            farmer_login, hunter_login = farmer_hunter_logins_from_xlsx_row(row)
+
+            fu = _lookup_user_by_login(farmer_login)
+            hu = _lookup_user_by_login(hunter_login)
+
+            if fu is None and hu is not None:
+                fu = hu
+            elif hu is None and fu is not None:
+                hu = fu
+            if fu is None and hu is None:
+                if admin_user_id is None:
+                    logger.error(f"[ETAPA 4] IdOrcamento={oid}: sem login válido e sem admin; ignorando.")
+                    self.stats["errors"].append(
+                        f"contract_sellers: IdOrcamento={oid} sem user fallback admin"
+                    )
                     continue
-                
-                # Mapear user_id
-                user_uuid = user_id_map.get(legado_id_usuario)
-                if not user_uuid:
-                    error_msg = f"User nao encontrado: IdUsuarioVendedor={legado_id_usuario} para Comissao Orcamento={legado_id_orcamento}"
-                    logger.warning(error_msg)
-                    self.stats['errors'].append(error_msg)
-                    continue
-                
-                batch_values.append((
-                    str(contract_uuid),
-                    str(user_uuid),
-                    'commission',  # seller_type para Comissao
-                    row[2] if row[2] else datetime.now(),  # DataInclusao
-                    row[3] if row[3] else datetime.now()  # DataAlteracao
-                ))
-                
-            except Exception as e:
-                error_msg = f"Erro ao preparar contract_seller de Comissao IdOrcamento={row[0]}: {e}"
-                logger.error(error_msg)
-                self.stats['errors'].append(error_msg)
-                continue
-        
-        # Log de contracts não encontrados (agrupado)
-        all_missing_contracts = list(set(missing_contracts_orcamento + missing_contracts_comissao))
-        if all_missing_contracts:
-            logger.warning(f"Contracts nao encontrados: IdOrcamento: {sorted(all_missing_contracts)}")
-            self.stats['errors'].extend([f"Contract nao encontrado: IdOrcamento={id_orc}" for id_orc in all_missing_contracts])
+                fu = admin_user_id
+                hu = admin_user_id
+                logger.info(
+                    f"[ETAPA 4] IdOrcamento={oid}: farmer/hunter sem login resolvido → admin"
+                )
+
+            rows_debug.append(
+                {
+                    "IdOrcamento": oid,
+                    "farmer_login": farmer_login,
+                    "hunter_login": hunter_login,
+                    "farmer_user_id": str(fu),
+                    "hunter_user_id": str(hu),
+                }
+            )
+
+            batch_values.append((str(contract_uuid), str(fu), "farmer", now, now))
+            batch_values.append((str(contract_uuid), str(hu), "hunter", now, now))
+
+        if missing_contracts:
+            logger.warning(f"[ETAPA 4] Contracts nao encontrados: IdOrcamento={sorted(set(missing_contracts))}")
+            self.stats["errors"].extend(
+                [f"Contract nao encontrado: IdOrcamento={x}" for x in sorted(set(missing_contracts))]
+            )
+
+        if rows_debug:
+            df_sellers_resolve = pd.DataFrame(rows_debug)
+            self.df_contract_sellers_xlsx = df_sellers_resolve
+            print(f"[ETAPA 4] Prévia resolução (primeiras linhas):\n{df_sellers_resolve.head(8).to_string()}")
+            logger.info(f"[ETAPA 4] contract_sellers resolvidos para {len(rows_debug)} orçamentos")
+        else:
+            self.df_contract_sellers_xlsx = pd.DataFrame()
         
         print(f"[ETAPA 4] {len(batch_values)} registros processados. Inserindo no banco (otimizado com execute_values)...")
         
@@ -5649,6 +5756,8 @@ class ContractsMigration:
                 
                 created_at_base = row[9] if row[9] else datetime.now()
                 updated_at_base = row[10] if row[10] else datetime.now()
+                start_default = _sql_server_to_charge_start_date(row[9], row[10])
+                start_epi = _sql_server_to_charge_start_date(row[5], row[9], row[10])
                 
                 # REGISTRO 1: EPI
                 if (row[1] and row[1] > 0) or (row[4] is True):
@@ -5665,8 +5774,10 @@ class ContractsMigration:
                         row[1] if row[1] else 0.0,
                         'other',
                         billing_model_epi,
-                        row[5] if row[5] else created_at_base,  # InicioCobrancaEPI ou DataInclusao
-                        updated_at_base
+                        start_epi,
+                        None,
+                        created_at_base,
+                        updated_at_base,
                     ))
                 
                 # REGISTRO 2: Trade Marketing
@@ -5681,8 +5792,10 @@ class ContractsMigration:
                         # anterior
                         # 'recurring',
                         'monthly',
+                        start_default,
+                        None,
                         created_at_base,
-                        updated_at_base
+                        updated_at_base,
                     ))
                 
                 # REGISTRO 3: Outros
@@ -5697,8 +5810,10 @@ class ContractsMigration:
                         # anterior
                         # 'one_time',
                         'monthly',
+                        start_default,
+                        None,
                         created_at_base,
-                        updated_at_base
+                        updated_at_base,
                     ))
                 
                 # REGISTRO 4: Juros
@@ -5713,8 +5828,10 @@ class ContractsMigration:
                         # anterior
                         # 'recurring',
                         'monthly',
+                        start_default,
+                        None,
                         created_at_base,
-                        updated_at_base
+                        updated_at_base,
                     ))
                 
                 # REGISTRO 5: Desconto
@@ -5729,8 +5846,10 @@ class ContractsMigration:
                         # anterior
                         # 'one_time',
                         'monthly',
+                        start_default,
+                        None,
                         created_at_base,
-                        updated_at_base
+                        updated_at_base,
                     ))
                 
                 # REGISTRO 6: Multa
@@ -5745,8 +5864,10 @@ class ContractsMigration:
                         # anterior
                         # 'one_time',
                         'monthly',
+                        start_default,
+                        None,
                         created_at_base,
-                        updated_at_base
+                        updated_at_base,
                     ))
                 
             except Exception as e:
@@ -5771,10 +5892,13 @@ class ContractsMigration:
         # billing_id obrigatório em PRD (FK para financial.billings)
         insert_query = f"""
         INSERT INTO {schema}.contract_additional_charges (
-            id, contract_id, billing_id, amount, charge_type, billing_model, created_at, updated_at
+            id, contract_id, billing_id, amount, charge_type, billing_model,
+            start_date, end_date, created_at, updated_at
         ) VALUES %s
         """
-        insert_template = f"(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s)"
+        insert_template = (
+            "(gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        )
         
         chunk_num = 0
         total_processed = 0

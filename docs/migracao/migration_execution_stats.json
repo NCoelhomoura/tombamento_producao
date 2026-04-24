@@ -1,7 +1,7 @@
 {
   "meta": {
     "titulo": "Estatísticas de execução — migração contracts (e snapshot destino)",
-    "ultima_atualizacao": "2026-04-08T16:37:25",
+    "ultima_atualizacao": "2026-04-22T10:43:06",
     "arquivo": "docs/migracao/migration_execution_stats.json",
     "notas": {
       "total_customers_deduplicados": "COUNT(*) em gmcore.customers (HML) ou core.customers (PRD).",
@@ -10,35 +10,354 @@
     }
   },
   "ultima_execucao": {
-    "timestamp": "2026-04-08T16:37:25",
+    "timestamp": "2026-04-22T10:43:06",
     "destino": "PRD",
-    "duracao_segundos": 253.70653,
+    "duracao_segundos": 60.536628,
     "filtro_escopo": {
-      "id_orcamento_no_json": 149,
-      "id_cliente_no_json": 142
+      "id_orcamento_no_json": 1,
+      "id_cliente_no_json": 1
     },
     "estatisticas": {
-      "contracts": 149,
-      "billings_total_destino": 138,
-      "promoter_tasks": 7,
-      "contract_scenarios": 4921,
-      "contract_scenario_stores": 36390,
-      "contract_sellers": 231609,
-      "contract_team_members": 149,
-      "contract_contacts": 161,
+      "contracts": 1,
+      "billings_total_destino": 1,
+      "promoter_tasks": 1,
+      "contract_scenarios": 7,
+      "contract_scenario_stores": 61,
+      "contract_sellers": 2,
+      "contract_team_members": 1,
+      "contract_contacts": 1,
       "contract_partners": 0,
-      "contract_additional_charges": 0,
-      "contract_scenarios_brands": 7465,
+      "contract_additional_charges": 1,
+      "contract_scenarios_brands": 7,
       "customers": {
-        "total_customers_deduplicados": 535,
-        "total_customers_duplicados_legacy_extras": 23,
-        "total_legacy_ids_referenciados_nos_grupos": 558
+        "total_customers_deduplicados": 1,
+        "total_customers_duplicados_legacy_extras": 0,
+        "total_legacy_ids_referenciados_nos_grupos": 1
       },
-      "contract_billing_map_entradas": 149,
-      "erros_count": 1
+      "contract_billing_map_entradas": 1,
+      "erros_count": 0
     }
   },
   "historico": [
+    {
+      "timestamp": "2026-04-22T10:43:06",
+      "destino": "PRD",
+      "duracao_segundos": 60.536628,
+      "filtro_escopo": {
+        "id_orcamento_no_json": 1,
+        "id_cliente_no_json": 1
+      },
+      "estatisticas": {
+        "contracts": 1,
+        "billings_total_destino": 1,
+        "promoter_tasks": 1,
+        "contract_scenarios": 7,
+        "contract_scenario_stores": 61,
+        "contract_sellers": 2,
+        "contract_team_members": 1,
+        "contract_contacts": 1,
+        "contract_partners": 0,
+        "contract_additional_charges": 1,
+        "contract_scenarios_brands": 7,
+        "customers": {
+          "total_customers_deduplicados": 1,
+          "total_customers_duplicados_legacy_extras": 0,
+          "total_legacy_ids_referenciados_nos_grupos": 1
+        },
+        "contract_billing_map_entradas": 1,
+        "erros_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-04-22T10:06:13",
+      "destino": "PRD",
+      "duracao_segundos": 78.080225,
+      "filtro_escopo": {
+        "id_orcamento_no_json": 1,
+        "id_cliente_no_json": 1
+      },
+      "estatisticas": {
+        "contracts": 1,
+        "billings_total_destino": 1,
+        "promoter_tasks": 1,
+        "contract_scenarios": 7,
+        "contract_scenario_stores": 61,
+        "contract_sellers": 2,
+        "contract_team_members": 1,
+        "contract_contacts": 1,
+        "contract_partners": 0,
+        "contract_additional_charges": 1,
+        "contract_scenarios_brands": 7,
+        "customers": {
+          "total_customers_deduplicados": 1,
+          "total_customers_duplicados_legacy_extras": 0,
+          "total_legacy_ids_referenciados_nos_grupos": 1
+        },
+        "contract_billing_map_entradas": 1,
+        "erros_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-04-20T14:55:46",
+      "destino": "PRD",
+      "duracao_segundos": 74.600498,
+      "filtro_escopo": {
+        "id_orcamento_no_json": 1,
+        "id_cliente_no_json": 1
+      },
+      "estatisticas": {
+        "contracts": 1,
+        "billings_total_destino": 1,
+        "promoter_tasks": 1,
+        "contract_scenarios": 7,
+        "contract_scenario_stores": 61,
+        "contract_sellers": 2,
+        "contract_team_members": 1,
+        "contract_contacts": 1,
+        "contract_partners": 0,
+        "contract_additional_charges": 1,
+        "contract_scenarios_brands": 7,
+        "customers": {
+          "total_customers_deduplicados": 1,
+          "total_customers_duplicados_legacy_extras": 0,
+          "total_legacy_ids_referenciados_nos_grupos": 1
+        },
+        "contract_billing_map_entradas": 1,
+        "erros_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-04-17T13:59:25",
+      "destino": "PRD",
+      "duracao_segundos": 60.170997,
+      "filtro_escopo": {
+        "id_orcamento_no_json": 1,
+        "id_cliente_no_json": 1
+      },
+      "estatisticas": {
+        "contracts": 1,
+        "billings_total_destino": 1,
+        "promoter_tasks": 1,
+        "contract_scenarios": 8,
+        "contract_scenario_stores": 63,
+        "contract_sellers": 2,
+        "contract_team_members": 1,
+        "contract_contacts": 1,
+        "contract_partners": 0,
+        "contract_additional_charges": 1,
+        "contract_scenarios_brands": 8,
+        "customers": {
+          "total_customers_deduplicados": 1,
+          "total_customers_duplicados_legacy_extras": 0,
+          "total_legacy_ids_referenciados_nos_grupos": 1
+        },
+        "contract_billing_map_entradas": 1,
+        "erros_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-04-17T13:53:55",
+      "destino": "HML",
+      "duracao_segundos": 50.306516,
+      "filtro_escopo": {
+        "id_orcamento_no_json": 1,
+        "id_cliente_no_json": 1
+      },
+      "estatisticas": {
+        "contracts": 1,
+        "billings_total_destino": 1,
+        "promoter_tasks": 1,
+        "contract_scenarios": 8,
+        "contract_scenario_stores": 63,
+        "contract_sellers": 2,
+        "contract_team_members": 1,
+        "contract_contacts": 1,
+        "contract_partners": 0,
+        "contract_additional_charges": 1,
+        "contract_scenarios_brands": 8,
+        "customers": {
+          "total_customers_deduplicados": 1,
+          "total_customers_duplicados_legacy_extras": 0,
+          "total_legacy_ids_referenciados_nos_grupos": 1
+        },
+        "contract_billing_map_entradas": 1,
+        "erros_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-04-17T13:40:16",
+      "destino": "HML",
+      "duracao_segundos": 50.951794,
+      "filtro_escopo": {
+        "id_orcamento_no_json": 1,
+        "id_cliente_no_json": 1
+      },
+      "estatisticas": {
+        "contracts": 1,
+        "billings_total_destino": 1,
+        "promoter_tasks": 1,
+        "contract_scenarios": 8,
+        "contract_scenario_stores": 63,
+        "contract_sellers": 2,
+        "contract_team_members": 1,
+        "contract_contacts": 1,
+        "contract_partners": 0,
+        "contract_additional_charges": 1,
+        "contract_scenarios_brands": 8,
+        "customers": {
+          "total_customers_deduplicados": 1,
+          "total_customers_duplicados_legacy_extras": 0,
+          "total_legacy_ids_referenciados_nos_grupos": 1
+        },
+        "contract_billing_map_entradas": 1,
+        "erros_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-04-17T13:19:06",
+      "destino": "HML",
+      "duracao_segundos": 53.340817,
+      "filtro_escopo": {
+        "id_orcamento_no_json": 1,
+        "id_cliente_no_json": 1
+      },
+      "estatisticas": {
+        "contracts": 1,
+        "billings_total_destino": 1,
+        "promoter_tasks": 1,
+        "contract_scenarios": 8,
+        "contract_scenario_stores": 63,
+        "contract_sellers": 1,
+        "contract_team_members": 1,
+        "contract_contacts": 1,
+        "contract_partners": 0,
+        "contract_additional_charges": 1,
+        "contract_scenarios_brands": 8,
+        "customers": {
+          "total_customers_deduplicados": 1,
+          "total_customers_duplicados_legacy_extras": 0,
+          "total_legacy_ids_referenciados_nos_grupos": 1
+        },
+        "contract_billing_map_entradas": 1,
+        "erros_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-04-16T16:19:26",
+      "destino": "PRD",
+      "duracao_segundos": 79.434379,
+      "filtro_escopo": {
+        "id_orcamento_no_json": 1,
+        "id_cliente_no_json": 1
+      },
+      "estatisticas": {
+        "contracts": 1,
+        "billings_total_destino": 1,
+        "promoter_tasks": 1,
+        "contract_scenarios": 8,
+        "contract_scenario_stores": 63,
+        "contract_sellers": 1,
+        "contract_team_members": 1,
+        "contract_contacts": 1,
+        "contract_partners": 0,
+        "contract_additional_charges": 1,
+        "contract_scenarios_brands": 8,
+        "customers": {
+          "total_customers_deduplicados": 1,
+          "total_customers_duplicados_legacy_extras": 0,
+          "total_legacy_ids_referenciados_nos_grupos": 1
+        },
+        "contract_billing_map_entradas": 1,
+        "erros_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-04-15T18:57:59",
+      "destino": "PRD",
+      "duracao_segundos": 60.627605,
+      "filtro_escopo": {
+        "id_orcamento_no_json": 1,
+        "id_cliente_no_json": 1
+      },
+      "estatisticas": {
+        "contracts": 1,
+        "billings_total_destino": 1,
+        "promoter_tasks": 1,
+        "contract_scenarios": 1,
+        "contract_scenario_stores": 22,
+        "contract_sellers": 1,
+        "contract_team_members": 1,
+        "contract_contacts": 2,
+        "contract_partners": 0,
+        "contract_additional_charges": 1,
+        "contract_scenarios_brands": 1,
+        "customers": {
+          "total_customers_deduplicados": 1,
+          "total_customers_duplicados_legacy_extras": 0,
+          "total_legacy_ids_referenciados_nos_grupos": 1
+        },
+        "contract_billing_map_entradas": 1,
+        "erros_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-04-15T18:22:05",
+      "destino": "PRD",
+      "duracao_segundos": 69.399759,
+      "filtro_escopo": {
+        "id_orcamento_no_json": 1,
+        "id_cliente_no_json": 1
+      },
+      "estatisticas": {
+        "contracts": 1,
+        "billings_total_destino": 1,
+        "promoter_tasks": 1,
+        "contract_scenarios": 1,
+        "contract_scenario_stores": 22,
+        "contract_sellers": 1,
+        "contract_team_members": 1,
+        "contract_contacts": 2,
+        "contract_partners": 0,
+        "contract_additional_charges": 0,
+        "contract_scenarios_brands": 1,
+        "customers": {
+          "total_customers_deduplicados": 1,
+          "total_customers_duplicados_legacy_extras": 0,
+          "total_legacy_ids_referenciados_nos_grupos": 1
+        },
+        "contract_billing_map_entradas": 1,
+        "erros_count": 1
+      }
+    },
+    {
+      "timestamp": "2026-04-15T18:15:27",
+      "destino": "HML",
+      "duracao_segundos": 60.480491,
+      "filtro_escopo": {
+        "id_orcamento_no_json": 1,
+        "id_cliente_no_json": 1
+      },
+      "estatisticas": {
+        "contracts": 1,
+        "billings_total_destino": 1,
+        "promoter_tasks": 1,
+        "contract_scenarios": 1,
+        "contract_scenario_stores": 22,
+        "contract_sellers": 1,
+        "contract_team_members": 1,
+        "contract_contacts": 2,
+        "contract_partners": 0,
+        "contract_additional_charges": 1,
+        "contract_scenarios_brands": 1,
+        "customers": {
+          "total_customers_deduplicados": 1,
+          "total_customers_duplicados_legacy_extras": 0,
+          "total_legacy_ids_referenciados_nos_grupos": 1
+        },
+        "contract_billing_map_entradas": 1,
+        "erros_count": 0
+      }
+    },
     {
       "timestamp": "2026-04-08T16:37:25",
       "destino": "PRD",
@@ -291,146 +610,6 @@
           "total_legacy_ids_referenciados_nos_grupos": 214
         },
         "contract_billing_map_entradas": 148,
-        "erros_count": 0
-      }
-    },
-    {
-      "timestamp": "2026-03-31T11:11:16",
-      "destino": "PRD",
-      "duracao_segundos": 217.919931,
-      "filtro_escopo": {
-        "id_orcamento_no_json": 148,
-        "id_cliente_no_json": 142
-      },
-      "estatisticas": {
-        "contracts": 148,
-        "billings_total_destino": 138,
-        "promoter_tasks": 7,
-        "contract_scenarios": 4755,
-        "contract_scenario_stores": 35339,
-        "contract_sellers": 231608,
-        "contract_team_members": 148,
-        "contract_contacts": 160,
-        "contract_partners": 107,
-        "contract_additional_charges": 92,
-        "customers": {
-          "total_customers_deduplicados": 204,
-          "total_customers_duplicados_legacy_extras": 10,
-          "total_legacy_ids_referenciados_nos_grupos": 214
-        },
-        "contract_billing_map_entradas": 148,
-        "erros_count": 0
-      }
-    },
-    {
-      "timestamp": "2026-03-31T10:54:58",
-      "destino": "HML",
-      "duracao_segundos": 187.311659,
-      "filtro_escopo": {
-        "id_orcamento_no_json": 148,
-        "id_cliente_no_json": 142
-      },
-      "estatisticas": {
-        "contracts": 148,
-        "billings_total_destino": 138,
-        "promoter_tasks": 7,
-        "contract_scenarios": 4755,
-        "contract_scenario_stores": 35339,
-        "contract_sellers": 231608,
-        "contract_team_members": 148,
-        "contract_contacts": 160,
-        "contract_partners": 0,
-        "contract_additional_charges": 92,
-        "customers": {
-          "total_customers_deduplicados": 204,
-          "total_customers_duplicados_legacy_extras": 10,
-          "total_legacy_ids_referenciados_nos_grupos": 214
-        },
-        "contract_billing_map_entradas": 148,
-        "erros_count": 0
-      }
-    },
-    {
-      "timestamp": "2026-03-31T10:03:00",
-      "destino": "HML",
-      "duracao_segundos": 161.479273,
-      "filtro_escopo": {
-        "id_orcamento_no_json": 224,
-        "id_cliente_no_json": 214
-      },
-      "estatisticas": {
-        "contracts": 224,
-        "billings_total_destino": 142,
-        "promoter_tasks": 7,
-        "contract_scenarios": 4754,
-        "contract_scenario_stores": 35339,
-        "contract_sellers": 249476,
-        "contract_team_members": 224,
-        "contract_contacts": 242,
-        "contract_partners": 0,
-        "contract_additional_charges": 92,
-        "customers": {
-          "total_customers_deduplicados": 214,
-          "total_customers_duplicados_legacy_extras": 0,
-          "total_legacy_ids_referenciados_nos_grupos": 214
-        },
-        "contract_billing_map_entradas": 148,
-        "erros_count": 0
-      }
-    },
-    {
-      "timestamp": "2026-03-31T09:08:51",
-      "destino": "HML",
-      "duracao_segundos": 249.751621,
-      "filtro_escopo": {
-        "id_orcamento_no_json": 224,
-        "id_cliente_no_json": 214
-      },
-      "estatisticas": {
-        "contracts": 224,
-        "billings_total_destino": 1691,
-        "promoter_tasks": 7,
-        "contract_scenarios": 5040,
-        "contract_scenario_stores": 37733,
-        "contract_sellers": 249476,
-        "contract_team_members": 224,
-        "contract_contacts": 242,
-        "contract_partners": 0,
-        "contract_additional_charges": 124,
-        "customers": {
-          "total_customers_deduplicados": 214,
-          "total_customers_duplicados_legacy_extras": 0,
-          "total_legacy_ids_referenciados_nos_grupos": 214
-        },
-        "contract_billing_map_entradas": 199,
-        "erros_count": 0
-      }
-    },
-    {
-      "timestamp": "2026-03-31T08:51:51",
-      "destino": "HML",
-      "duracao_segundos": 306.651666,
-      "filtro_escopo": {
-        "id_orcamento_no_json": 683,
-        "id_cliente_no_json": 556
-      },
-      "estatisticas": {
-        "contracts": 683,
-        "billings_total_destino": 1498,
-        "promoter_tasks": 11,
-        "contract_scenarios": 5041,
-        "contract_scenario_stores": 37769,
-        "contract_sellers": 255875,
-        "contract_team_members": 483,
-        "contract_contacts": 738,
-        "contract_partners": 0,
-        "contract_additional_charges": 124,
-        "customers": {
-          "total_customers_deduplicados": 556,
-          "total_customers_duplicados_legacy_extras": 0,
-          "total_legacy_ids_referenciados_nos_grupos": 556
-        },
-        "contract_billing_map_entradas": 200,
         "erros_count": 0
       }
     }

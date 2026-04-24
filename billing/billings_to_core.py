@@ -2,7 +2,8 @@
 Migração: billings (gmfinancial / financial) alinhada a billing/billing_dictionary.txt
 e PONTOS_A_FECHAR (BILL-001/002/003).
 
-- Escopo IdOrcamento: interseção aggregated_ids (ViewOrcamentosLojas) ∩ XLSX id_orcamento,
+- Escopo IdOrcamento: interseção aggregated_ids (ViewOrcamentosLojas) ∩ XLSX
+  (coluna id_orcamento, id_orçamento de "ID ORÇAMENTO", ou orçamento de "ORÇAMENTO"),
   considerando apenas linhas do XLSX com orcamento_ativo = true (coluna ausente: não filtra).
 - Limpeza antes do INSERT: TRUNCATE se clear_data ou sem filtros (igual contracts);
   com filtros e sem clear_data: DELETE só nos billings dos customers do escopo.
@@ -13,8 +14,10 @@ e PONTOS_A_FECHAR (BILL-001/002/003).
 from __future__ import annotations
 
 import os
+import re
 import sys
 import logging
+import unicodedata
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -28,9 +31,9 @@ from utils.database_connection import DatabaseConnection
 
 logger = logging.getLogger(__name__)
 
-XLSX_DEFAULT = os.path.join(
-    os.path.dirname(__file__), "dados_externos", "contratos_ativos.xlsx"
-)
+# Raiz do repositório app_migracao_core (compartilhado por contracts, billing e outras tasks)
+_APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+XLSX_DEFAULT = os.path.join(_APP_ROOT, "contratos_ativos.xlsx")
 
 
 def _schema_gmcore() -> str:
@@ -41,12 +44,60 @@ def _schema_financial() -> str:
     return "gmfinancial" if DatabaseConnection.get_destino() == "HML" else "financial"
 
 
+def _normalize_xlsx_header(name: Any) -> str:
+    """
+    Cabeçalho Excel → chave estável: minúsculo, quebras de linha e espaços → '_', ':' final removido.
+    """
+    raw = str(name).strip().lower()
+    s = raw.replace("\n", "_").replace("\r", "_")
+    s = re.sub(r"\s+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    while s.endswith(":"):
+        s = s[:-1].rstrip("_").strip("_")
+    return s if s else raw
+
+
 def _normalize_xlsx_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    df.columns = [
-        str(c).strip().lower().replace(" ", "_") for c in df.columns
-    ]
+    df.columns = [_normalize_xlsx_header(c) for c in df.columns]
     return df
+
+
+def _canonical_xlsx_column_key(key: Any) -> str:
+    """Chave de coluna já normalizada ou bruta: remove '-' inicial (artefatos do Excel)."""
+    return _normalize_xlsx_header(key).lstrip("-")
+
+
+def _xlsx_header_deaccent(h: str) -> str:
+    nk = unicodedata.normalize("NFKD", h)
+    return "".join(c for c in nk if not unicodedata.combining(c))
+
+
+# Nomes canônicos (ASCII) para descrição do tipo de faturamento / calculation_type
+_CALCULATION_TYPE_DESC_KEYS_ASCII = frozenset(
+    {"tipo_faturamento_descricao", "tipo_fat_descricao"}
+)
+
+
+def calculation_type_description_from_xlsx_row(
+    xlsx_row: Optional[Dict[str, Any]],
+) -> Any:
+    """
+    Valor da célula usado em _map_calculation_type: aceita tipo_faturamento_descricao ou
+    tipo_fat_descrição (com/sem acento, cabeçalho com quebras de linha já normalizado no dict).
+    """
+    if not xlsx_row:
+        return None
+    for key, cell in xlsx_row.items():
+        ck = _canonical_xlsx_column_key(key)
+        if ck in _CALCULATION_TYPE_DESC_KEYS_ASCII:
+            return cell
+        if _xlsx_header_deaccent(ck) in _CALCULATION_TYPE_DESC_KEYS_ASCII:
+            return cell
+        # "Tipo fat" + "descrição" em linhas separadas no Excel → tipo_fat_descrição (acento/encoding variável)
+        if ck.startswith("tipo_fat_") and "desc" in ck:
+            return cell
+    return None
 
 
 def _map_calculation_type(desc: Any) -> str:
@@ -82,6 +133,98 @@ def _safe_bool(val: Any, default: bool = True) -> bool:
     return default
 
 
+def _xlsx_cell_to_snake_case(val: Any, fallback: str) -> str:
+    """Célula do XLSX → snake_case minúsculo (parâmetros de contrato / billing)."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return fallback
+    s = str(val).strip()
+    if not s or s.lower() in ("null", "none", ""):
+        return fallback
+    s = s.lower().replace("-", "_").replace(" ", "_")
+    s = re.sub(r"[^a-z0-9_]+", "", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s if s else fallback
+
+
+def normalize_contract_parameters_billing_type(val: Any, fallback: str = "current") -> str:
+    """Alias: mesmo que _xlsx_cell_to_snake_case (compatibilidade)."""
+    return _xlsx_cell_to_snake_case(val, fallback)
+
+
+def contract_parameters_billing_type_from_xlsx_row(
+    xlsx_row: Optional[Dict[str, Any]], fallback: str = "current"
+) -> str:
+    """
+    Busca contract_parameters_billing_type na linha do contratos_ativos.xlsx (chave = id_orcamento).
+    """
+    if not xlsx_row:
+        return fallback
+    for key, cell in xlsx_row.items():
+        if _canonical_xlsx_column_key(key) == "contract_parameters_billing_type":
+            return _xlsx_cell_to_snake_case(cell, fallback)
+    return fallback
+
+
+def contract_parameters_thirteenth_salary_type_from_xlsx_row(
+    xlsx_row: Optional[Dict[str, Any]], fallback: str = "monthly"
+) -> str:
+    """
+    Busca contract_parameters_thirteenth_salary_type na linha do contratos_ativos.xlsx (chave = id_orcamento).
+    """
+    if not xlsx_row:
+        return fallback
+    for key, cell in xlsx_row.items():
+        if _canonical_xlsx_column_key(key) == "contract_parameters_thirteenth_salary_type":
+            return _xlsx_cell_to_snake_case(cell, fallback)
+    return fallback
+
+
+def normalize_seller_login_cell(cell: Any) -> Optional[str]:
+    """Login vindo do XLSX (Farmer/Hunter); vazio, NaN ou #TBD → None."""
+    if cell is None or (isinstance(cell, float) and pd.isna(cell)):
+        return None
+    s = str(cell).strip()
+    if not s:
+        return None
+    if s.upper() == "#TBD":
+        return None
+    return s
+
+
+def farmer_hunter_logins_from_xlsx_row(
+    xlsx_row: Optional[Dict[str, Any]],
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Colunas tipo 'Farmer (Login User)' / 'Hunter (Login User)' após _normalize_xlsx_columns
+    (ex.: farmer_(login_user), hunter_(login_user)).
+    """
+    if not xlsx_row:
+        return None, None
+    farmer_raw: Any = None
+    hunter_raw: Any = None
+    for key, cell in xlsx_row.items():
+        ck = _canonical_xlsx_column_key(key)
+        dac = _xlsx_header_deaccent(ck)
+        if "farmer" in dac and "login" in dac:
+            farmer_raw = cell
+        if "hunter" in dac and "login" in dac:
+            hunter_raw = cell
+    return normalize_seller_login_cell(farmer_raw), normalize_seller_login_cell(hunter_raw)
+
+
+# Nomes aceitos após _normalize_xlsx_columns (sem heurística: não confunde com status_orçamento etc.)
+_ID_ORCAMENTO_XLSX_COLUMNS: Tuple[str, ...] = ("id_orcamento", "id_orçamento", "orçamento")
+
+
+def _resolve_id_orcamento_xlsx_column(df: pd.DataFrame) -> Optional[str]:
+    if df is None or df.empty:
+        return None
+    for name in _ID_ORCAMENTO_XLSX_COLUMNS:
+        if name in df.columns:
+            return name
+    return None
+
+
 def _load_xlsx_index(path: str) -> Tuple[pd.DataFrame, Dict[int, Dict[str, Any]]]:
     """Retorna DataFrame e mapa id_orcamento -> linha como dict."""
     if not os.path.isfile(path):
@@ -95,20 +238,26 @@ def _load_xlsx_index(path: str) -> Tuple[pd.DataFrame, Dict[int, Dict[str, Any]]
     )
     df = pd.read_excel(path, sheet_name=sheet)
     df = _normalize_xlsx_columns(df)
-    if "id_orcamento" not in df.columns:
-        logger.error("[BILLINGS] Coluna id_orcamento ausente no XLSX.")
+    id_col = _resolve_id_orcamento_xlsx_column(df)
+    if id_col is None:
+        logger.error(
+            "[BILLINGS] Coluna de IdOrcamento ausente no XLSX "
+            "(use id_orcamento, ID ORÇAMENTO ou ORÇAMENTO)."
+        )
         return df, {}
     by_id: Dict[int, Dict[str, Any]] = {}
     for _, row in df.iterrows():
         try:
-            oid = int(row["id_orcamento"])
+            oid = int(row[id_col])
         except Exception:
             continue
         if "orcamento_ativo" in df.columns:
             if not _safe_bool(row.get("orcamento_ativo"), True):
                 continue
         if oid not in by_id:
-            by_id[oid] = row.to_dict()
+            rec = row.to_dict()
+            rec["id_orcamento"] = oid
+            by_id[oid] = rec
     return df, by_id
 
 
@@ -184,7 +333,7 @@ def migrate_billings_for_contracts(migration: Any) -> int:
     if migration.id_orcamento_filter:
         id_from_json = list(migration.id_orcamento_filter)
 
-    xlsx_path = os.environ.get("BILLING_CONTRATOS_XLSX", XLSX_DEFAULT)
+    xlsx_path = os.environ.get("CONTRATOS_ATIVOS_FILE", XLSX_DEFAULT)
     _, xlsx_by_orch = _load_xlsx_index(xlsx_path)
     if not xlsx_by_orch:
         logger.warning("[BILLINGS] Sem dados XLSX; interseção vazia.")
@@ -279,7 +428,7 @@ def migrate_billings_for_contracts(migration: Any) -> int:
         else:
             name = str(name)[:500]
 
-        calc = _map_calculation_type(xlsx_row.get("tipo_faturamento_descricao"))
+        calc = _map_calculation_type(calculation_type_description_from_xlsx_row(xlsx_row))
         day_b = _safe_int(xlsx_row.get("dia_faturamento"), 1)
         day_d = _safe_int(xlsx_row.get("dia_vencimento"), 1)
         is_act = _safe_bool(xlsx_row.get("orcamento_ativo"), True)
@@ -306,9 +455,9 @@ def migrate_billings_for_contracts(migration: Any) -> int:
                 now,
                 calc,
                 day_b,
-                "current",
+                contract_parameters_billing_type_from_xlsx_row(xlsx_row, "current"),
                 day_d,
-                "monthly",
+                contract_parameters_thirteenth_salary_type_from_xlsx_row(xlsx_row, "monthly"),
             ),
         )
         bid = str(cursor_pg.fetchone()[0])
@@ -345,4 +494,11 @@ def migrate_billings_for_contracts(migration: Any) -> int:
     return mapped
 
 
-__all__ = ["migrate_billings_for_contracts", "XLSX_DEFAULT"]
+__all__ = [
+    "migrate_billings_for_contracts",
+    "XLSX_DEFAULT",
+    "normalize_contract_parameters_billing_type",
+    "contract_parameters_billing_type_from_xlsx_row",
+    "contract_parameters_thirteenth_salary_type_from_xlsx_row",
+    "calculation_type_description_from_xlsx_row",
+]

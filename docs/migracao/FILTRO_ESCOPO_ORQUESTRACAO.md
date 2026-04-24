@@ -52,7 +52,7 @@ Na linha de comando, os mesmos critérios devem ser passados para **todas** as t
 | Stores | `stores/stores_to_core.py` | Idem |
 | Contracts | `contracts/contracts_to_core.py` | `contracts_filter_main.json` no diretório `contracts`; grava e lê `aggregated_ids` |
 | Users | `users/users_to_core.py` | Não centraliza o mesmo JSON da mesma forma; contracts depende de users existentes (ver `orchestrator_tasks.py`) |
-| **Billings (futuro)** | *a definir em `billing/`* | **Deve:** (1) restringir a `IdOrcamento` ∈ `aggregated_ids.IdOrcamento` **e** (2) interseção com `contratos_ativos.xlsx` (`id_orcamento`), conforme `billing/billing_dictionary.txt` e `PONTOS_A_FECHAR.json` (BILL-002) |
+| **Billings (futuro)** | *a definir em `billing/`* | **Deve:** (1) restringir a `IdOrcamento` ∈ `aggregated_ids.IdOrcamento` **e** (2) interseção com `contratos_ativos.xlsx` na raiz do repo (`id_orcamento`), conforme `billing/billing_dictionary.txt` e `PONTOS_A_FECHAR.json` (BILL-002) |
 
 ---
 

@@ -50,7 +50,7 @@
   "escopo_requisitos": {
     "nova_migracao_billings": {
       "schema_destino": "gmfinancial (HML) / financial (PRD) — tabela billings",
-      "arquivo_xlsx": "billing/dados_externos/contratos_ativos.xlsx",
+      "arquivo_xlsx": "contratos_ativos.xlsx (raiz do repositório)",
       "dicionario_mapeamento": "billing/billing_dictionary.txt",
       "regras_origem": [
         "Escopo obrigatório: IdOrcamento deve existir em ViewOrcamentosLojas e em contratos_ativos.xlsx (coluna id_orcamento); fora da interseção não gera billing nesta migração (BILL-002).",

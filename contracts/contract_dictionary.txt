@@ -433,20 +433,22 @@ NOTA: A coluna "store_id" foi removida da tabela contract_scenarios. A associaç
       A tabela também possui "end_date" (DATE, nullable) e "legacy_id" (INTEGER, nullable).
       
 LÓGICA DE CRIAÇÃO DOS CENÁRIOS:
-  Os cenários são criados usando DISTINCT baseado nos seguintes campos da ViewOrcamentosLojas:
+  Os cenários são criados usando DISTINCT baseado nos seguintes campos da ViewOrcamentosLojas.
+  O valor gravado em contract_scenarios.hour_value (hour_value) NÃO é mais v.ValorHora bruto; ver fórmula abaixo.
+  Para unicidade e para JOIN com contract_scenario_stores, usar o MESMO hour_value calculado (não ValorHora da view):
   - IdOrcamento
-  - Frequencia
-  - Horas
-  - ValorHora
+  - Frequencia (inteiro na view, antes do mapeamento para frequency varchar)
+  - Horas (nvarchar, convertido para número — mesmo valor usado em contract_scenarios.hours)
+  - hour_value = Round(ValorNegociado / (Frequencia * Horas * 4), 2)  — ver detalhe em MIGRACAO CONTRACT_SCENARIOS
   - DataInicioOperacao
   - DataAvisoPrevio
   
-  Query base para gerar os cenários únicos:
+  Query base para gerar os cenários únicos (conceitual; hour_value calculado por linha):
   SELECT DISTINCT 
       v.IdOrcamento,
       v.Frequencia,
       v.Horas,
-      v.ValorHora,
+      Round(v.ValorNegociado / (v.Frequencia * CAST(v.Horas AS FLOAT) * 4), 2) AS hour_value_calc,
       v.DataInicioOperacao,
       v.DataAvisoPrevio
   FROM ViewOrcamentosLojas v
@@ -455,6 +457,7 @@ LÓGICA DE CRIAÇÃO DOS CENÁRIOS:
       AND (CONVERT(DATE, v.DataAvisoPrevio) >= data_minima OR v.DataAvisoPrevio IS NULL)
       AND CONVERT(DATE, v.DataInicioOperacao) <= data_maxima
       AND v.IdCliente IS NOT NULL
+  (Ajustar CAST/parse de Horas e tratamento de denominador zero na implementação.)
 
 
 ====================================================================================================
@@ -519,7 +522,7 @@ CAMPOS DISPONIVEIS:
     - IdEstabelecimento (mapeado para store_id)
     - Frequencia (usado para buscar o scenario_id correspondente)
     - Horas (usado para buscar o scenario_id correspondente)
-    - ValorHora (usado para buscar o scenario_id correspondente)
+    - ValorNegociado (usado junto com Frequencia e Horas para calcular hour_value e buscar o scenario_id)
     - DataInicioOperacao (mapeado para start_date e usado para buscar o scenario_id correspondente)
     - DataAvisoPrevio (usado para buscar o scenario_id correspondente)
     - Ativo (mapeado para status)
@@ -540,7 +543,7 @@ LÓGICA DE ASSOCIAÇÃO:
   - IdOrcamento (via contract_id)
   - Frequencia
   - Horas
-  - ValorHora
+  - hour_value (mesmo cálculo: Round(ValorNegociado / (Frequencia * Horas * 4), 2) — não usar ValorHora da view)
   - DataInicioOperacao
   - DataAvisoPrevio
   
@@ -931,14 +934,24 @@ MIGRACAO: ORCAMENTO (ViewOrcamentosLojas + Orcamento) : CONTRACTS
 
 MIGRACAO: ORCAMENTOLOJAS (ViewOrcamentosLojas + OrcamentoLojas) : CONTRACT_SCENARIOS
 ----------------------------------------------------------------------------------------------------
-  ⚠️ IMPORTANTE: Esta migração cria CENÁRIOS ÚNICOS usando DISTINCT baseado em IdOrcamento, Frequencia, Horas, ValorHora, DataInicioOperacao e DataAvisoPrevio.
+  ⚠️ IMPORTANTE: Esta migração cria CENÁRIOS ÚNICOS usando DISTINCT baseado em IdOrcamento, Frequencia, Horas,
+  hour_value (calculado), DataInicioOperacao e DataAvisoPrevio — não usar ValorHora da view para unicidade nem para gravar hour_value.
   A associação entre cenários e lojas é feita posteriormente na tabela contract_scenario_stores.
   
+  REGRA hour_value (contract_scenarios.hour_value = valor hora na origem lógica):
+  - Fórmula: Round(ValorNegociado / (Frequencia * Horas * 4), 2)
+  - ValorNegociado: ViewOrcamentosLojas.ValorNegociado (decimal)
+  - Frequencia: inteiro da view (mesmo usado antes do mapeamento para frequency varchar)
+  - Horas: valor numérico obtido do nvarchar ViewOrcamentosLojas.Horas (mesmo usado em contract_scenarios.hours)
+  - Constante 4: fator fixo da regra de negócio (semanas no mês / convenção acordada)
+  - Arredondamento: 2 casas decimais (ROUND / round half to even conforme implementação)
+  - Denominador zero (Frequencia * Horas * 4 = 0): tratar na implementação (ex.: hour_value 0.0 ou fallback explícito; campo NOT NULL)
+
   [GERADO AUTOMATICAMENTE] : gmcoredb.commercial.contract_scenarios.id
   [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdOrcamento -> contracts.legacy_id -> contracts.id] : gmcoredb.commercial.contract_scenarios.contract_id
   [PREENCHIDO PELA LOGICA DE MIGRACAO - converter ViewOrcamentosLojas.Frequencia (int) para varchar conforme mapeamento: 1=once_per_week, 2=twice_per_week, 3=three_times_per_week, 4=four_times_per_week, 5=five_times_per_week, 6=six_times_per_week, 7=seven_times_per_week, 15=every_15_days, 30=once_per_month] : gmcoredb.commercial.contract_scenarios.frequency
   [PREENCHIDO PELA LOGICA DE MIGRACAO - converter ViewOrcamentosLojas.Horas (nvarchar) para double precision] : gmcoredb.commercial.contract_scenarios.hours
-  [PREENCHIDO PELA LOGICA DE MIGRACAO - converter ViewOrcamentosLojas.ValorHora (decimal) para NUMERIC, preencher com 0.0 se vazio/NULL (campo NOT NULL)] : gmcoredb.commercial.contract_scenarios.hour_value
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - Round(ValorNegociado / (Frequencia * Horas * 4), 2) conforme regra acima; não mapear ViewOrcamentosLojas.ValorHora] : gmcoredb.commercial.contract_scenarios.hour_value
   FINANCEIRO.dbo.ViewOrcamentosLojas.DataInicioOperacao : gmcoredb.commercial.contract_scenarios.start_date
   [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear StatusPedido ou Ativo para status (converter para integer)] : gmcoredb.commercial.contract_scenarios.status
   FINANCEIRO.dbo.ViewOrcamentosLojas.DataInclusaoOrcamentoLojas : gmcoredb.commercial.contract_scenarios.created_at
@@ -956,7 +969,7 @@ MIGRACAO: ORCAMENTOLOJAS (ViewOrcamentosLojas + OrcamentoLojas) : CONTRACT_SCENA
     - ViewOrcamentosLojas.IdOrcamentoLojaComplemento
     - ViewOrcamentosLojas.QtdeSku
     - ViewOrcamentosLojas.ValorLoja
-    - ViewOrcamentosLojas.ValorNegociado
+    - ViewOrcamentosLojas.ValorHora (substituído pelo cálculo de hour_value; não gravar no destino)
     - ViewOrcamentosLojas.DecimoTerceiroSalario
     - ViewOrcamentosLojas.Viabilidade
     - ViewOrcamentosLojas.TipoViabilidade
@@ -1005,12 +1018,12 @@ MIGRACAO: ORCAMENTOLOJAS (ViewOrcamentosLojas + OrcamentoLojas) : CONTRACT_SCENA
 ----------------------------------------------------------------------------------------------------
   ⚠️ IMPORTANTE: Esta migração associa os cenários únicos (criados em contract_scenarios) com as lojas específicas.
   Cada registro de ViewOrcamentosLojas/OrcamentoLojas deve ser associado ao cenário correspondente baseado na combinação:
-  IdOrcamento + Frequencia + Horas + ValorHora + DataInicioOperacao + DataAvisoPrevio
+  IdOrcamento + Frequencia + Horas + hour_value (Round(ValorNegociado / (Frequencia * Horas * 4), 2)) + DataInicioOperacao + DataAvisoPrevio
   
   [GERADO AUTOMATICAMENTE] : gmcoredb.commercial.contract_scenario_stores.id
   FINANCEIRO.dbo.ViewOrcamentosLojas.IdOrcamentoLoja : gmcoredb.commercial.contract_scenario_stores.legacy_id
   [PREENCHIDO PELA LOGICA DE MIGRACAO - ViewOrcamentosLojas.IdEstabelecimento -> stores.legacy_id -> stores.id] : gmcoredb.commercial.contract_scenario_stores.store_id
-  [PREENCHIDO PELA LOGICA DE MIGRACAO - buscar contract_scenarios.id baseado na combinação de IdOrcamento+Frequencia+Horas+ValorHora+DataInicioOperacao+DataAvisoPrevio que foi criada na etapa anterior (step2_migrate_contract_scenarios)] : gmcoredb.commercial.contract_scenario_stores.scenario_id
+  [PREENCHIDO PELA LOGICA DE MIGRACAO - buscar contract_scenarios.id baseado na mesma combinação da etapa anterior (step2_migrate_contract_scenarios), usando hour_value calculado e não ValorHora da view] : gmcoredb.commercial.contract_scenario_stores.scenario_id
   FINANCEIRO.dbo.ViewOrcamentosLojas.DataInicioOperacao : gmcoredb.commercial.contract_scenario_stores.start_date
   [PREENCHIDO PELA LOGICA DE MIGRACAO - mapear Ativo de OrcamentoLojas para status (converter para VARCHAR: 'active'=ativo, 'inactive'=inativo ou valores conforme regra de negócio)] : gmcoredb.commercial.contract_scenario_stores.status
   [PREENCHIDO PELA LOGICA DE MIGRACAO - sempre preencher com NULL] : gmcoredb.commercial.contract_scenario_stores.closed_at 
