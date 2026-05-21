@@ -79,13 +79,26 @@ CHUNK_SIZE = 20000
 class UsersMigration:
     """Classe para executar a migração de dados de users"""
     
-    def __init__(self, limit_rows=0):
+    def __init__(self, limit_rows=0, clear_users: bool = False):
         self.stats = {
             'users': 0,
             'errors': []
         }
         self.user_id_map = {}  # Map: legacy_id -> uuid
         self.limit_rows = limit_rows  # 0 = todos, > 0 = limitar quantidade
+        # True: TRUNCATE users + Sys Admin; False: apenas INSERT de usuários novos (legacy_id inexistente)
+        self.clear_users = clear_users
+    
+    @staticmethod
+    def _table_has_column(cursor_pg, schema: str, table: str, column: str) -> bool:
+        cursor_pg.execute(
+            """
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s AND column_name = %s
+            """,
+            (schema, table, column),
+        )
+        return cursor_pg.fetchone() is not None
     
     def should_include_legacy_id(self):
         """Retorna True se deve incluir legacy_id (HML e PRD)"""
@@ -373,6 +386,16 @@ class UsersMigration:
             
             diferenca = origem_count - destino_count
             
+            if not self.clear_users:
+                print(
+                    f"\n[INFO] Validacao (modo incremental): origem={origem_count}, destino={destino_count}. "
+                    "Contagens nao precisam coincidir."
+                )
+                logger.info(
+                    f"VALIDACAO ETAPA 1 (incremental): origem={origem_count}, destino={destino_count}"
+                )
+                return True
+            
             if diferenca == 0:
                 print(f"\nOK - Todos os registros foram migrados com sucesso!")
                 logger.info(f"VALIDACAO ETAPA 1: OK - Origem: {origem_count}, Destino: {destino_count}")
@@ -477,12 +500,16 @@ class UsersMigration:
             except Exception as e:
                 logger.warning(f"Nao foi possivel criar/verificar coluna legacy_id: {e}")
         
-        # Truncate
-        print("\n[ETAPA 1] Limpando tabela users...")
-        self.truncate_table('users', destino=destino)
-        
-        # Inserir usuário manual (Sys Admin) após TRUNCATE
-        self.insert_manual_user(destino=destino)
+        if self.clear_users:
+            print("\n[ETAPA 1] Flag --clear-users: TRUNCATE em users e insercao do Sys Admin.")
+            logger.info("[ETAPA 1] clear_users=True: TRUNCATE + Sys Admin")
+            print("\n[ETAPA 1] Limpando tabela users...")
+            self.truncate_table('users', destino=destino)
+            self.insert_manual_user(destino=destino)
+        else:
+            print("\n[ETAPA 1] Modo incremental: sem TRUNCATE; apenas INSERT de usuarios novos.")
+            print("[ETAPA 1] Sys Admin so e criado apos TRUNCATE; use --clear-users para esse fluxo.")
+            logger.info("[ETAPA 1] clear_users=False: INSERT apenas legacy_id ainda inexistente no destino")
         
         # Buscar dados do SQL Server
         print("[ETAPA 1] Buscando dados do SQL Server...")
@@ -557,7 +584,7 @@ class UsersMigration:
         # Remover linhas com erros (name None após limpeza)
         df = df[df['name'].notna()]
         
-        print(f"[ETAPA 1] {len(df)} registros processados. Inserindo no banco (otimizado com execute_values)...")
+        print(f"[ETAPA 1] {len(df)} registro(s) carregado(s) da origem (apos filtros basicos).")
         
         # Conectar ao PostgreSQL
         # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD para garantir contexto correto
@@ -587,6 +614,33 @@ class UsersMigration:
             raise ValueError(error_msg)
         
         logger.info(f"[VERIFICAÇÃO] Tabela '{schema}.users' existe e está acessível")
+        
+        if not self.clear_users:
+            if not include_legacy:
+                raise ValueError(
+                    "Sem --clear-users o modo incremental exige insercao com legacy_id. "
+                    "Use --clear-users se precisar do fluxo completo com TRUNCATE."
+                )
+            if not self._table_has_column(cursor_pg, schema, 'users', 'legacy_id'):
+                raise ValueError(
+                    "Modo incremental exige coluna users.legacy_id no destino para detectar usuarios ja migrados. "
+                    "Crie a coluna ou use --clear-users apenas se aceitar TRUNCATE em users."
+                )
+            cursor_pg.execute(f'SELECT legacy_id FROM "{schema}"."users" WHERE legacy_id IS NOT NULL')
+            existing_legacy = set()
+            for row in cursor_pg.fetchall():
+                if row[0] is not None:
+                    existing_legacy.add(int(row[0]))
+            before_n = len(df)
+            df = df.loc[~df['legacy_id'].isin(existing_legacy)].copy()
+            skipped = before_n - len(df)
+            print(
+                f"[ETAPA 1] Incremental: {skipped} usuario(s) ignorados (legacy_id ja existente), "
+                f"{len(df)} novo(s) a inserir."
+            )
+            logger.info(f"[ETAPA 1] incremental: existentes ignorados={skipped}, novos={len(df)}")
+        
+        print(f"[ETAPA 1] {len(df)} registro(s) a gravar no destino (execute_values)...")
         
         # Preparar query e dados baseado em include_legacy
         if include_legacy:
@@ -695,7 +749,7 @@ class UsersMigration:
             
             # Se não usou RETURNING, buscar UUIDs gerados após todas as inserções
             if include_legacy and all_legacy_ids_inserted:
-                print(f"[ETAPA 1] Buscando UUIDs gerados para {len(all_legacy_ids_inserted)} registros...")
+                print(f"[ETAPA 1] Buscando UUIDs gerados para {len(all_legacy_ids_inserted)} registro(s)...")
                 cursor_pg.execute(f"""
                     SELECT id, legacy_id 
                     FROM {schema}.users 
@@ -909,42 +963,62 @@ class UsersMigration:
             print("OK - Tabela user_roles truncada")
             logger.info(f"Tabela {schema}.user_roles truncada com sucesso")
             
-            # 1. Inserir registro manual primeiro
-            print("\n[ETAPA 2] Inserindo registro manual...")
-            manual_insert_query = f"""
-            INSERT INTO "{schema}"."user_roles" (
-                user_id, role_id
-            ) VALUES (
-                %s, %s
+            manual_user_uuid = manual_user_role['user_id']
+            cursor_pg.execute(
+                f'SELECT 1 FROM "{schema}"."users" WHERE id = %s::uuid',
+                (manual_user_uuid,),
             )
-            """
-            cursor_pg.execute(manual_insert_query, (
-                manual_user_role['user_id'],
-                manual_user_role['role_id']
-            ))
-            conn_pg.commit()
-            print(f"OK - Registro manual inserido: user_id={manual_user_role['user_id']}, role_id={manual_user_role['role_id']}")
-            logger.info(f"[ETAPA 2] Registro manual inserido: user_id={manual_user_role['user_id']}, role_id={manual_user_role['role_id']}")
+            manual_user_exists = cursor_pg.fetchone() is not None
+            manual_role_rows = 0
             
-            # 2. Buscar todos os usuários da origem (exceto o user_id do array manual)
-            print("\n[ETAPA 2] Buscando usuários da tabela users (excluindo registro manual)...")
-            users_query = f"""
-            SELECT id
-            FROM "{schema}"."users"
-            WHERE id != %s
-            ORDER BY id
-            """
-            cursor_pg.execute(users_query, (manual_user_role['user_id'],))
+            if manual_user_exists:
+                print("\n[ETAPA 2] Inserindo registro manual (Sys Admin)...")
+                manual_insert_query = f"""
+                INSERT INTO "{schema}"."user_roles" (
+                    user_id, role_id
+                ) VALUES (
+                    %s, %s
+                )
+                """
+                cursor_pg.execute(manual_insert_query, (
+                    manual_user_role['user_id'],
+                    manual_user_role['role_id']
+                ))
+                conn_pg.commit()
+                print(f"OK - Registro manual inserido: user_id={manual_user_role['user_id']}, role_id={manual_user_role['role_id']}")
+                logger.info(f"[ETAPA 2] Registro manual inserido: user_id={manual_user_role['user_id']}, role_id={manual_user_role['role_id']}")
+                manual_role_rows = 1
+            else:
+                print("\n[ETAPA 2] Sys Admin nao encontrado em users — pulando registro manual em user_roles (esperado sem --clear-users).")
+                logger.info("[ETAPA 2] Sys Admin ausente: sem INSERT manual em user_roles")
+            
+            # 2. Buscar todos os usuários da origem (exceto o user_id do array manual, se existir)
+            print("\n[ETAPA 2] Buscando usuários da tabela users...")
+            if manual_user_exists:
+                users_query = f"""
+                SELECT id
+                FROM "{schema}"."users"
+                WHERE id != %s::uuid
+                ORDER BY id
+                """
+                cursor_pg.execute(users_query, (manual_user_uuid,))
+            else:
+                users_query = f"""
+                SELECT id
+                FROM "{schema}"."users"
+                ORDER BY id
+                """
+                cursor_pg.execute(users_query)
             all_users = cursor_pg.fetchall()
             
             if not all_users:
-                print("[ETAPA 2] Nenhum usuário encontrado para migrar (exceto o manual)")
+                print("[ETAPA 2] Nenhum usuário encontrado para migrar em user_roles")
                 logger.warning("[ETAPA 2] Nenhum usuário encontrado para migrar")
                 cursor_pg.close()
                 conn_pg.close()
                 return
             
-            print(f"[ETAPA 2] {len(all_users)} usuários encontrados. Criando registros em user_roles...")
+            print(f"[ETAPA 2] {len(all_users)} usuário(s) encontrado(s). Criando registros em user_roles...")
             
             # Preparar dados para inserção em lote
             insert_query = f"""
@@ -997,9 +1071,14 @@ class UsersMigration:
             cursor_pg.close()
             conn_pg.close()
             
-            total_records = len(processed_tuples) + 1  # +1 para o registro manual
-            print(f"\n[ETAPA 2] CONCLUIDA! Total de user_roles migrados: {total_records} (1 manual + {len(processed_tuples)} da origem)")
-            logger.info(f"[ETAPA 2] CONCLUIDA! Total: {total_records} (1 manual + {len(processed_tuples)} da origem)")
+            total_records = len(processed_tuples) + manual_role_rows
+            print(
+                f"\n[ETAPA 2] CONCLUIDA! Total de user_roles migrados: {total_records} "
+                f"({manual_role_rows} manual + {len(processed_tuples)} demais)"
+            )
+            logger.info(
+                f"[ETAPA 2] CONCLUIDA! Total: {total_records} ({manual_role_rows} manual + {len(processed_tuples)} demais)"
+            )
             
         except Exception as e:
             logger.error(f"Erro na ETAPA 2: {e}")

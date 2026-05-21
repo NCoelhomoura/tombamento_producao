@@ -17,6 +17,8 @@ if utils_path not in sys.path:
     sys.path.insert(0, utils_path)
 
 from utils.database_connection import DatabaseConnection
+from utils.fetch_segmento_produto_ids import resolve_id_segmento_produto_for_json
+from utils.fetch_canal_estabelecimento_ids import fetch_distinct_id_canal_from_estabelecimento_ids
 
 # Configurar destino como PRD
 DatabaseConnection.set_destino('PRD')
@@ -85,11 +87,23 @@ def fix_json():
         'IdBandeira': sorted(list(id_bandeira_set)),
         'IdRede': sorted(list(id_rede_set))
     }
+    aggregated_ids['IdSegmentoProduto'] = resolve_id_segmento_produto_for_json(
+        aggregated_ids['IdCliente'],
+        aggregated_ids['IdOrcamento'],
+        data_aviso_previo_min,
+        data_inicio_operacao_max,
+        status_pedido_filter,
+    )
+    aggregated_ids['IdCanalEstabelecimento'] = fetch_distinct_id_canal_from_estabelecimento_ids(
+        aggregated_ids['IdEstabelecimento']
+    )
     
     print(f"\n[RESULTADO] IDs coletados:")
     print(f"  - IdOrcamento: {len(aggregated_ids['IdOrcamento'])}")
     print(f"  - IdCliente: {len(aggregated_ids['IdCliente'])}")
+    print(f"  - IdSegmentoProduto: {len(aggregated_ids['IdSegmentoProduto'])}")
     print(f"  - IdEstabelecimento: {len(aggregated_ids['IdEstabelecimento'])}")
+    print(f"  - IdCanalEstabelecimento: {len(aggregated_ids['IdCanalEstabelecimento'])}")
     print(f"  - IdBandeira: {len(aggregated_ids['IdBandeira'])}")
     print(f"  - IdRede: {len(aggregated_ids['IdRede'])}")
     
@@ -126,7 +140,9 @@ def fix_json():
     print(f"[OK] JSON atualizado com sucesso!")
     print(f"  - Total de IdOrcamento: {len(aggregated_ids['IdOrcamento'])}")
     print(f"  - Total de IdCliente: {len(aggregated_ids['IdCliente'])}")
+    print(f"  - Total de IdSegmentoProduto: {len(aggregated_ids['IdSegmentoProduto'])}")
     print(f"  - Total de IdEstabelecimento: {len(aggregated_ids['IdEstabelecimento'])}")
+    print(f"  - Total de IdCanalEstabelecimento: {len(aggregated_ids['IdCanalEstabelecimento'])}")
     print("\n" + "="*100)
 
 if __name__ == "__main__":

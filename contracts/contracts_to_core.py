@@ -26,6 +26,8 @@ if utils_path not in sys.path:
     sys.path.insert(0, utils_path)
 # ⚠️ CRÍTICO: Importar usando o mesmo caminho do orchestrator para garantir mesma referência
 from utils.database_connection import DatabaseConnection
+from utils.fetch_canal_estabelecimento_ids import fetch_distinct_id_canal_from_estabelecimento_ids
+from utils.fetch_segmento_produto_ids import resolve_id_segmento_produto_for_json
 from billing.billings_to_core import (
     XLSX_DEFAULT,
     _load_xlsx_index,
@@ -443,7 +445,9 @@ class ContractsMigration:
                 'aggregated_ids': {
                     'IdOrcamento': sorted(aggregated_ids['IdOrcamento']),
                     'IdCliente': sorted([x for x in aggregated_ids['IdCliente'] if x is not None]),
+                    'IdSegmentoProduto': sorted([x for x in aggregated_ids['IdSegmentoProduto'] if x is not None]),
                     'IdEstabelecimento': sorted([x for x in aggregated_ids['IdEstabelecimento'] if x is not None]),
+                    'IdCanalEstabelecimento': sorted([x for x in aggregated_ids['IdCanalEstabelecimento'] if x is not None]),
                     'IdBandeira': sorted([x for x in aggregated_ids['IdBandeira'] if x is not None]),
                     'IdRede': sorted([x for x in aggregated_ids['IdRede'] if x is not None])
                 },
@@ -1038,7 +1042,9 @@ class ContractsMigration:
         aggregated_ids_preview = {
             'IdOrcamento': sorted(id_orcamento_preview),
             'IdCliente': sorted(id_cliente_necessarios),
+            'IdSegmentoProduto': [],
             'IdEstabelecimento': [],
+            'IdCanalEstabelecimento': [],
             'IdBandeira': [],
             'IdRede': []
         }
@@ -1322,6 +1328,13 @@ class ContractsMigration:
         else:
             cursor_sql_ids.execute(query_id_cliente)
         aggregated_ids['IdCliente'] = [row[0] for row in cursor_sql_ids.fetchall()]
+        aggregated_ids['IdSegmentoProduto'] = resolve_id_segmento_produto_for_json(
+            aggregated_ids['IdCliente'],
+            aggregated_ids['IdOrcamento'],
+            self.data_aviso_previo_min,
+            self.data_inicio_operacao_max,
+            self.status_pedido_filter,
+        )
         
         # IdEstabelecimento
         query_id_estabelecimento = f"""
@@ -1336,6 +1349,9 @@ class ContractsMigration:
         else:
             cursor_sql_ids.execute(query_id_estabelecimento)
         aggregated_ids['IdEstabelecimento'] = [row[0] for row in cursor_sql_ids.fetchall()]
+        aggregated_ids['IdCanalEstabelecimento'] = fetch_distinct_id_canal_from_estabelecimento_ids(
+            [int(x) for x in aggregated_ids['IdEstabelecimento'] if x is not None]
+        )
         
         # IdBandeira
         query_id_bandeira = f"""
@@ -1374,11 +1390,17 @@ class ContractsMigration:
         logger.info(f"[ETAPA 1] Exemplo de query (IdEstabelecimento): {query_id_estabelecimento[:200]}...")
         
         print(f"[ETAPA 1] IDs únicos coletados: {len(aggregated_ids['IdOrcamento'])} contratos, "
+              f"{len(aggregated_ids['IdCliente'])} clientes, "
+              f"{len(aggregated_ids['IdSegmentoProduto'])} segmentos produto, "
               f"{len(aggregated_ids['IdEstabelecimento'])} estabelecimentos, "
+              f"{len(aggregated_ids['IdCanalEstabelecimento'])} canais estabelecimento, "
               f"{len(aggregated_ids['IdBandeira'])} bandeiras, "
               f"{len(aggregated_ids['IdRede'])} redes")
         logger.info(f"[ETAPA 1] IDs únicos coletados - Contratos: {len(aggregated_ids['IdOrcamento'])}, "
+                   f"Clientes: {len(aggregated_ids['IdCliente'])}, "
+                   f"Segmentos produto: {len(aggregated_ids['IdSegmentoProduto'])}, "
                    f"Estabelecimentos: {len(aggregated_ids['IdEstabelecimento'])}, "
+                   f"Canais estabelecimento: {len(aggregated_ids['IdCanalEstabelecimento'])}, "
                    f"Bandeiras: {len(aggregated_ids['IdBandeira'])}, "
                    f"Redes: {len(aggregated_ids['IdRede'])}")
         
@@ -1891,7 +1913,7 @@ class ContractsMigration:
     def translate_task_name_to_english(self, nome_tarefa: Optional[str]) -> str:
         """Traduz nome de tarefa do português para inglês em snake_case"""
         if not nome_tarefa:
-            return "standard_task"
+            raise ValueError("nome_tarefa é obrigatório para tradução (valor sintético não é permitido)")
         
         nome_tarefa = str(nome_tarefa).strip().upper()
         
@@ -1931,77 +1953,9 @@ class ContractsMigration:
         normalized = re.sub(r'_+', '_', normalized)  # Remover underscores duplicados
         normalized = normalized.strip('_')  # Remover underscores no início/fim
         
-        return normalized if normalized else "standard_task"
-    
-    def _ensure_default_promoter_task(self):
-        """Garante que existe uma tarefa padrão no banco e no mapeamento"""
-        DEFAULT_TASK_NAME = "standard_task"
-        
-        # Se já está no mapeamento, não precisa fazer nada
-        if DEFAULT_TASK_NAME in self.promoter_task_map:
-            return
-        
-        conn_pg = None
-        cursor_pg = None
-        
-        try:
-            destino = DatabaseConnection.get_destino()
-            # ⚠️ CRÍTICO: Usar conexão PRD diretamente quando destino for PRD
-            if destino == 'PRD':
-                conn_pg = DatabaseConnection.get_postgresql_prd_destino_connection()
-            else:
-                conn_pg = DatabaseConnection.get_postgresql_hml_destino_connection()
-            cursor_pg = conn_pg.cursor()
-            schema_pdv = get_schema_pdv()
-
-            # Verificar se já existe no banco (PRD: pdv.*, HML: gmpdv.*)
-            cursor_pg.execute(f"""
-                SELECT id FROM {schema_pdv}.promoter_tasks WHERE name = %s
-            """, (DEFAULT_TASK_NAME,))
-            existing = cursor_pg.fetchone()
-            
-            if existing:
-                # Já existe, adicionar ao mapeamento
-                task_uuid = str(existing[0])
-                self.promoter_task_map[DEFAULT_TASK_NAME] = task_uuid
-                logger.info(f"[ETAPA 2] Tarefa padrão '{DEFAULT_TASK_NAME}' encontrada no banco: {task_uuid}")
-            else:
-                # Criar tarefa padrão
-                task_uuid_obj = uuid.uuid4()
-                task_uuid = str(task_uuid_obj)
-                now = datetime.now()
-                
-                cursor_pg.execute(f"""
-                    INSERT INTO {schema_pdv}.promoter_tasks 
-                    (id, name, task_type, is_active, deleted_at, created_at, updated_at)
-                    VALUES (%s::uuid, %s, %s, %s, %s, %s, %s)
-                """, (
-                    task_uuid,
-                    DEFAULT_TASK_NAME,
-                    "undefined",
-                    True,
-                    None,
-                    now,
-                    now
-                ))
-                conn_pg.commit()
-                
-                # Adicionar ao mapeamento
-                self.promoter_task_map[DEFAULT_TASK_NAME] = task_uuid
-                logger.info(f"[ETAPA 2] Tarefa padrão '{DEFAULT_TASK_NAME}' criada: {task_uuid}")
-                print(f"[ETAPA 2] Tarefa padrão '{DEFAULT_TASK_NAME}' criada: {task_uuid}")
-                
-        except Exception as e:
-            logger.error(f"Erro ao garantir tarefa padrão: {e}")
-            print(f"ERRO ao garantir tarefa padrão: {e}")
-            if conn_pg:
-                conn_pg.rollback()
-            raise
-        finally:
-            if cursor_pg:
-                cursor_pg.close()
-            if conn_pg:
-                conn_pg.close()
+        if not normalized:
+            raise ValueError("nome_tarefa normalizado ficou vazio (valor sintético não é permitido)")
+        return normalized
     
     def step9_migrate_promoter_tasks(self):
         """ETAPA 9: Migrar promoter_tasks (deve ser executado antes do step2)"""
@@ -2465,9 +2419,6 @@ class ContractsMigration:
                 print("[ETAPA 2] ERRO: Não foi possível criar promoter_task_map. Abortando.")
                 raise Exception("promoter_task_map não disponível. step9 deve ser executado antes de step2.")
         
-        # Garantir que existe uma tarefa padrão (para casos onde não encontra tarefa)
-        self._ensure_default_promoter_task()
-        
         # Verificar/criar coluna legacy_id (apenas em HML)
         include_legacy = False
         if self.should_include_legacy_id():
@@ -2818,39 +2769,34 @@ class ContractsMigration:
             logger.error(traceback.format_exc())
             raise
         
-        # Preencher valores None com tarefa padrão
-        DEFAULT_TASK_NAME = "standard_task"
-        default_task_id = self.promoter_task_map.get(DEFAULT_TASK_NAME)
-        
-        if default_task_id:
-            default_task_id = str(default_task_id)
-        else:
-            logger.error("[ETAPA 2] ERRO CRÍTICO: Tarefa padrão não disponível!")
-            raise Exception("Tarefa padrão 'standard_task' não encontrada no promoter_task_map")
-        
         # Mapear usando .map() (vetorizado - muito mais rápido que apply)
         df['promoter_task_id'] = df['name'].map(self.promoter_task_map)
         
-        # Preencher valores None ou não encontrados com tarefa padrão (vetorizado)
         missing_mask = df['promoter_task_id'].isna() | df['name'].isna()
-        missing_count = missing_mask.sum()
+        missing_count = int(missing_mask.sum())
         
         if missing_count > 0:
-            # Logar combinações não encontradas (apenas primeiras 10 para não sobrecarregar log)
-            missing_names = df[missing_mask & df['name'].notna()]['name'].unique()[:10]
-            for missing_name in missing_names:
-                logger.warning(f"[ETAPA 2] Tarefa não encontrada para name='{missing_name}'. Usando tarefa padrão.")
-            if len(df[missing_mask & df['name'].notna()]['name'].unique()) > 10:
-                logger.warning(f"[ETAPA 2] ... e mais {len(df[missing_mask & df['name'].notna()]['name'].unique()) - 10} combinações não encontradas")
-            
-            # Preencher com tarefa padrão (vetorizado)
-            df.loc[missing_mask, 'promoter_task_id'] = default_task_id
-        
-        # Garantir que não há valores None antes de converter para string
-        if df['promoter_task_id'].isna().any():
-            remaining_none = df['promoter_task_id'].isna().sum()
-            logger.warning(f"[ETAPA 2] Ainda há {remaining_none} valores None após preenchimento. Preenchendo com tarefa padrão...")
-            df.loc[df['promoter_task_id'].isna(), 'promoter_task_id'] = default_task_id
+            invalid_name_rows = missing_mask & df['name'].isna()
+            not_in_map = missing_mask & df['name'].notna()
+            unknown_names = sorted(df.loc[not_in_map, 'name'].dropna().unique().tolist())
+            msg_parts = [
+                f"[ETAPA 2] {missing_count} registro(s) sem promoter_task_id válido "
+                "(sem fallback: inclua a tarefa no escopo do step9 ou alinhe NomeTarefa com promoter_tasks.name)."
+            ]
+            if invalid_name_rows.any():
+                n_bad = int(invalid_name_rows.sum())
+                msg_parts.append(f"{n_bad} linha(s) com NomeTarefa ausente ou inválido após normalização.")
+            if unknown_names:
+                preview = unknown_names[:25]
+                msg_parts.append(
+                    f"Nome(s) normalizado(s) sem correspondência em promoter_tasks ({len(unknown_names)} único(s)): {preview}"
+                )
+                if len(unknown_names) > 25:
+                    msg_parts.append("(... lista truncada no log; corrija origem ou step9.)")
+            err_msg = " ".join(msg_parts)
+            logger.error(err_msg)
+            print(err_msg)
+            raise Exception(err_msg)
         
         # Converter para string (garantindo que todos os valores são válidos)
         df['promoter_task_id'] = df['promoter_task_id'].astype(str)
@@ -2858,15 +2804,8 @@ class ContractsMigration:
         # Remover colunas temporárias
         df = df.drop(columns=['name', 'nome_tarefa_clean'], errors='ignore')
         
-        print(f"[ETAPA 2] Mapeamento de promoter_task_id concluído. {missing_count} registros usaram tarefa padrão.")
-        logger.info(f"[ETAPA 2] Mapeamento concluído: {missing_count} registros usaram tarefa padrão de {len(df)} total")
-        
-        # Verificar se há valores None (erro crítico - não deveria acontecer)
-        if df['promoter_task_id'].isna().any():
-            missing_count = df['promoter_task_id'].isna().sum()
-            logger.error(f"[ETAPA 2] ERRO CRÍTICO: {missing_count} registros sem promoter_task_id válido mesmo com tarefa padrão")
-            print(f"[ETAPA 2] ERRO CRÍTICO: {missing_count} registros sem promoter_task_id válido")
-            raise Exception(f"Não foi possível atribuir promoter_task_id para {missing_count} registros")
+        print(f"[ETAPA 2] Mapeamento de promoter_task_id concluído para {len(df)} registro(s).")
+        logger.info(f"[ETAPA 2] Mapeamento de promoter_task_id concluído para {len(df)} registro(s)")
         
         # Mapear frequency de inteiro para varchar (conversão em lote vetorizada)
         # Mapa de frequência incluindo valores decimais

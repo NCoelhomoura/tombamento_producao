@@ -25,6 +25,8 @@ class DatabaseConnection:
     }
     
     # Configurações PostgreSQL PRD (Origem Schemas/Tabelas - APENAS LEITURA)
+    
+    # # CONN AMBIENTE DEV GMCORE
     POSTGRESQL_PRD_CONFIG = {
         'host': 'gmcore-eks-dev-postgres.ckksg9kcwfzj.us-east-2.rds.amazonaws.com',
         'database': 'gmcoredb',
@@ -32,6 +34,15 @@ class DatabaseConnection:
         'user': 'postgres',
         'password': 'lmlVyIGz8eWT6iBtzLJU'
     }
+
+    # # # CONN AMBIENTE PRD GMCORE
+    # POSTGRESQL_PRD_CONFIG = {
+    #     'host': 'gmcore-eks-prod-postgres.cxlocls22sp7.sa-east-1.rds.amazonaws.com',
+    #     'database': 'gmcoredb_prod',
+    #     'port': 5432,
+    #     'user': 'postgres_prod',
+    #     'password': 'J8sdmqz1TQbbu7F9sO4B'
+    # }
     
     # Configurações PostgreSQL HML (Destino - Leitura/Escrita, schema gmcore)
     POSTGRESQL_HML_DESTINO_CONFIG = {
@@ -45,6 +56,8 @@ class DatabaseConnection:
     
     # Configurações PostgreSQL PRD AWS (Destino - Leitura/Escrita, schema core)
     # Credenciais do DESTINO SCHEMAS TABELAS PRD (diretrizes_migracao.txt)
+
+    # # CONN AMBIENTE DEV GMCORE
     POSTGRESQL_PRD_DESTINO_CONFIG = {
         'host': 'gmcore-eks-dev-postgres.ckksg9kcwfzj.us-east-2.rds.amazonaws.com',
         'database': 'gmcoredb',
@@ -53,6 +66,15 @@ class DatabaseConnection:
         'user': 'postgres',
         'password': 'lmlVyIGz8eWT6iBtzLJU'
     }
+    
+    # # # CONN AMBIENTE PRD GMCORE
+    # POSTGRESQL_PRD_DESTINO_CONFIG = {        
+    #     'host': 'gmcore-eks-prod-postgres.cxlocls22sp7.sa-east-1.rds.amazonaws.com',
+    #     'database': 'gmcoredb_prod',
+    #     'port': 5432,
+    #     'user': 'postgres_prod',
+    #     'password': 'J8sdmqz1TQbbu7F9sO4B'
+    # }
     
     # Chaveador de destino: 'HML' ou 'PRD'
     # Pode ser alterado via variável de ambiente MIGRATION_DESTINO ou método set_destino()

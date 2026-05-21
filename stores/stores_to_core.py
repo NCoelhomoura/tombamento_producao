@@ -23,6 +23,8 @@ from psycopg2.extras import execute_values
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 # ⚠️ CRÍTICO: Importar usando o mesmo caminho do orchestrator para garantir mesma referência
 from utils.database_connection import DatabaseConnection
+from utils.fetch_canal_estabelecimento_ids import fetch_distinct_id_canal_from_estabelecimento_ids
+from utils.fetch_segmento_produto_ids import resolve_id_segmento_produto_for_json
 from utils.municipio_lookup import load_municipio_lookup, municipal_code_from_origem
 
 # ============================================================================
@@ -144,7 +146,57 @@ class StoresMigration:
         if filter_data and 'aggregated_ids' in filter_data:
             return filter_data['aggregated_ids']
         return {}
-    
+
+    def _resolve_canal_estabelecimento_ids_for_step1(self) -> Optional[List[int]]:
+        """
+        Escopo de CanalEstabelecimento.Id para store_segments.
+        None: sem aggregated_ids no JSON → comportamento legado (todos os canais).
+        lista (pode ser vazia): restringe inserções a CanalEstabelecimento.Id nesses valores.
+        """
+        filter_data = self.load_filter_json()
+        if not filter_data or not isinstance(filter_data.get("aggregated_ids"), dict):
+            return None
+        agg = filter_data["aggregated_ids"]
+        raw = agg.get("IdCanalEstabelecimento")
+        explicit = sorted({int(x) for x in (raw or []) if x is not None})
+        if explicit:
+            return explicit
+        estab = [int(x) for x in (agg.get("IdEstabelecimento") or []) if x is not None]
+        if estab:
+            return fetch_distinct_id_canal_from_estabelecimento_ids(estab)
+        return []
+
+    def _ensure_store_scope_ids_in_filter_json(self) -> None:
+        """
+        Se o JSON tem aggregated_ids sem IdEstabelecimento/IdCanal, preenche pela view
+        (IdOrcamento do CLI ou do JSON). Evita escopo [] antes da ETAPA 2 de stores.
+        """
+        fd = self.load_filter_json()
+        agg = fd.get("aggregated_ids") if fd and isinstance(fd.get("aggregated_ids"), dict) else None
+        if not agg:
+            return
+        if (agg.get("IdCanalEstabelecimento") or []) or (agg.get("IdEstabelecimento") or []):
+            return
+        orch = None
+        if self.id_orcamento_filter:
+            orch = list(self.id_orcamento_filter)
+        if not orch:
+            raw = agg.get("IdOrcamento") or []
+            orch = list(raw) if raw else None
+        if not orch and fd and isinstance(fd.get("filters_applied"), dict):
+            fo = fd["filters_applied"].get("id_orcamento")
+            orch = list(fo) if fo else None
+        if not orch:
+            return
+        try:
+            self.save_filter_json_from_view(id_orcamento_list=orch)
+            logger.info(
+                "[ETAPA 1] contracts_filter_main.json: IdEstabelecimento/IdCanal preenchidos pela view "
+                "antes de store_segments."
+            )
+        except Exception as e:
+            logger.warning("[ETAPA 1] Não foi possível preencher lojas no JSON pela view: %s", e)
+
     def save_filter_json_from_view(self, id_orcamento_list=None):
         """
         Atualiza o JSON de filtros do contracts com IDs coletados da ViewOrcamentosLojas
@@ -289,6 +341,13 @@ class StoresMigration:
             else:
                 cursor_sql.execute(query_id_cliente)
             aggregated_ids['IdCliente'] = [row[0] for row in cursor_sql.fetchall()]
+            aggregated_ids['IdSegmentoProduto'] = resolve_id_segmento_produto_for_json(
+                aggregated_ids['IdCliente'],
+                aggregated_ids['IdOrcamento'],
+                data_aviso_previo_min,
+                data_inicio_operacao_max,
+                status_pedido_filter,
+            )
             
             # IdEstabelecimento
             if self.limit_rows > 0:
@@ -312,6 +371,10 @@ class StoresMigration:
             else:
                 cursor_sql.execute(query_id_estabelecimento)
             aggregated_ids['IdEstabelecimento'] = [row[0] for row in cursor_sql.fetchall()]
+            estab_for_canal = [int(x) for x in aggregated_ids['IdEstabelecimento'] if x is not None]
+            aggregated_ids['IdCanalEstabelecimento'] = fetch_distinct_id_canal_from_estabelecimento_ids(
+                estab_for_canal
+            )
             
             # IdBandeira
             if self.limit_rows > 0:
@@ -388,6 +451,7 @@ class StoresMigration:
             
             print(f"[STORES] IDs coletados: {len(aggregated_ids['IdOrcamento'])} contratos, "
                   f"{len(aggregated_ids['IdEstabelecimento'])} estabelecimentos, "
+                  f"{len(aggregated_ids['IdCanalEstabelecimento'])} canais estabelecimento, "
                   f"{len(aggregated_ids['IdBandeira'])} bandeiras, "
                   f"{len(aggregated_ids['IdRede'])} redes")
             
@@ -403,7 +467,9 @@ class StoresMigration:
                 'aggregated_ids': {
                     'IdOrcamento': sorted(aggregated_ids['IdOrcamento']),
                     'IdCliente': sorted([x for x in aggregated_ids['IdCliente'] if x is not None]),
+                    'IdSegmentoProduto': sorted([x for x in aggregated_ids['IdSegmentoProduto'] if x is not None]),
                     'IdEstabelecimento': sorted([x for x in aggregated_ids['IdEstabelecimento'] if x is not None]),
+                    'IdCanalEstabelecimento': sorted([x for x in aggregated_ids['IdCanalEstabelecimento'] if x is not None]),
                     'IdBandeira': sorted([x for x in aggregated_ids['IdBandeira'] if x is not None]),
                     'IdRede': sorted([x for x in aggregated_ids['IdRede'] if x is not None])
                 },
@@ -420,11 +486,13 @@ class StoresMigration:
             
             print(f"[STORES] JSON atualizado: {len(aggregated_ids['IdOrcamento'])} contratos, "
                   f"{len(aggregated_ids['IdEstabelecimento'])} estabelecimentos, "
+                  f"{len(aggregated_ids['IdCanalEstabelecimento'])} canais estabelecimento, "
                   f"{len(aggregated_ids['IdBandeira'])} bandeiras, "
                   f"{len(aggregated_ids['IdRede'])} redes")
             logger.info(f"[STORES] JSON atualizado: {self.filter_json_path}")
             logger.info(f"[STORES] IDs coletados - Contratos: {len(aggregated_ids['IdOrcamento'])}, "
                        f"Estabelecimentos: {len(aggregated_ids['IdEstabelecimento'])}, "
+                       f"Canais estabelecimento: {len(aggregated_ids['IdCanalEstabelecimento'])}, "
                        f"Bandeiras: {len(aggregated_ids['IdBandeira'])}, "
                        f"Redes: {len(aggregated_ids['IdRede'])}")
             
@@ -740,16 +808,36 @@ class StoresMigration:
         print("-"*80)
         
         try:
-            # Contar origem (aplicando limite se especificado)
+            canal_scope = self._resolve_canal_estabelecimento_ids_for_step1()
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
-            if self.limit_rows > 0:
-                cursor_sql.execute(f"SELECT COUNT(*) FROM (SELECT TOP {self.limit_rows} Id FROM CanalEstabelecimento ORDER BY Id) AS limited")
+            if canal_scope is None:
+                if self.limit_rows > 0:
+                    cursor_sql.execute(
+                        f"SELECT COUNT(*) FROM (SELECT TOP {self.limit_rows} Id FROM CanalEstabelecimento ORDER BY Id) AS limited"
+                    )
+                else:
+                    cursor_sql.execute("SELECT COUNT(*) FROM CanalEstabelecimento")
+            elif len(canal_scope) == 0:
+                origem_count = 0
+                cursor_sql.close()
+                conn_sql.close()
+                cursor_sql = None
             else:
-                cursor_sql.execute("SELECT COUNT(*) FROM CanalEstabelecimento")
-            origem_count = cursor_sql.fetchone()[0]
-            cursor_sql.close()
-            conn_sql.close()
+                origem_count = 0
+                chunk_sz = 1000
+                for i in range(0, len(canal_scope), chunk_sz):
+                    chunk = canal_scope[i : i + chunk_sz]
+                    ph = ",".join(["?" for _ in chunk])
+                    cursor_sql.execute(
+                        f"SELECT COUNT(*) FROM CanalEstabelecimento WHERE Id IN ({ph})", chunk
+                    )
+                    origem_count += cursor_sql.fetchone()[0]
+            if cursor_sql is not None:
+                if canal_scope is None:
+                    origem_count = cursor_sql.fetchone()[0]
+                cursor_sql.close()
+                conn_sql.close()
             
             # Contar destino
             schema = get_schema_atual()
@@ -800,9 +888,23 @@ class StoresMigration:
         print("\n[ETAPA 1] Limpando tabela store_segments...")
         self.truncate_table('store_segments')
         
-        # Buscar TODOS os dados do SQL Server de uma vez
+        # JSON pode ter aggregated_ids (ex.: pós-customers) sem lojas — preencher antes do escopo
+        self._ensure_store_scope_ids_in_filter_json()
+        
+        # Buscar dados do SQL Server (escopo: contracts_filter_main.json → aggregated_ids)
         print("[ETAPA 1] Buscando dados do SQL Server...")
-        sql_query = """
+        canal_scope = self._resolve_canal_estabelecimento_ids_for_step1()
+        if canal_scope is None:
+            logger.info("[ETAPA 1] store_segments: sem aggregated_ids no JSON — migrando todos os CanalEstabelecimento (legado).")
+            print("[ETAPA 1] Escopo: todos os registros de CanalEstabelecimento (JSON sem aggregated_ids).")
+        elif len(canal_scope) == 0:
+            logger.warning("[ETAPA 1] store_segments: escopo vazio (IdCanalEstabelecimento / IdEstabelecimento) — nenhuma linha será inserida.")
+            print("[ETAPA 1] AVISO: escopo de canais vazio no JSON — nenhum store_segment a inserir.")
+        else:
+            logger.info(f"[ETAPA 1] store_segments: escopo filtrado — {len(canal_scope)} CanalEstabelecimento.Id (JSON / Estabelecimento).")
+            print(f"[ETAPA 1] Escopo filtrado: {len(canal_scope)} CanalEstabelecimento.Id (contracts_filter_main.json).")
+
+        base_select = """
         SELECT 
             Id,
             Nome,
@@ -810,21 +912,47 @@ class StoresMigration:
             DataInclusao,
             DataAlteracao
         FROM CanalEstabelecimento
-        ORDER BY Id
         """
-        
-        if self.limit_rows > 0:
-            sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
-        
         conn_sql = DatabaseConnection.get_sql_server_prd_connection()
         cursor_sql = conn_sql.cursor()
-        cursor_sql.execute(sql_query)
-        
+        all_rows = []
+        try:
+            if canal_scope is None:
+                sql_query = base_select + "\n        ORDER BY Id\n"
+                if self.limit_rows > 0:
+                    sql_query = sql_query.replace(
+                        "ORDER BY Id",
+                        f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY",
+                    )
+                cursor_sql.execute(sql_query)
+                all_rows = list(cursor_sql.fetchall())
+            elif len(canal_scope) == 0:
+                all_rows = []
+            else:
+                chunk_sz = 1000
+                seen_ids = set()
+                for i in range(0, len(canal_scope), chunk_sz):
+                    chunk = canal_scope[i : i + chunk_sz]
+                    ph = ",".join(["?" for _ in chunk])
+                    sql_query = base_select + f"\n        WHERE Id IN ({ph})\n        ORDER BY Id\n"
+                    if self.limit_rows > 0 and len(all_rows) >= self.limit_rows:
+                        break
+                    cursor_sql.execute(sql_query, chunk)
+                    for row in cursor_sql.fetchall():
+                        rid = row[0]
+                        if rid not in seen_ids:
+                            seen_ids.add(rid)
+                            all_rows.append(row)
+                            if self.limit_rows > 0 and len(all_rows) >= self.limit_rows:
+                                break
+                    if self.limit_rows > 0 and len(all_rows) >= self.limit_rows:
+                        break
+        finally:
+            cursor_sql.close()
+            conn_sql.close()
+
         # Carregar TODOS os dados na memória de uma vez
         print("[ETAPA 1] Carregando dados na memória...")
-        all_rows = cursor_sql.fetchall()
-        cursor_sql.close()
-        conn_sql.close()
         
         print(f"[ETAPA 1] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
         

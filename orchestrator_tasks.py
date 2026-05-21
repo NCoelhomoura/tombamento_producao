@@ -5,6 +5,9 @@ Escopo agregado (JSON) e alinhamento com --id-orcamento / --destino / filtros:
   docs/migracao/FILTRO_ESCOPO_ORQUESTRACAO.md
 Arquivo central: contracts/contracts_filter_main.json (aggregated_ids).
 
+--xlsx-filter: lê contratos_ativos.xlsx (ativo + migrar=true), atualiza o JSON e define
+  id_orcamento_filter como em --id-orcamento; demais flags (datas, --clear-data, etc.) seguem iguais.
+
 Billings: após contracts step1, ContractsMigration.ensure_billings_after_step1()
 (migração em billing/billings_to_core; fallback placeholder). Usado também nos
 steps isolados contracts 2 e 8 deste orquestrador.
@@ -499,19 +502,22 @@ def run_contracts_task(step=None, limit_rows=0, id_orcamento_filter=None,
         migration.run()
 
 
-def run_users_task(step=None, limit_rows=0):
+def run_users_task(step=None, limit_rows=0, clear_users: bool = False):
     """
     Executa a task de migracao de users
     
     Args:
         step: None para todas as etapas, '1' para step1_migrate_users, ou '2' para step2_migrate_user_roles
         limit_rows: 0 para todos os dados, > 0 para limitar quantidade
+        clear_users: Se True, TRUNCATE em users + Sys Admin antes da carga (use --clear-users).
+                     Se False (padrao), apenas INSERT de usuarios com legacy_id ainda inexistente.
     """
     print("\n" + "="*80)
     print("TASK 4: USERS")
     print("="*80)
     print(f"Data/Hora: {datetime.now()}")
     print(f"Limite de linhas: {'TODOS' if limit_rows == 0 else limit_rows}")
+    print(f"--clear-users (TRUNCATE + Sys Admin): {'SIM' if clear_users else 'NAO (incremental)'}")
     if step:
         print(f"Etapa: {step}")
     print("="*80)
@@ -539,7 +545,7 @@ def run_users_task(step=None, limit_rows=0):
         destino_apos_import = DatabaseConnection.get_destino()
         print(f"[DEBUG run_users_task] Destino após reconfiguração: {destino_apos_import}")
     
-    migration = UsersMigration(limit_rows=limit_rows)
+    migration = UsersMigration(limit_rows=limit_rows, clear_users=clear_users)
     
     # ⚠️ CRÍTICO: Passar destino explicitamente como parâmetro
     # Isso garante que o destino correto seja usado, independente do estado global
@@ -591,6 +597,8 @@ def main():
     
     # Variáveis para filtros
     clear_data = False
+    clear_users = False
+    xlsx_filter = False
     id_orcamento_filter = None
     data_aviso_previo_min = None
     data_inicio_operacao_max = None
@@ -613,6 +621,12 @@ def main():
             i += 2
         elif arg == '--clear-data':
             clear_data = True
+            i += 1
+        elif arg == '--clear-users':
+            clear_users = True
+            i += 1
+        elif arg == '--xlsx-filter':
+            xlsx_filter = True
             i += 1
         elif arg == '--id-orcamento' and i + 1 < len(sys.argv):
             # Aceitar lista separada por vírgula: --id-orcamento 6192,6193
@@ -667,6 +681,64 @@ def main():
     print(f"[DEBUG] Flag _destino_configurado_explicitamente: {DatabaseConnection._destino_configurado_explicitamente}")
     print(f"[DEBUG] Valor _destino_atual: {DatabaseConnection._destino_atual}")
     print("="*80)
+    
+    if xlsx_filter:
+        if id_orcamento_filter:
+            print("\n[XLSX-FILTER] AVISO: --id-orcamento na linha de comando sera ignorado; escopo = XLSX (ativo + migrar=true).")
+        import importlib.util
+        _orch_root = os.path.dirname(os.path.abspath(__file__))
+        _sync_path = os.path.join(_orch_root, "contracts", "sync_filter_json_from_xlsx.py")
+        if not os.path.isfile(_sync_path):
+            print(f"\n[ERRO] --xlsx-filter: script nao encontrado: {_sync_path}")
+            sys.exit(2)
+        _spec = importlib.util.spec_from_file_location("sync_filter_json_from_xlsx", _sync_path)
+        _sync_mod = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_sync_mod)
+        xlsx_path = os.path.abspath(_sync_mod._default_xlsx_path())
+        json_path = os.path.abspath(_sync_mod.DEFAULT_FILTER_JSON)
+        try:
+            ids_xlsx = _sync_mod.collect_id_orcamentos_migrar(xlsx_path, require_ativo=True)
+        except Exception as e:
+            print(f"\n[ERRO] --xlsx-filter: falha ao ler XLSX: {e}")
+            sys.exit(2)
+        if not ids_xlsx:
+            print(
+                "\n[ERRO] --xlsx-filter: nenhum IdOrcamento com migrar=true e ativo no XLSX. "
+                "Marque migrar no Excel ou use o script contracts/sync_filter_json_from_xlsx.py com --no-require-ativo."
+            )
+            sys.exit(2)
+        fa_updates = {
+            "limit_rows": int(limit),
+            "clear_data": bool(clear_data),
+        }
+        if data_aviso_previo_min is not None:
+            fa_updates["data_aviso_previo_min"] = str(data_aviso_previo_min)
+        if data_inicio_operacao_max is not None:
+            fa_updates["data_inicio_operacao_max"] = str(data_inicio_operacao_max)
+        if status_pedido_filter:
+            fa_updates["status_pedido"] = list(status_pedido_filter)
+        try:
+            _sync_mod.merge_into_filter_json(
+                json_path,
+                ids_xlsx,
+                xlsx_path,
+                require_ativo=True,
+                filters_applied_updates=fa_updates,
+                reset_dependent_aggregated_ids=True,
+                sync_source_label="orchestrator_tasks.py --xlsx-filter",
+            )
+        except Exception as e:
+            print(f"\n[ERRO] --xlsx-filter: falha ao gravar JSON: {e}")
+            sys.exit(2)
+        id_orcamento_filter = list(ids_xlsx)
+        print("\n" + "="*80)
+        print("[XLSX-FILTER] Escopo aplicado")
+        print("="*80)
+        print(f"  XLSX: {xlsx_path}")
+        print(f"  JSON: {json_path}")
+        print(f"  IdOrcamento (ativo + migrar=true): {len(id_orcamento_filter)} -> {id_orcamento_filter[:20]}{'...' if len(id_orcamento_filter) > 20 else ''}")
+        print(f"  filters_applied (CLI): limit_rows={limit}, clear_data={clear_data}, datas/status conforme argumentos")
+        print("="*80 + "\n")
     
     # Limpar arquivo de log no inicio (após configurar destino)
     clear_log_file()
@@ -736,17 +808,13 @@ def main():
                         clear_data=clear_data)
         
         # Task 4: Users (DEVE SER EXECUTADO ANTES DE CONTRACTS)
-        # ⚠️ IMPORTANTE: Users sempre executa FULL quando executado como parte de todas as tasks
-        # Users não pode ser parcial porque contracts depende de todos os users
         print("\n" + "="*80)
         print("INICIANDO TASK: USERS")
         print("="*80)
         print("[INFO] Users deve ser executado antes de Contracts (dependencia)")
-        print("[INFO] ⚠️ Users sempre executa FULL (sem filtros/limites) quando executado automaticamente")
-        print("[INFO] Isso garante que todos os users estejam disponíveis para contracts")
-        # ⚠️ IMPORTANTE: Sempre executar users com limit_rows=0 (FULL)
-        # Não usar 'limit' porque users precisa de todos os registros para contracts funcionar
-        run_users_task(step=None, limit_rows=0)
+        print("[INFO] Padrao: INSERT incremental (sem TRUNCATE). Para TRUNCATE + Sys Admin: --clear-users")
+        print("[INFO] Sempre limit_rows=0 para incluir todos os usuarios da origem na verificacao incremental")
+        run_users_task(step=None, limit_rows=0, clear_users=clear_users)
         
         # Task 3: Contracts (DEPENDE DE USERS)
         print("\n" + "="*80)
@@ -775,7 +843,7 @@ def main():
                         status_pedido_filter=status_pedido_filter,
                         clear_data=clear_data)
     elif task == 'users':
-        run_users_task(step=step, limit_rows=limit)
+        run_users_task(step=step, limit_rows=limit, clear_users=clear_users)
     elif task == 'contracts':
         # Executar dependências automaticamente ANTES de contracts
         print("\n" + "="*80)
@@ -906,14 +974,12 @@ def main():
         if users_count == 0:
             print(f"[AVISO] Tabela {schema_users}.users esta vazia!")
             print("[AVISO] Contracts depende de Users. Executando Users primeiro...")
-            print("[INFO] ⚠️ Users sempre executa FULL (sem filtros/limites) quando executado automaticamente")
-            print("[INFO] Isso garante que todos os users estejam disponíveis para contracts")
+            print("[INFO] Modo incremental: insere todos os usuarios da origem que ainda nao existem (por legacy_id).")
+            print("[INFO] Para TRUNCATE completo + Sys Admin na primeira carga, use --clear-users ao rodar o orquestrador.")
             print("\n" + "="*80)
-            print("EXECUTANDO TASK: USERS (DEPENDENCIA DE CONTRACTS) - FULL")
+            print("EXECUTANDO TASK: USERS (DEPENDENCIA DE CONTRACTS)")
             print("="*80)
-            # ⚠️ IMPORTANTE: Sempre executar users com limit_rows=0 (FULL)
-            # Não usar 'limit' porque users precisa de todos os registros para contracts funcionar
-            run_users_task(step=None, limit_rows=0)
+            run_users_task(step=None, limit_rows=0, clear_users=clear_users)
             print("\n[INFO] Users executado (FULL). Continuando com Contracts...")
         
         run_contracts_task(step=step, limit_rows=limit,
@@ -936,6 +1002,9 @@ def main():
         print("  python orchestrator_tasks.py contracts 1          # Executa etapa 1 de contracts")
         print("  python orchestrator_tasks.py users 1              # Executa etapa 1 de users (migrate_users)")
         print("  python orchestrator_tasks.py users 2              # Executa etapa 2 de users (migrate_user_roles)")
+        print("  python orchestrator_tasks.py users 1 --clear-users  # TRUNCATE users + Sys Admin, depois carga")
+        print("  python orchestrator_tasks.py --clear-users         # Todas as tasks com TRUNCATE em users no passo users")
+        print("  python orchestrator_tasks.py ... --xlsx-filter     # IdOrcamento do XLSX (ativo+migrar) -> JSON + mesmo efeito que --id-orcamento")
         print("  python orchestrator_tasks.py --limit 100 --destino PRD  # Todas as tasks com limite e destino")
         return
     

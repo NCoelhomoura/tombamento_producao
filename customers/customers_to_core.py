@@ -20,6 +20,12 @@ if utils_path not in sys.path:
     sys.path.insert(0, utils_path)
 # ⚠️ CRÍTICO: Importar usando o mesmo caminho do orchestrator para garantir mesma referência
 from utils.database_connection import DatabaseConnection
+from utils.fetch_canal_estabelecimento_ids import fetch_distinct_id_canal_from_estabelecimento_ids
+from utils.fetch_segmento_produto_ids import (
+    fetch_distinct_id_segmento_produto_from_cliente_ids,
+    fetch_distinct_id_segmento_produto_from_view_filters,
+    resolve_id_segmento_produto_for_json,
+)
 from utils.municipio_lookup import load_municipio_lookup, municipal_code_from_origem
 
 # ============================================================================
@@ -294,6 +300,65 @@ class CustomersMigration:
         except Exception as e:
             logger.error(f"Erro ao carregar arquivo de filtros: {e}")
             return None
+
+    def _resolve_segmento_produto_ids_for_step1(self) -> Optional[List[int]]:
+        """
+        Escopo de SegmentoProduto.Id para customer_segments.
+        None: sem aggregated_ids no JSON → todos os segmentos (legado).
+        lista (pode ser vazia): restringe a SegmentoProduto.Id nesses valores.
+        """
+        filter_data = self.load_filter_json()
+        if not filter_data or not isinstance(filter_data.get("aggregated_ids"), dict):
+            return None
+        agg = filter_data["aggregated_ids"]
+        raw = agg.get("IdSegmentoProduto")
+        explicit = sorted({int(x) for x in (raw or []) if x is not None})
+        if explicit:
+            return explicit
+        clientes = [int(x) for x in (agg.get("IdCliente") or []) if x is not None]
+        fa = filter_data.get("filters_applied") or {}
+        id_orch = (
+            list(self.id_orcamento_filter)
+            if self.id_orcamento_filter
+            else list(fa.get("id_orcamento") or [])
+        )
+        id_orch = [int(x) for x in id_orch if x is not None]
+
+        dav = self.data_aviso_previo_min or fa.get("data_aviso_previo_min")
+        dio = self.data_inicio_operacao_max or fa.get("data_inicio_operacao_max")
+        if dav is not None and not isinstance(dav, str):
+            dav = dav.strftime("%Y-%m-%d")
+        if dio is not None and not isinstance(dio, str):
+            dio = dio.strftime("%Y-%m-%d")
+        st = self.status_pedido_filter if self.status_pedido_filter else (fa.get("status_pedido") or [])
+        if st is None:
+            st = []
+        if not isinstance(st, list):
+            st = [st]
+        st_int = [int(x) for x in st if x is not None]
+
+        if id_orch:
+            out = fetch_distinct_id_segmento_produto_from_view_filters(
+                id_orch,
+                str(dav) if dav else None,
+                str(dio) if dio else None,
+                st_int,
+            )
+            if out:
+                return out
+
+        if clientes:
+            from_cli = fetch_distinct_id_segmento_produto_from_cliente_ids(clientes)
+            if from_cli:
+                return from_cli
+
+        if not id_orch and not clientes:
+            return []
+        logger.warning(
+            "[CUSTOMERS] IdSegmentoProduto não resolvido no escopo (colunas/dados no ERP) — "
+            "customer_segments: fallback para todos os SegmentoProduto."
+        )
+        return None
     
     def save_filter_json_from_view(self, id_orcamento_list=None):
         """
@@ -435,6 +500,13 @@ class CustomersMigration:
             else:
                 cursor_sql.execute(query_id_cliente)
             aggregated_ids['IdCliente'] = [row[0] for row in cursor_sql.fetchall()]
+            aggregated_ids['IdSegmentoProduto'] = resolve_id_segmento_produto_for_json(
+                aggregated_ids['IdCliente'],
+                aggregated_ids['IdOrcamento'],
+                data_aviso_previo_min,
+                data_inicio_operacao_max,
+                status_pedido_filter,
+            )
             
             # IdEstabelecimento
             if self.limit_rows > 0:
@@ -458,6 +530,9 @@ class CustomersMigration:
             else:
                 cursor_sql.execute(query_id_estabelecimento)
             aggregated_ids['IdEstabelecimento'] = [row[0] for row in cursor_sql.fetchall()]
+            aggregated_ids['IdCanalEstabelecimento'] = fetch_distinct_id_canal_from_estabelecimento_ids(
+                [int(x) for x in aggregated_ids['IdEstabelecimento'] if x is not None]
+            )
             
             # IdBandeira
             if self.limit_rows > 0:
@@ -534,7 +609,9 @@ class CustomersMigration:
             
             print(f"[CUSTOMERS] IDs coletados: {len(aggregated_ids['IdOrcamento'])} contratos, "
                   f"{len(aggregated_ids['IdCliente'])} clientes, "
+                  f"{len(aggregated_ids['IdSegmentoProduto'])} segmentos produto, "
                   f"{len(aggregated_ids['IdEstabelecimento'])} estabelecimentos, "
+                  f"{len(aggregated_ids['IdCanalEstabelecimento'])} canais estabelecimento, "
                   f"{len(aggregated_ids['IdBandeira'])} bandeiras, "
                   f"{len(aggregated_ids['IdRede'])} redes")
             
@@ -555,7 +632,9 @@ class CustomersMigration:
                     # Se há filtro de IdOrcamento, usar o mesmo valor (evitar duplicação)
                     'IdOrcamento': id_orcamento_for_aggregated,
                     'IdCliente': sorted([x for x in aggregated_ids['IdCliente'] if x is not None]),
+                    'IdSegmentoProduto': sorted([x for x in aggregated_ids['IdSegmentoProduto'] if x is not None]),
                     'IdEstabelecimento': sorted([x for x in aggregated_ids['IdEstabelecimento'] if x is not None]),
+                    'IdCanalEstabelecimento': sorted([x for x in aggregated_ids['IdCanalEstabelecimento'] if x is not None]),
                     'IdBandeira': sorted([x for x in aggregated_ids['IdBandeira'] if x is not None]),
                     'IdRede': sorted([x for x in aggregated_ids['IdRede'] if x is not None])
                 },
@@ -572,13 +651,17 @@ class CustomersMigration:
             
             print(f"[CUSTOMERS] JSON atualizado: {len(aggregated_ids['IdOrcamento'])} contratos, "
                   f"{len(aggregated_ids['IdCliente'])} clientes, "
+                  f"{len(aggregated_ids['IdSegmentoProduto'])} segmentos produto, "
                   f"{len(aggregated_ids['IdEstabelecimento'])} estabelecimentos, "
+                  f"{len(aggregated_ids['IdCanalEstabelecimento'])} canais estabelecimento, "
                   f"{len(aggregated_ids['IdBandeira'])} bandeiras, "
                   f"{len(aggregated_ids['IdRede'])} redes")
             logger.info(f"[CUSTOMERS] JSON atualizado: {self.filter_json_path}")
             logger.info(f"[CUSTOMERS] IDs coletados - Contratos: {len(aggregated_ids['IdOrcamento'])}, "
                        f"Clientes: {len(aggregated_ids['IdCliente'])}, "
+                       f"Segmentos produto: {len(aggregated_ids['IdSegmentoProduto'])}, "
                        f"Estabelecimentos: {len(aggregated_ids['IdEstabelecimento'])}, "
+                       f"Canais estabelecimento: {len(aggregated_ids['IdCanalEstabelecimento'])}, "
                        f"Bandeiras: {len(aggregated_ids['IdBandeira'])}, "
                        f"Redes: {len(aggregated_ids['IdRede'])}")
             
@@ -593,14 +676,29 @@ class CustomersMigration:
         print("-"*80)
         
         try:
-            # Contar origem (aplicando limite se especificado)
+            segment_scope = self._resolve_segmento_produto_ids_for_step1()
             conn_sql = DatabaseConnection.get_sql_server_prd_connection()
             cursor_sql = conn_sql.cursor()
-            if self.limit_rows > 0:
-                cursor_sql.execute(f"SELECT COUNT(*) FROM (SELECT TOP {self.limit_rows} Id FROM SegmentoProduto ORDER BY Id) AS limited")
+            if segment_scope is None:
+                if self.limit_rows > 0:
+                    cursor_sql.execute(
+                        f"SELECT COUNT(*) FROM (SELECT TOP {self.limit_rows} Id FROM SegmentoProduto ORDER BY Id) AS limited"
+                    )
+                else:
+                    cursor_sql.execute("SELECT COUNT(*) FROM SegmentoProduto")
+                origem_count = cursor_sql.fetchone()[0]
+            elif len(segment_scope) == 0:
+                origem_count = 0
             else:
-                cursor_sql.execute("SELECT COUNT(*) FROM SegmentoProduto")
-            origem_count = cursor_sql.fetchone()[0]
+                origem_count = 0
+                chunk_sz = 1000
+                for i in range(0, len(segment_scope), chunk_sz):
+                    chunk = segment_scope[i : i + chunk_sz]
+                    ph = ",".join(["?" for _ in chunk])
+                    cursor_sql.execute(
+                        f"SELECT COUNT(*) FROM SegmentoProduto WHERE Id IN ({ph})", chunk
+                    )
+                    origem_count += cursor_sql.fetchone()[0]
             cursor_sql.close()
             conn_sql.close()
             
@@ -636,6 +734,42 @@ class CustomersMigration:
             logger.error(f"Erro na validacao ETAPA 1: {e}")
             print(f"ERRO na validacao: {e}")
             return False
+    
+    def _sync_id_segmento_produto_to_filter_json(self, cursor_pg, schema: str) -> None:
+        """Após customer_segments no destino, alinha IdSegmentoProduto no JSON (evita [] com carga total)."""
+        try:
+            if self.should_include_legacy_id():
+                cursor_pg.execute(
+                    f"SELECT DISTINCT legacy_id FROM {schema}.customer_segments "
+                    f"WHERE legacy_id IS NOT NULL ORDER BY legacy_id"
+                )
+                seg_ids = [int(row[0]) for row in cursor_pg.fetchall()]
+            elif self.segment_id_map:
+                seg_ids = sorted(int(x) for x in self.segment_id_map.keys())
+            else:
+                return
+            if not seg_ids:
+                return
+            fd = self.load_filter_json()
+            if not fd or not isinstance(fd.get("aggregated_ids"), dict):
+                return
+            fd["aggregated_ids"]["IdSegmentoProduto"] = seg_ids
+            fd.setdefault("execution_info", {})
+            fd["execution_info"]["id_segmento_produto_synced_from_destino_at"] = (
+                datetime.now().isoformat()
+            )
+            with open(self.filter_json_path, "w", encoding="utf-8") as f:
+                json.dump(fd, f, indent=2, ensure_ascii=False)
+            self.json_updated_this_run = True
+            logger.info(
+                "[ETAPA 1] contracts_filter_main.json: IdSegmentoProduto = %s ids (destino).",
+                len(seg_ids),
+            )
+        except Exception as sync_e:
+            logger.warning(
+                "[ETAPA 1] Sincronização IdSegmentoProduto no JSON falhou: %s",
+                sync_e,
+            )
     
     def step1_migrate_customer_segments(self):
         """ETAPA 1: Migrar customer_segments"""
@@ -683,9 +817,26 @@ class CustomersMigration:
                 logger.warning(f"Nao foi possivel criar/verificar coluna legacy_id: {e}")
                 include_legacy = False
         
-        # Buscar dados do SQL Server
+        # Buscar dados do SQL Server (escopo: contracts_filter_main.json → aggregated_ids)
         print("[ETAPA 1] Buscando dados do SQL Server...")
-        sql_query = """
+        segment_scope = self._resolve_segmento_produto_ids_for_step1()
+        if segment_scope is None:
+            logger.info("[ETAPA 1] customer_segments: sem aggregated_ids no JSON — migrando todos os SegmentoProduto (legado).")
+            print("[ETAPA 1] Escopo: todos os registros de SegmentoProduto (JSON sem aggregated_ids).")
+        elif len(segment_scope) == 0:
+            logger.warning(
+                "[ETAPA 1] customer_segments: escopo vazio (IdSegmentoProduto / filtros) — nenhuma linha será inserida."
+            )
+            print("[ETAPA 1] AVISO: escopo de segmentos vazio no JSON — nenhum customer_segment a inserir.")
+        else:
+            logger.info(
+                f"[ETAPA 1] customer_segments: escopo filtrado — {len(segment_scope)} SegmentoProduto.Id (JSON / view)."
+            )
+            print(
+                f"[ETAPA 1] Escopo filtrado: {len(segment_scope)} SegmentoProduto.Id (contracts_filter_main.json)."
+            )
+
+        base_select = """
         SELECT 
             Id,
             Nome,
@@ -693,22 +844,47 @@ class CustomersMigration:
             DataInclusao,
             DataAlteracao
         FROM SegmentoProduto
-        ORDER BY Id
         """
-        
-        # Adicionar LIMIT se especificado
-        if self.limit_rows > 0:
-            sql_query = sql_query.replace("ORDER BY Id", f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY")
-        
         conn_sql = DatabaseConnection.get_sql_server_prd_connection()
         cursor_sql = conn_sql.cursor()
-        cursor_sql.execute(sql_query)
-        
+        all_rows = []
+        try:
+            if segment_scope is None:
+                sql_query = base_select + "\n        ORDER BY Id\n"
+                if self.limit_rows > 0:
+                    sql_query = sql_query.replace(
+                        "ORDER BY Id",
+                        f"ORDER BY Id OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY",
+                    )
+                cursor_sql.execute(sql_query)
+                all_rows = list(cursor_sql.fetchall())
+            elif len(segment_scope) == 0:
+                all_rows = []
+            else:
+                chunk_sz = 1000
+                seen_ids = set()
+                for i in range(0, len(segment_scope), chunk_sz):
+                    chunk = segment_scope[i : i + chunk_sz]
+                    ph = ",".join(["?" for _ in chunk])
+                    sql_query = base_select + f"\n        WHERE Id IN ({ph})\n        ORDER BY Id\n"
+                    if self.limit_rows > 0 and len(all_rows) >= self.limit_rows:
+                        break
+                    cursor_sql.execute(sql_query, chunk)
+                    for row in cursor_sql.fetchall():
+                        rid = row[0]
+                        if rid not in seen_ids:
+                            seen_ids.add(rid)
+                            all_rows.append(row)
+                            if self.limit_rows > 0 and len(all_rows) >= self.limit_rows:
+                                break
+                    if self.limit_rows > 0 and len(all_rows) >= self.limit_rows:
+                        break
+        finally:
+            cursor_sql.close()
+            conn_sql.close()
+
         # Carregar TODOS os dados na memória de uma vez (otimizado)
         print("[ETAPA 1] Carregando dados na memória...")
-        all_rows = cursor_sql.fetchall()
-        cursor_sql.close()
-        conn_sql.close()
         
         print(f"[ETAPA 1] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
         
@@ -850,6 +1026,8 @@ class CustomersMigration:
             # Validação e relatório de qualidade
             self.validate_step1_customer_segments()
             
+            self._sync_id_segmento_produto_to_filter_json(cursor_pg, schema)
+            
             # Fechar conexões
             cursor_pg.close()
             conn_pg.close()
@@ -865,7 +1043,7 @@ class CustomersMigration:
                 except:
                     pass
             raise
-    
+        
     def validate_step2_customers(self):
         """Validação e relatório de qualidade - ETAPA 2"""
         print("\n" + "-"*80)
