@@ -1,50 +1,50 @@
-2026-05-21 10:32:33,902 - INFO - ================================================================================
-2026-05-21 10:32:33,902 - INFO - INICIANDO MIGRACAO COMPLETA
-2026-05-21 10:32:33,903 - INFO - ================================================================================
-2026-05-21 10:32:33,903 - INFO - Data/Hora: 2026-05-21 10:32:33.903051
-2026-05-21 10:32:33,903 - INFO - Ambiente Destino: PRD
-2026-05-21 10:32:33,903 - INFO - Schema Destino: core
-2026-05-21 10:32:33,903 - INFO - Limite de Linhas: TODOS
-2026-05-21 10:32:33,903 - INFO - Tamanho do Chunk: 20000
-2026-05-21 10:32:33,903 - INFO - Origem: SQL Server PRD (Database: FINANCEIRO)
-2026-05-21 10:32:33,903 - INFO - Destino: PostgreSQL PRD (Schema: core)
-2026-05-21 10:32:33,904 - INFO - ================================================================================
-2026-05-21 10:32:33,904 - INFO - ================================================================================
-2026-05-21 10:32:33,904 - INFO - ETAPA 1: Migrando customer_segments
-2026-05-21 10:32:33,904 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
-2026-05-21 10:32:33,904 - INFO - ================================================================================
-2026-05-21 10:32:35,557 - INFO - Tabela core.customer_segments truncada com sucesso
-2026-05-21 10:32:36,909 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
-2026-05-21 10:32:37,114 - INFO - [ETAPA 1] customer_segments: escopo filtrado — 1 SegmentoProduto.Id (JSON / view).
-2026-05-21 10:32:38,742 - INFO - [ETAPA 1] Chunk 1 processado: 1/1 registros inseridos
-2026-05-21 10:32:39,051 - INFO - ETAPA 1 concluida: 1 registros
-2026-05-21 10:32:39,051 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
-2026-05-21 10:32:40,546 - INFO - VALIDACAO ETAPA 1: OK - Origem: 1, Destino: 1
-2026-05-21 10:32:40,697 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
-2026-05-21 10:32:40,699 - INFO - [ETAPA 1] contracts_filter_main.json: IdSegmentoProduto = 1 ids (destino).
-2026-05-21 10:32:40,700 - INFO - ================================================================================
-2026-05-21 10:32:40,700 - INFO - ETAPA 2: Migrando customers
-2026-05-21 10:32:40,700 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
-2026-05-21 10:32:40,700 - INFO - ================================================================================
-2026-05-21 10:32:40,707 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
-2026-05-21 10:32:40,707 - INFO - [ETAPA 2] id_orcamento_filter especificado ([13520]). Buscando IdCliente da ViewOrcamentosLojas...
-2026-05-21 10:32:40,707 - INFO - [ETAPA 2] Buscando IdCliente da ViewOrcamentosLojas com filtros aplicados...
-2026-05-21 10:32:40,717 - INFO - [ETAPA 2] DEBUG - filter_data existe: True
-2026-05-21 10:32:40,717 - INFO - [ETAPA 2] DEBUG - filter_data tem 'filters_applied': True
-2026-05-21 10:32:40,718 - INFO - [ETAPA 2] DEBUG - filters_applied: {'id_orcamento': [13520], 'data_aviso_previo_min': '2026-03-01', 'data_inicio_operacao_max': '2026-05-20', 'status_pedido': None, 'limit_rows': 0, 'clear_data': True}
-2026-05-21 10:32:40,718 - INFO - [ETAPA 2] DEBUG - Filtros finais a usar: data_aviso_previo=2026-03-01, data_inicio_operacao=2026-05-20, status_pedido=[]
-2026-05-21 10:32:40,718 - INFO - [ETAPA 2] Query completa para buscar IdCliente da ViewOrcamentosLojas: 
+2026-06-01 10:17:59,552 - INFO - ================================================================================
+2026-06-01 10:17:59,552 - INFO - INICIANDO MIGRACAO COMPLETA
+2026-06-01 10:17:59,552 - INFO - ================================================================================
+2026-06-01 10:17:59,552 - INFO - Data/Hora: 2026-06-01 10:17:59.552079
+2026-06-01 10:17:59,552 - INFO - Ambiente Destino: PRD
+2026-06-01 10:17:59,552 - INFO - Schema Destino: core
+2026-06-01 10:17:59,552 - INFO - Limite de Linhas: TODOS
+2026-06-01 10:17:59,553 - INFO - Tamanho do Chunk: 20000
+2026-06-01 10:17:59,553 - INFO - Origem: SQL Server PRD (Database: FINANCEIRO)
+2026-06-01 10:17:59,553 - INFO - Destino: PostgreSQL PRD (Schema: core)
+2026-06-01 10:17:59,553 - INFO - ================================================================================
+2026-06-01 10:17:59,553 - INFO - ================================================================================
+2026-06-01 10:17:59,553 - INFO - ETAPA 1: Migrando customer_segments
+2026-06-01 10:17:59,553 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
+2026-06-01 10:17:59,553 - INFO - ================================================================================
+2026-06-01 10:18:01,305 - INFO - Tabela core.customer_segments truncada com sucesso
+2026-06-01 10:18:02,677 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:03,001 - INFO - [ETAPA 1] customer_segments: escopo filtrado — 2 SegmentoProduto.Id (JSON / view).
+2026-06-01 10:18:04,570 - INFO - [ETAPA 1] Chunk 1 processado: 2/2 registros inseridos
+2026-06-01 10:18:04,867 - INFO - ETAPA 1 concluida: 2 registros
+2026-06-01 10:18:04,867 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:06,499 - INFO - VALIDACAO ETAPA 1: OK - Origem: 2, Destino: 2
+2026-06-01 10:18:06,649 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:06,650 - INFO - [ETAPA 1] contracts_filter_main.json: IdSegmentoProduto = 2 ids (destino).
+2026-06-01 10:18:06,651 - INFO - ================================================================================
+2026-06-01 10:18:06,651 - INFO - ETAPA 2: Migrando customers
+2026-06-01 10:18:06,652 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
+2026-06-01 10:18:06,652 - INFO - ================================================================================
+2026-06-01 10:18:06,661 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:06,661 - INFO - [ETAPA 2] id_orcamento_filter especificado ([349, 13075, 13305]). Buscando IdCliente da ViewOrcamentosLojas...
+2026-06-01 10:18:06,661 - INFO - [ETAPA 2] Buscando IdCliente da ViewOrcamentosLojas com filtros aplicados...
+2026-06-01 10:18:06,671 - INFO - [ETAPA 2] DEBUG - filter_data existe: True
+2026-06-01 10:18:06,671 - INFO - [ETAPA 2] DEBUG - filter_data tem 'filters_applied': True
+2026-06-01 10:18:06,672 - INFO - [ETAPA 2] DEBUG - filters_applied: {'id_orcamento': [349, 13075, 13305], 'data_aviso_previo_min': '2026-05-01', 'data_inicio_operacao_max': '2026-05-31', 'status_pedido': None, 'limit_rows': 0, 'clear_data': True}
+2026-06-01 10:18:06,673 - INFO - [ETAPA 2] DEBUG - Filtros finais a usar: data_aviso_previo=2026-05-01, data_inicio_operacao=2026-05-31, status_pedido=[]
+2026-06-01 10:18:06,673 - INFO - [ETAPA 2] Query completa para buscar IdCliente da ViewOrcamentosLojas: 
                 SELECT DISTINCT
                     v.IdCliente
                 FROM ViewOrcamentosLojas v
                 INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
-                WHERE v.IdOrcamento IN (?) AND (CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= ?
+                WHERE v.IdOrcamento IN (?,?,?) AND (CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= ?
                 
-2026-05-21 10:32:40,718 - INFO - [ETAPA 2] Parâmetros da query: [13520, '2026-03-01', '2026-05-20']
-2026-05-21 10:32:40,749 - INFO - [ETAPA 2] Carregados 1 IdCliente únicos da ViewOrcamentosLojas
-2026-05-21 10:32:40,750 - INFO - [ETAPA 2] Flag --clear-data ativo: usando TRUNCATE mesmo com filtros
-2026-05-21 10:32:42,404 - INFO - Tabela core.customers truncada com sucesso
-2026-05-21 10:32:42,404 - INFO - [ETAPA 2] Query completa: 
+2026-06-01 10:18:06,673 - INFO - [ETAPA 2] Parâmetros da query: [349, 13075, 13305, '2026-05-01', '2026-05-31']
+2026-06-01 10:18:06,789 - INFO - [ETAPA 2] Carregados 3 IdCliente únicos da ViewOrcamentosLojas
+2026-06-01 10:18:06,789 - INFO - [ETAPA 2] Flag --clear-data ativo: usando TRUNCATE mesmo com filtros
+2026-06-01 10:18:08,528 - INFO - Tabela core.customers truncada com sucesso
+2026-06-01 10:18:08,529 - INFO - [ETAPA 2] Query completa: 
         SELECT 
             Id,
             Codigo,
@@ -54,363 +54,360 @@
             InscricaoMunicipal,
             RazaoSocial,
             No...
-2026-05-21 10:32:42,405 - INFO - [ETAPA 2] Parâmetros: 1 IdCliente (primeiros 10: [4729])
-2026-05-21 10:32:42,445 - INFO - [ETAPA 2] 1 registros carregados de 1 IdCliente únicos
-2026-05-21 10:32:43,946 - INFO - [ETAPA 2] Chunk 1 processado: 1/1 registros inseridos
-2026-05-21 10:32:44,234 - INFO - ETAPA 2 concluida: 1 registros
-2026-05-21 10:32:44,236 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
-2026-05-21 10:32:49,965 - WARNING - VALIDACAO ETAPA 2: Diferenca - Origem: 2081, Destino: 1, Diferenca: 2080
-2026-05-21 10:32:51,345 - INFO - [CUST-003] validação legacy_ids OK
-2026-05-21 10:32:51,346 - INFO - ================================================================================
-2026-05-21 10:32:51,346 - INFO - ETAPA 3: Migrando addresses
-2026-05-21 10:32:51,347 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
-2026-05-21 10:32:51,347 - INFO - ================================================================================
-2026-05-21 10:32:51,348 - INFO - [ETAPA 3] Flag --clear-data ativo: deletando TODOS os addresses de customers
-2026-05-21 10:32:52,874 - INFO - Tabela core.addresses: 10 registros deletados (tipo: Customer)
-2026-05-21 10:32:54,674 - INFO - ETAPA 3 concluida: 2 registros
-2026-05-21 10:32:56,754 - WARNING - VALIDACAO ETAPA 3: Diferenca - Origem: 5325, Destino: 84, Diferenca: 5241
-2026-05-21 10:32:56,757 - INFO - ================================================================================
-2026-05-21 10:32:56,758 - INFO - ETAPA 4: Migrando contacts
-2026-05-21 10:32:56,758 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
-2026-05-21 10:32:56,759 - INFO - ================================================================================
-2026-05-21 10:32:56,759 - INFO - [ETAPA 4] Flag --clear-data ativo: deletando TODOS os contacts de customers
-2026-05-21 10:32:58,262 - INFO - Tabela core.contacts: 1 registros deletados (tipo: Customer)
-2026-05-21 10:32:59,949 - INFO - ETAPA 4 concluida: 2 registros
-2026-05-21 10:33:02,051 - WARNING - VALIDACAO ETAPA 4: Diferenca - Origem: 5106, Destino: 1, Diferenca: 5105
-2026-05-21 10:33:02,051 - INFO - ================================================================================
-2026-05-21 10:33:02,052 - INFO - ETAPA 5: Migrando customer_brands
-2026-05-21 10:33:02,052 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
-2026-05-21 10:33:02,053 - INFO - ================================================================================
-2026-05-21 10:33:02,053 - INFO - [ETAPA 5] Limpando tabela customer_brands
-2026-05-21 10:33:03,691 - INFO - Tabela core.customer_brands truncada com sucesso
-2026-05-21 10:33:03,692 - INFO - [ETAPA 5] Buscando dados da ViewOrcamentosLojas com JOIN Cliente para IdSegmentoProduto
-2026-05-21 10:33:03,693 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:03,743 - INFO - [ETAPA 5] 1 registros únicos carregados
-2026-05-21 10:33:03,743 - INFO - [ETAPA 5] Usando segmento padrão: bcaa1234-ed1c-403d-83db-4378d94ca875
-2026-05-21 10:33:03,744 - INFO - [ETAPA 5] 1 customer_brands únicos para inserir
-2026-05-21 10:33:05,578 - INFO - [ETAPA 5] 1 customer_brands mapeados
-2026-05-21 10:33:05,580 - INFO - ETAPA 5 concluida: 1 registros
-2026-05-21 10:33:05,580 - INFO - ================================================================================
-2026-05-21 10:33:05,581 - INFO - ETAPA 6: Migrando customer_customer_brand
-2026-05-21 10:33:05,582 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
-2026-05-21 10:33:05,582 - INFO - ================================================================================
-2026-05-21 10:33:05,583 - INFO - [ETAPA 6] Limpando tabela customer_customer_brand
-2026-05-21 10:33:07,140 - INFO - Tabela core.customer_customer_brand truncada com sucesso
-2026-05-21 10:33:07,141 - INFO - [ETAPA 6] Buscando dados da ViewOrcamentosLojas
-2026-05-21 10:33:07,142 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:07,191 - INFO - [ETAPA 6] 1 registros carregados
-2026-05-21 10:33:07,192 - INFO - [ETAPA 6] 1 relacionamentos únicos para inserir
-2026-05-21 10:33:08,685 - INFO - ETAPA 6 concluida: 1 registros
-2026-05-21 10:33:08,686 - INFO - ================================================================================
-2026-05-21 10:33:08,686 - INFO - MIGRACAO CONCLUIDA COM SUCESSO!
-2026-05-21 10:33:08,687 - INFO - ================================================================================
-2026-05-21 10:33:08,687 - INFO - Duracao: 0:00:34.782357
-2026-05-21 10:33:08,688 - INFO - Customer Segments: 1
-2026-05-21 10:33:08,689 - INFO - Customers: 1
-2026-05-21 10:33:08,689 - INFO - Addresses: 2
-2026-05-21 10:33:08,690 - INFO - Contacts: 2
-2026-05-21 10:33:08,690 - INFO - Customer Brands: 1
-2026-05-21 10:33:08,691 - INFO - Customer Customer Brand: 1
-2026-05-21 10:33:08,692 - INFO - Erros: 0
-2026-05-21 10:33:08,692 - INFO - Nenhum erro encontrado!
-2026-05-21 10:33:08,700 - INFO - ================================================================================
-2026-05-21 10:33:08,701 - INFO - INICIANDO MIGRACAO COMPLETA - STORES
-2026-05-21 10:33:08,701 - INFO - ================================================================================
-2026-05-21 10:33:08,701 - INFO - Data/Hora: 2026-05-21 10:33:08.701972
-2026-05-21 10:33:08,702 - INFO - Ambiente Destino: PRD
-2026-05-21 10:33:08,702 - INFO - Schema Destino: core
-2026-05-21 10:33:08,703 - INFO - Limite de Linhas: TODOS
-2026-05-21 10:33:08,703 - INFO - Tamanho do Chunk: 20000
-2026-05-21 10:33:08,703 - INFO - Origem: SQL Server PRD (Database: FINANCEIRO)
-2026-05-21 10:33:08,704 - INFO - Destino: PostgreSQL PRD (Schema: core)
-2026-05-21 10:33:08,704 - INFO - ================================================================================
-2026-05-21 10:33:08,704 - INFO - ================================================================================
-2026-05-21 10:33:08,704 - INFO - ETAPA 1: Migrando store_segments
-2026-05-21 10:33:08,705 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
-2026-05-21 10:33:08,705 - INFO - ================================================================================
-2026-05-21 10:33:10,403 - INFO - Tabela core.store_segments truncada com sucesso
-2026-05-21 10:33:10,405 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:10,407 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:10,408 - INFO - [STORES] Filtros aplicados em save_filter_json_from_view: id_orcamento=[13520], data_aviso_previo_min=2026-03-01, data_inicio_operacao_max=2026-05-20, status_pedido=[]
-2026-05-21 10:33:10,670 - INFO - ================================================================================
-2026-05-21 10:33:10,672 - INFO - [STORES] DEBUG - QUERIES PARA COLETA DE IDs (ESTRUTURA SIMPLIFICADA)
-2026-05-21 10:33:10,672 - INFO - ================================================================================
-2026-05-21 10:33:10,673 - INFO - [STORES] Parâmetros da query: [13520, '2026-03-01', '2026-05-20']
-2026-05-21 10:33:10,673 - INFO - ================================================================================
-2026-05-21 10:33:10,674 - INFO - ================================================================================
-2026-05-21 10:33:10,675 - INFO - [STORES] QUERY PRONTA PARA COPIAR E COLAR NO SSMS (Exemplo: IdEstabelecimento)
-2026-05-21 10:33:10,675 - INFO - ================================================================================
-2026-05-21 10:33:10,676 - INFO - 
+2026-06-01 10:18:08,530 - INFO - [ETAPA 2] Parâmetros: 3 IdCliente (primeiros 10: [95, 4712, 41])
+2026-06-01 10:18:08,566 - INFO - [ETAPA 2] 3 registros carregados de 3 IdCliente únicos
+2026-06-01 10:18:10,069 - INFO - [ETAPA 2] Chunk 1 processado: 3/3 registros inseridos
+2026-06-01 10:18:10,376 - INFO - ETAPA 2 concluida: 3 registros
+2026-06-01 10:18:10,377 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:15,434 - WARNING - VALIDACAO ETAPA 2: Diferenca - Origem: 2083, Destino: 3, Diferenca: 2080
+2026-06-01 10:18:16,814 - INFO - [CUST-003] validação legacy_ids OK
+2026-06-01 10:18:16,815 - INFO - ================================================================================
+2026-06-01 10:18:16,816 - INFO - ETAPA 3: Migrando addresses
+2026-06-01 10:18:16,816 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
+2026-06-01 10:18:16,816 - INFO - ================================================================================
+2026-06-01 10:18:16,817 - INFO - [ETAPA 3] Flag --clear-data ativo: deletando TODOS os addresses de customers
+2026-06-01 10:18:18,371 - INFO - Tabela core.addresses: 2 registros deletados (tipo: Customer)
+2026-06-01 10:18:20,084 - INFO - ETAPA 3 concluida: 6 registros
+2026-06-01 10:18:22,071 - WARNING - VALIDACAO ETAPA 3: Diferenca - Origem: 5348, Destino: 31, Diferenca: 5317
+2026-06-01 10:18:22,072 - INFO - ================================================================================
+2026-06-01 10:18:22,073 - INFO - ETAPA 4: Migrando contacts
+2026-06-01 10:18:22,073 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
+2026-06-01 10:18:22,073 - INFO - ================================================================================
+2026-06-01 10:18:22,074 - INFO - [ETAPA 4] Flag --clear-data ativo: deletando TODOS os contacts de customers
+2026-06-01 10:18:23,581 - INFO - Tabela core.contacts: 1 registros deletados (tipo: Customer)
+2026-06-01 10:18:25,460 - INFO - ETAPA 4 concluida: 12 registros
+2026-06-01 10:18:28,377 - WARNING - VALIDACAO ETAPA 4: Diferenca - Origem: 5120, Destino: 6, Diferenca: 5114
+2026-06-01 10:18:28,378 - INFO - ================================================================================
+2026-06-01 10:18:28,378 - INFO - ETAPA 5: Migrando customer_brands
+2026-06-01 10:18:28,378 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
+2026-06-01 10:18:28,378 - INFO - ================================================================================
+2026-06-01 10:18:28,378 - INFO - [ETAPA 5] Limpando tabela customer_brands
+2026-06-01 10:18:29,981 - INFO - Tabela core.customer_brands truncada com sucesso
+2026-06-01 10:18:29,982 - INFO - [ETAPA 5] Buscando dados da ViewOrcamentosLojas com JOIN Cliente para IdSegmentoProduto
+2026-06-01 10:18:29,983 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:30,066 - INFO - [ETAPA 5] 3 registros únicos carregados
+2026-06-01 10:18:30,066 - INFO - [ETAPA 5] Usando segmento padrão: 458db4ec-992a-49b1-bc51-d658481446fe
+2026-06-01 10:18:30,066 - INFO - [ETAPA 5] 3 customer_brands únicos para inserir
+2026-06-01 10:18:31,887 - INFO - [ETAPA 5] 3 customer_brands mapeados
+2026-06-01 10:18:31,888 - INFO - ETAPA 5 concluida: 3 registros
+2026-06-01 10:18:31,890 - INFO - ================================================================================
+2026-06-01 10:18:31,893 - INFO - ETAPA 6: Migrando customer_customer_brand
+2026-06-01 10:18:31,895 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
+2026-06-01 10:18:31,896 - INFO - ================================================================================
+2026-06-01 10:18:31,896 - INFO - [ETAPA 6] Limpando tabela customer_customer_brand
+2026-06-01 10:18:33,441 - INFO - Tabela core.customer_customer_brand truncada com sucesso
+2026-06-01 10:18:33,442 - INFO - [ETAPA 6] Buscando dados da ViewOrcamentosLojas
+2026-06-01 10:18:33,442 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\customers\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:33,558 - INFO - [ETAPA 6] 3 registros carregados
+2026-06-01 10:18:33,558 - INFO - [ETAPA 6] 3 relacionamentos únicos para inserir
+2026-06-01 10:18:35,046 - INFO - ETAPA 6 concluida: 3 registros
+2026-06-01 10:18:35,046 - INFO - ================================================================================
+2026-06-01 10:18:35,047 - INFO - MIGRACAO CONCLUIDA COM SUCESSO!
+2026-06-01 10:18:35,047 - INFO - ================================================================================
+2026-06-01 10:18:35,047 - INFO - Duracao: 0:00:35.493322
+2026-06-01 10:18:35,047 - INFO - Customer Segments: 2
+2026-06-01 10:18:35,047 - INFO - Customers: 3
+2026-06-01 10:18:35,048 - INFO - Addresses: 6
+2026-06-01 10:18:35,048 - INFO - Contacts: 12
+2026-06-01 10:18:35,048 - INFO - Customer Brands: 3
+2026-06-01 10:18:35,048 - INFO - Customer Customer Brand: 3
+2026-06-01 10:18:35,048 - INFO - Erros: 0
+2026-06-01 10:18:35,048 - INFO - Nenhum erro encontrado!
+2026-06-01 10:18:35,052 - INFO - ================================================================================
+2026-06-01 10:18:35,053 - INFO - INICIANDO MIGRACAO COMPLETA - STORES
+2026-06-01 10:18:35,053 - INFO - ================================================================================
+2026-06-01 10:18:35,053 - INFO - Data/Hora: 2026-06-01 10:18:35.053294
+2026-06-01 10:18:35,053 - INFO - Ambiente Destino: PRD
+2026-06-01 10:18:35,053 - INFO - Schema Destino: core
+2026-06-01 10:18:35,053 - INFO - Limite de Linhas: TODOS
+2026-06-01 10:18:35,053 - INFO - Tamanho do Chunk: 20000
+2026-06-01 10:18:35,053 - INFO - Origem: SQL Server PRD (Database: FINANCEIRO)
+2026-06-01 10:18:35,054 - INFO - Destino: PostgreSQL PRD (Schema: core)
+2026-06-01 10:18:35,054 - INFO - ================================================================================
+2026-06-01 10:18:35,054 - INFO - ================================================================================
+2026-06-01 10:18:35,054 - INFO - ETAPA 1: Migrando store_segments
+2026-06-01 10:18:35,054 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
+2026-06-01 10:18:35,055 - INFO - ================================================================================
+2026-06-01 10:18:36,752 - INFO - Tabela core.store_segments truncada com sucesso
+2026-06-01 10:18:36,753 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:36,753 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:36,753 - INFO - [STORES] Filtros aplicados em save_filter_json_from_view: id_orcamento=[349, 13075, 13305], data_aviso_previo_min=2026-05-01, data_inicio_operacao_max=2026-05-31, status_pedido=[]
+2026-06-01 10:18:37,542 - INFO - ================================================================================
+2026-06-01 10:18:37,543 - INFO - [STORES] DEBUG - QUERIES PARA COLETA DE IDs (ESTRUTURA SIMPLIFICADA)
+2026-06-01 10:18:37,545 - INFO - ================================================================================
+2026-06-01 10:18:37,545 - INFO - [STORES] Parâmetros da query: [349, 13075, 13305, '2026-05-01', '2026-05-31']
+2026-06-01 10:18:37,545 - INFO - ================================================================================
+2026-06-01 10:18:37,545 - INFO - ================================================================================
+2026-06-01 10:18:37,545 - INFO - [STORES] QUERY PRONTA PARA COPIAR E COLAR NO SSMS (Exemplo: IdEstabelecimento)
+2026-06-01 10:18:37,546 - INFO - ================================================================================
+2026-06-01 10:18:37,546 - INFO - 
 -- Query para IdEstabelecimento:
-2026-05-21 10:33:10,676 - INFO - 
+2026-06-01 10:18:37,546 - INFO - 
                 SELECT DISTINCT
                     v.IdEstabelecimento
                 FROM ViewOrcamentosLojas v
                 INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
-                 WHERE 1 = 1 AND v.IdOrcamento IN (13520) AND (CONVERT(DATE, v.DataAvisoPrevio) >= '2026-03-01' OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= '2026-05-20' AND v.IdEstabelecimento IS NOT NULL
+                 WHERE 1 = 1 AND v.IdOrcamento IN (349,13075,13305) AND (CONVERT(DATE, v.DataAvisoPrevio) >= '2026-05-01' OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= '2026-05-31' AND v.IdEstabelecimento IS NOT NULL
                 
-2026-05-21 10:33:10,677 - INFO - ================================================================================
-2026-05-21 10:33:10,677 - INFO - [STORES] Resultado IdOrcamento: 1 registros - [13520]
-2026-05-21 10:33:10,678 - INFO - [STORES] Resultado IdCliente: 1 registros - [4729]
-2026-05-21 10:33:10,678 - INFO - [STORES] Resultado IdSegmentoProduto: 1 registros - [1]
-2026-05-21 10:33:10,679 - INFO - [STORES] Resultado IdEstabelecimento: 21 registros - [1617, 2276, 2423, 2428, 6411, 7846, 7857, 8008, 8009, 8030]
-2026-05-21 10:33:10,679 - INFO - [STORES] Resultado IdCanalEstabelecimento: 2 registros - [3, 14]
-2026-05-21 10:33:10,680 - INFO - [STORES] Resultado IdBandeira: 9 registros - [19, 29, 99, 189, 220, 221, 226, 434, 1982]
-2026-05-21 10:33:10,680 - INFO - [STORES] Resultado IdRede: 9 registros - [4, 26, 91, 118, 178, 206, 207, 213, 411]
-2026-05-21 10:33:10,705 - INFO - [STORES] JSON atualizado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:10,706 - INFO - [STORES] IDs coletados - Contratos: 1, Estabelecimentos: 21, Canais estabelecimento: 2, Bandeiras: 9, Redes: 9
-2026-05-21 10:33:10,707 - INFO - [ETAPA 1] contracts_filter_main.json: IdEstabelecimento/IdCanal preenchidos pela view antes de store_segments.
-2026-05-21 10:33:10,715 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:10,716 - INFO - [ETAPA 1] store_segments: escopo filtrado — 2 CanalEstabelecimento.Id (JSON / Estabelecimento).
-2026-05-21 10:33:12,245 - INFO - [ETAPA 1] Chunk 1 processado: 2/2 registros inseridos
-2026-05-21 10:33:12,530 - INFO - ETAPA 1 concluida: 2 registros
-2026-05-21 10:33:12,531 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:13,964 - INFO - VALIDACAO ETAPA 1: OK - Origem: 2, Destino: 2
-2026-05-21 10:33:13,965 - INFO - ================================================================================
-2026-05-21 10:33:13,965 - INFO - ETAPA 2: Migrando retail_chains
-2026-05-21 10:33:13,966 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
-2026-05-21 10:33:13,966 - INFO - ================================================================================
-2026-05-21 10:33:13,967 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:13,967 - INFO - [ETAPA 2] Buscando IdRede da ViewOrcamentosLojas com filtros de data aplicados...
-2026-05-21 10:33:13,973 - INFO - [ETAPA 2] Query completa para buscar IdRede da ViewOrcamentosLojas: 
+2026-06-01 10:18:37,546 - INFO - ================================================================================
+2026-06-01 10:18:37,546 - INFO - [STORES] Resultado IdOrcamento: 3 registros - [13305, 13075, 349]
+2026-06-01 10:18:37,546 - INFO - [STORES] Resultado IdCliente: 3 registros - [95, 4712, 41]
+2026-06-01 10:18:37,547 - INFO - [STORES] Resultado IdSegmentoProduto: 2 registros - [1, 3]
+2026-06-01 10:18:37,547 - INFO - [STORES] Resultado IdEstabelecimento: 92 registros - [2917, 27706, 37988, 3080, 1449, 32043, 27735, 14381, 3143, 3069]
+2026-06-01 10:18:37,547 - INFO - [STORES] Resultado IdCanalEstabelecimento: 2 registros - [3, 14]
+2026-06-01 10:18:37,547 - INFO - [STORES] Resultado IdBandeira: 4 registros - [350, 18, 240, 120]
+2026-06-01 10:18:37,547 - INFO - [STORES] Resultado IdRede: 4 registros - [444, 121, 116, 226]
+2026-06-01 10:18:37,572 - INFO - [STORES] JSON atualizado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:37,572 - INFO - [STORES] IDs coletados - Contratos: 3, Estabelecimentos: 92, Canais estabelecimento: 2, Bandeiras: 4, Redes: 4
+2026-06-01 10:18:37,572 - INFO - [ETAPA 1] contracts_filter_main.json: IdEstabelecimento/IdCanal preenchidos pela view antes de store_segments.
+2026-06-01 10:18:37,582 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:37,583 - INFO - [ETAPA 1] store_segments: escopo filtrado — 2 CanalEstabelecimento.Id (JSON / Estabelecimento).
+2026-06-01 10:18:39,196 - INFO - [ETAPA 1] Chunk 1 processado: 2/2 registros inseridos
+2026-06-01 10:18:39,490 - INFO - ETAPA 1 concluida: 2 registros
+2026-06-01 10:18:39,490 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:40,849 - INFO - VALIDACAO ETAPA 1: OK - Origem: 2, Destino: 2
+2026-06-01 10:18:40,850 - INFO - ================================================================================
+2026-06-01 10:18:40,850 - INFO - ETAPA 2: Migrando retail_chains
+2026-06-01 10:18:40,851 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
+2026-06-01 10:18:40,851 - INFO - ================================================================================
+2026-06-01 10:18:40,852 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:40,852 - INFO - [ETAPA 2] Buscando IdRede da ViewOrcamentosLojas com filtros de data aplicados...
+2026-06-01 10:18:40,858 - INFO - [ETAPA 2] Query completa para buscar IdRede da ViewOrcamentosLojas: 
             SELECT DISTINCT
                 v.IdRede
             FROM ViewOrcamentosLojas v
             INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
-            WHERE v.IdOrcamento IN (?) AND (CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= ? AND v.IdRede IS NOT NULL
+            WHERE v.IdOrcamento IN (?,?,?) AND (CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= ? AND v.IdRede IS NOT NULL
             
-2026-05-21 10:33:13,973 - INFO - [ETAPA 2] Parâmetros da query: [13520, '2026-03-01', '2026-05-20']
-2026-05-21 10:33:14,021 - INFO - [ETAPA 2] Carregados 9 IdRede únicos da ViewOrcamentosLojas
-2026-05-21 10:33:14,022 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:14,022 - INFO - [STORES] Filtros aplicados em save_filter_json_from_view: id_orcamento=[13520], data_aviso_previo_min=2026-03-01, data_inicio_operacao_max=2026-05-20, status_pedido=[]
-2026-05-21 10:33:14,277 - INFO - ================================================================================
-2026-05-21 10:33:14,278 - INFO - [STORES] DEBUG - QUERIES PARA COLETA DE IDs (ESTRUTURA SIMPLIFICADA)
-2026-05-21 10:33:14,278 - INFO - ================================================================================
-2026-05-21 10:33:14,278 - INFO - [STORES] Parâmetros da query: [13520, '2026-03-01', '2026-05-20']
-2026-05-21 10:33:14,279 - INFO - ================================================================================
-2026-05-21 10:33:14,279 - INFO - ================================================================================
-2026-05-21 10:33:14,279 - INFO - [STORES] QUERY PRONTA PARA COPIAR E COLAR NO SSMS (Exemplo: IdEstabelecimento)
-2026-05-21 10:33:14,279 - INFO - ================================================================================
-2026-05-21 10:33:14,279 - INFO - 
+2026-06-01 10:18:40,860 - INFO - [ETAPA 2] Parâmetros da query: [349, 13075, 13305, '2026-05-01', '2026-05-31']
+2026-06-01 10:18:40,954 - INFO - [ETAPA 2] Carregados 4 IdRede únicos da ViewOrcamentosLojas
+2026-06-01 10:18:40,954 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:40,955 - INFO - [STORES] Filtros aplicados em save_filter_json_from_view: id_orcamento=[349, 13075, 13305], data_aviso_previo_min=2026-05-01, data_inicio_operacao_max=2026-05-31, status_pedido=[]
+2026-06-01 10:18:41,463 - INFO - ================================================================================
+2026-06-01 10:18:41,464 - INFO - [STORES] DEBUG - QUERIES PARA COLETA DE IDs (ESTRUTURA SIMPLIFICADA)
+2026-06-01 10:18:41,464 - INFO - ================================================================================
+2026-06-01 10:18:41,464 - INFO - [STORES] Parâmetros da query: [349, 13075, 13305, '2026-05-01', '2026-05-31']
+2026-06-01 10:18:41,465 - INFO - ================================================================================
+2026-06-01 10:18:41,465 - INFO - ================================================================================
+2026-06-01 10:18:41,465 - INFO - [STORES] QUERY PRONTA PARA COPIAR E COLAR NO SSMS (Exemplo: IdEstabelecimento)
+2026-06-01 10:18:41,465 - INFO - ================================================================================
+2026-06-01 10:18:41,465 - INFO - 
 -- Query para IdEstabelecimento:
-2026-05-21 10:33:14,279 - INFO - 
+2026-06-01 10:18:41,466 - INFO - 
                 SELECT DISTINCT
                     v.IdEstabelecimento
                 FROM ViewOrcamentosLojas v
                 INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
-                 WHERE 1 = 1 AND v.IdOrcamento IN (13520) AND (CONVERT(DATE, v.DataAvisoPrevio) >= '2026-03-01' OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= '2026-05-20' AND v.IdEstabelecimento IS NOT NULL
+                 WHERE 1 = 1 AND v.IdOrcamento IN (349,13075,13305) AND (CONVERT(DATE, v.DataAvisoPrevio) >= '2026-05-01' OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= '2026-05-31' AND v.IdEstabelecimento IS NOT NULL
                 
-2026-05-21 10:33:14,280 - INFO - ================================================================================
-2026-05-21 10:33:14,280 - INFO - [STORES] Resultado IdOrcamento: 1 registros - [13520]
-2026-05-21 10:33:14,280 - INFO - [STORES] Resultado IdCliente: 1 registros - [4729]
-2026-05-21 10:33:14,280 - INFO - [STORES] Resultado IdSegmentoProduto: 1 registros - [1]
-2026-05-21 10:33:14,280 - INFO - [STORES] Resultado IdEstabelecimento: 21 registros - [1617, 2276, 2423, 2428, 6411, 7846, 7857, 8008, 8009, 8030]
-2026-05-21 10:33:14,281 - INFO - [STORES] Resultado IdCanalEstabelecimento: 2 registros - [3, 14]
-2026-05-21 10:33:14,281 - INFO - [STORES] Resultado IdBandeira: 9 registros - [19, 29, 99, 189, 220, 221, 226, 434, 1982]
-2026-05-21 10:33:14,281 - INFO - [STORES] Resultado IdRede: 9 registros - [4, 26, 91, 118, 178, 206, 207, 213, 411]
-2026-05-21 10:33:14,306 - INFO - [STORES] JSON atualizado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:14,307 - INFO - [STORES] IDs coletados - Contratos: 1, Estabelecimentos: 21, Canais estabelecimento: 2, Bandeiras: 9, Redes: 9
-2026-05-21 10:33:14,307 - INFO - [ETAPA 2] Flag --clear-data ativo: usando TRUNCATE mesmo com filtros
-2026-05-21 10:33:15,894 - INFO - Tabela core.retail_chains truncada com sucesso
-2026-05-21 10:33:17,396 - INFO - [ETAPA 2] Chunk 1 processado: 9/9 registros inseridos
-2026-05-21 10:33:17,685 - INFO - ETAPA 2 concluida: 9 registros
-2026-05-21 10:33:17,686 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:19,097 - INFO - VALIDACAO ETAPA 2: OK - Origem: 9, Destino: 9
-2026-05-21 10:33:19,098 - INFO - ================================================================================
-2026-05-21 10:33:19,098 - INFO - ETAPA 3: Migrando store_brands
-2026-05-21 10:33:19,099 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
-2026-05-21 10:33:19,099 - INFO - ================================================================================
-2026-05-21 10:33:19,099 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:19,099 - INFO - [ETAPA 3] Buscando IdBandeira da ViewOrcamentosLojas com filtros de data aplicados...
-2026-05-21 10:33:19,107 - INFO - [ETAPA 3] Query completa para buscar IdBandeira da ViewOrcamentosLojas: 
+2026-06-01 10:18:41,466 - INFO - ================================================================================
+2026-06-01 10:18:41,466 - INFO - [STORES] Resultado IdOrcamento: 3 registros - [13305, 13075, 349]
+2026-06-01 10:18:41,466 - INFO - [STORES] Resultado IdCliente: 3 registros - [95, 4712, 41]
+2026-06-01 10:18:41,466 - INFO - [STORES] Resultado IdSegmentoProduto: 2 registros - [1, 3]
+2026-06-01 10:18:41,467 - INFO - [STORES] Resultado IdEstabelecimento: 92 registros - [2917, 27706, 37988, 3080, 1449, 32043, 27735, 14381, 3143, 3069]
+2026-06-01 10:18:41,467 - INFO - [STORES] Resultado IdCanalEstabelecimento: 2 registros - [3, 14]
+2026-06-01 10:18:41,467 - INFO - [STORES] Resultado IdBandeira: 4 registros - [350, 18, 240, 120]
+2026-06-01 10:18:41,467 - INFO - [STORES] Resultado IdRede: 4 registros - [444, 121, 116, 226]
+2026-06-01 10:18:41,489 - INFO - [STORES] JSON atualizado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:41,489 - INFO - [STORES] IDs coletados - Contratos: 3, Estabelecimentos: 92, Canais estabelecimento: 2, Bandeiras: 4, Redes: 4
+2026-06-01 10:18:41,489 - INFO - [ETAPA 2] Flag --clear-data ativo: usando TRUNCATE mesmo com filtros
+2026-06-01 10:18:43,138 - INFO - Tabela core.retail_chains truncada com sucesso
+2026-06-01 10:18:44,680 - INFO - [ETAPA 2] Chunk 1 processado: 4/4 registros inseridos
+2026-06-01 10:18:44,972 - INFO - ETAPA 2 concluida: 4 registros
+2026-06-01 10:18:44,973 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:46,341 - INFO - VALIDACAO ETAPA 2: OK - Origem: 4, Destino: 4
+2026-06-01 10:18:46,342 - INFO - ================================================================================
+2026-06-01 10:18:46,342 - INFO - ETAPA 3: Migrando store_brands
+2026-06-01 10:18:46,342 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
+2026-06-01 10:18:46,342 - INFO - ================================================================================
+2026-06-01 10:18:46,343 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:46,343 - INFO - [ETAPA 3] Buscando IdBandeira da ViewOrcamentosLojas com filtros de data aplicados...
+2026-06-01 10:18:46,351 - INFO - [ETAPA 3] Query completa para buscar IdBandeira da ViewOrcamentosLojas: 
             SELECT DISTINCT
                 v.IdBandeira
             FROM ViewOrcamentosLojas v
             INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
-            WHERE v.IdOrcamento IN (?) AND (CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= ? AND v.IdBandeira IS NOT NULL
+            WHERE v.IdOrcamento IN (?,?,?) AND (CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= ? AND v.IdBandeira IS NOT NULL
             
-2026-05-21 10:33:19,107 - INFO - [ETAPA 3] Parâmetros da query: [13520, '2026-03-01', '2026-05-20']
-2026-05-21 10:33:19,152 - INFO - [ETAPA 3] Carregados 9 IdBandeira únicos da ViewOrcamentosLojas
-2026-05-21 10:33:19,152 - INFO - [ETAPA 3] Flag --clear-data ativo: usando TRUNCATE mesmo com filtros
-2026-05-21 10:33:20,836 - INFO - Tabela core.store_brands truncada com sucesso
-2026-05-21 10:33:22,495 - WARNING - Store segment não encontrado para 2 Bandeiras. Usando padrão: 5297faca-d2cd-471a-9424-5fa63d0db235
-2026-05-21 10:33:24,027 - INFO - [ETAPA 3] Chunk 1 processado: 9/9 registros inseridos
-2026-05-21 10:33:24,323 - INFO - ETAPA 3 concluida: 9 registros
-2026-05-21 10:33:24,325 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:25,752 - INFO - VALIDACAO ETAPA 3: OK - Origem: 9, Destino: 9
-2026-05-21 10:33:25,753 - INFO - ================================================================================
-2026-05-21 10:33:25,753 - INFO - ETAPA 4: Migrando stores
-2026-05-21 10:33:25,754 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
-2026-05-21 10:33:25,754 - INFO - ================================================================================
-2026-05-21 10:33:25,756 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:25,756 - INFO - [ETAPA 4] Buscando IdEstabelecimento da ViewOrcamentosLojas com filtros de data aplicados...
-2026-05-21 10:33:25,763 - INFO - [ETAPA 4] Query completa para buscar IdEstabelecimento da ViewOrcamentosLojas: 
+2026-06-01 10:18:46,352 - INFO - [ETAPA 3] Parâmetros da query: [349, 13075, 13305, '2026-05-01', '2026-05-31']
+2026-06-01 10:18:46,445 - INFO - [ETAPA 3] Carregados 4 IdBandeira únicos da ViewOrcamentosLojas
+2026-06-01 10:18:46,445 - INFO - [ETAPA 3] Flag --clear-data ativo: usando TRUNCATE mesmo com filtros
+2026-06-01 10:18:48,157 - INFO - Tabela core.store_brands truncada com sucesso
+2026-06-01 10:18:49,769 - WARNING - Store segment não encontrado para 1 Bandeiras. Usando padrão: 57a78f9b-060a-476f-83c3-9efa43265ed0
+2026-06-01 10:18:51,270 - INFO - [ETAPA 3] Chunk 1 processado: 4/4 registros inseridos
+2026-06-01 10:18:51,553 - INFO - ETAPA 3 concluida: 4 registros
+2026-06-01 10:18:51,554 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:52,948 - INFO - VALIDACAO ETAPA 3: OK - Origem: 4, Destino: 4
+2026-06-01 10:18:52,949 - INFO - ================================================================================
+2026-06-01 10:18:52,949 - INFO - ETAPA 4: Migrando stores
+2026-06-01 10:18:52,950 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
+2026-06-01 10:18:52,950 - INFO - ================================================================================
+2026-06-01 10:18:52,951 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:52,952 - INFO - [ETAPA 4] Buscando IdEstabelecimento da ViewOrcamentosLojas com filtros de data aplicados...
+2026-06-01 10:18:52,958 - INFO - [ETAPA 4] Query completa para buscar IdEstabelecimento da ViewOrcamentosLojas: 
             SELECT DISTINCT
                 v.IdEstabelecimento
             FROM ViewOrcamentosLojas v
             INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
-            WHERE v.IdOrcamento IN (?) AND (CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= ? AND v.IdEstabelecimento IS NOT NULL
+            WHERE v.IdOrcamento IN (?,?,?) AND (CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= ? AND v.IdEstabelecimento IS NOT NULL
             
-2026-05-21 10:33:25,763 - INFO - [ETAPA 4] Parâmetros da query: [13520, '2026-03-01', '2026-05-20']
-2026-05-21 10:33:25,805 - INFO - [ETAPA 4] Carregados 21 IdEstabelecimento únicos da ViewOrcamentosLojas
-2026-05-21 10:33:25,805 - INFO - [ETAPA 4] Flag --clear-data ativo: usando TRUNCATE mesmo com filtros
-2026-05-21 10:33:27,502 - INFO - Tabela core.stores truncada com sucesso
-2026-05-21 10:33:30,811 - INFO - Store brand padrão 'Teste store_brands' criado: 2e19f9db-a64e-4d82-9de1-ea1aaea7ea58
-2026-05-21 10:33:30,817 - INFO - [ETAPA 4] Processando 21 IdEstabelecimento em 1 chunks
-2026-05-21 10:33:30,841 - INFO - [ETAPA 4] Chunk 1/1: 21 registros carregados
-2026-05-21 10:33:30,865 - INFO - [ETAPA 4] Total: 21 registros carregados
-2026-05-21 10:33:32,412 - INFO - [ETAPA 4] Chunk 1 processado: 21/21 registros inseridos
-2026-05-21 10:33:32,705 - INFO - ETAPA 4 concluida: 21 registros
-2026-05-21 10:33:32,707 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
-2026-05-21 10:33:34,076 - INFO - VALIDACAO ETAPA 4: OK - Origem: 21, Destino: 21
-2026-05-21 10:33:34,076 - INFO - ================================================================================
-2026-05-21 10:33:34,077 - INFO - ETAPA 5: Migrando store_cnpjs
-2026-05-21 10:33:34,077 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
-2026-05-21 10:33:34,077 - INFO - ================================================================================
-2026-05-21 10:33:34,077 - INFO - [ETAPA 5] Flag --clear-data ativo: usando TRUNCATE
-2026-05-21 10:33:35,594 - INFO - Tabela core.store_cnpjs truncada com sucesso
-2026-05-21 10:33:37,157 - INFO - [ETAPA 5] Chunk 1 processado: 21/21 registros inseridos
-2026-05-21 10:33:37,158 - INFO - ETAPA 5 concluida: 21 registros
-2026-05-21 10:33:38,592 - INFO - VALIDACAO ETAPA 5: OK - Origem: 21, Destino: 21
-2026-05-21 10:33:38,593 - INFO - ================================================================================
-2026-05-21 10:33:38,593 - INFO - ETAPA 6: Migrando addresses para stores
-2026-05-21 10:33:38,594 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
-2026-05-21 10:33:38,594 - INFO - ================================================================================
-2026-05-21 10:33:38,595 - INFO - [ETAPA 6] Flag --clear-data ativo: deletando TODOS os addresses de stores
-2026-05-21 10:33:40,137 - INFO - Tabela core.addresses: 81 registros deletados (tipo: Store)
-2026-05-21 10:33:41,898 - INFO - [ETAPA 6] Chunk 1 processado: 21/21 enderecos inseridos
-2026-05-21 10:33:41,899 - INFO - ETAPA 6 concluida: 21 registros
-2026-05-21 10:33:43,320 - INFO - VALIDACAO ETAPA 6: OK - Origem: 21, Destino: 21
-2026-05-21 10:33:43,321 - INFO - ================================================================================
-2026-05-21 10:33:43,321 - INFO - ETAPA 7: Migrando contacts para stores
-2026-05-21 10:33:43,321 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
-2026-05-21 10:33:43,321 - INFO - ================================================================================
-2026-05-21 10:33:43,322 - INFO - [ETAPA 7] Flag --clear-data ativo: deletando TODOS os contacts de stores
-2026-05-21 10:33:44,774 - INFO - Tabela core.contacts: 61 registros deletados (tipo: Store)
-2026-05-21 10:33:46,376 - INFO - [ETAPA 7] Chunk 1 processado: 18/18 contacts inseridos
-2026-05-21 10:33:46,377 - INFO - ETAPA 7 concluida: 18 registros
-2026-05-21 10:33:48,294 - INFO - VALIDACAO ETAPA 7: OK - Origem: 18, Destino: 18
-2026-05-21 10:33:48,294 - INFO - ================================================================================
-2026-05-21 10:33:48,295 - INFO - MIGRACAO CONCLUIDA COM SUCESSO!
-2026-05-21 10:33:48,295 - INFO - ================================================================================
-2026-05-21 10:33:48,295 - INFO - Duracao: 0:00:39.590085
-2026-05-21 10:33:48,296 - INFO - Store Segments: 2
-2026-05-21 10:33:48,297 - INFO - Retail Chains: 9
-2026-05-21 10:33:48,297 - INFO - Store Brands: 9
-2026-05-21 10:33:48,299 - INFO - Stores: 21
-2026-05-21 10:33:48,299 - INFO - Store CNPJs: 21
-2026-05-21 10:33:48,299 - INFO - Addresses: 21
-2026-05-21 10:33:48,300 - INFO - Contacts: 18
-2026-05-21 10:33:48,300 - INFO - Erros: 0
-2026-05-21 10:33:48,301 - INFO - Nenhum erro encontrado!
-2026-05-21 10:33:48,309 - INFO - [DESTINO] Destino recebido como parâmetro: PRD
-2026-05-21 10:33:48,309 - INFO - [DESTINO] Schema determinado: core (baseado em destino=PRD)
-2026-05-21 10:33:48,309 - INFO - [DESTINO] ✅ Schema final validado: core para destino: PRD
-2026-05-21 10:33:48,310 - INFO - ================================================================================
-2026-05-21 10:33:48,311 - INFO - ETAPA 1: Migrando users
-2026-05-21 10:33:48,311 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
-2026-05-21 10:33:48,312 - INFO - ================================================================================
-2026-05-21 10:33:49,850 - INFO - [ETAPA 1] clear_users=False: INSERT apenas legacy_id ainda inexistente no destino
-2026-05-21 10:33:51,427 - INFO - [VERIFICAÇÃO] Tabela 'core.users' existe e está acessível
-2026-05-21 10:33:51,726 - INFO - [ETAPA 1] incremental: existentes ignorados=316, novos=1
-2026-05-21 10:33:52,012 - INFO - [ETAPA 1] Chunk 1 processado: 1/1 registros inseridos
-2026-05-21 10:33:52,301 - INFO - [ETAPA 1] 1 UUIDs mapeados no user_id_map
-2026-05-21 10:33:52,302 - INFO - [ETAPA 1] CONCLUIDA! Total: 1
-2026-05-21 10:33:53,850 - INFO - VALIDACAO ETAPA 1 (incremental): origem=317, destino=326
-2026-05-21 10:33:53,851 - INFO - [DESTINO] Destino recebido como parâmetro: PRD
-2026-05-21 10:33:53,851 - INFO - [DESTINO] Schema determinado: core (baseado em destino=PRD)
-2026-05-21 10:33:53,852 - INFO - ================================================================================
-2026-05-21 10:33:53,852 - INFO - ETAPA 2: Migrando user_roles
-2026-05-21 10:33:53,853 - INFO - Ambiente: PRD | Schema: core
-2026-05-21 10:33:53,853 - INFO - ================================================================================
-2026-05-21 10:33:55,336 - INFO - [VERIFICAÇÃO] Tabela 'core.user_roles' existe e está acessível
-2026-05-21 10:33:55,480 - INFO - [ETAPA 2] Tabela roles encontrada em schema: core
-2026-05-21 10:33:55,622 - INFO - [ETAPA 2] Role do registro manual encontrado: 10f04eee-b8ff-4aa2-9f8a-0f2531573d32
-2026-05-21 10:33:55,623 - INFO - [ETAPA 2] Role_id que será usado: 10f04eee-b8ff-4aa2-9f8a-0f2531573d32
-2026-05-21 10:33:55,907 - INFO - Tabela core.user_roles truncada com sucesso
-2026-05-21 10:33:56,477 - INFO - [ETAPA 2] Registro manual inserido: user_id=b1d3a1a3-580b-4db4-92e1-0b7cb66ffe9f, role_id=10f04eee-b8ff-4aa2-9f8a-0f2531573d32
-2026-05-21 10:33:57,360 - INFO - [ETAPA 2] Chunk 1 processado: 325/325 registros inseridos
-2026-05-21 10:33:57,364 - INFO - [ETAPA 2] CONCLUIDA! Total: 326 (1 manual + 325 demais)
-2026-05-21 10:33:57,366 - INFO - ================================================================================
-2026-05-21 10:33:57,367 - INFO - INICIANDO MIGRACAO COMPLETA
-2026-05-21 10:33:57,367 - INFO - ================================================================================
-2026-05-21 10:33:57,367 - INFO - Data/Hora: 2026-05-21 10:33:57.367713
-2026-05-21 10:33:57,368 - INFO - Ambiente Destino: PRD
-2026-05-21 10:33:57,368 - INFO - Schema Destino: commercial
-2026-05-21 10:33:57,368 - INFO - Limite de Linhas: TODOS
-2026-05-21 10:33:57,368 - INFO - Tamanho do Chunk: 20000
-2026-05-21 10:33:57,369 - INFO - Origem: SQL Server PRD (Database: FINANCEIRO)
-2026-05-21 10:33:57,369 - INFO - Destino: PostgreSQL PRD (Schema: commercial)
-2026-05-21 10:33:57,369 - INFO - ================================================================================
-2026-05-21 10:33:57,369 - INFO - ================================================================================
-2026-05-21 10:33:57,369 - INFO - ETAPA 1: Migrando contracts
-2026-05-21 10:33:57,370 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
-2026-05-21 10:33:57,370 - INFO - ================================================================================
-2026-05-21 10:33:58,923 - INFO - [ETAPA 1] id_orcamento_filter após ∩ XLSX: 1
-2026-05-21 10:33:58,924 - INFO - [ETAPA 1] Preview - Filtros: id_orcamento=[13520], data_aviso=2026-03-01, data_inicio=2026-05-20, status_pedido=[]
-2026-05-21 10:33:58,924 - INFO - [ETAPA 1] Preview - WHERE conditions: ['v.IdOrcamento IN (?)', '(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)', 'CONVERT(DATE, v.DataInicioOperacao) <= ?', 'v.IdCliente IS NOT NULL']
-2026-05-21 10:33:58,925 - INFO - [ETAPA 1] Preview - Query params: [13520, '2026-03-01', '2026-05-20']
-2026-05-21 10:33:58,983 - INFO - [ETAPA 1] Preview: Encontrados 1 IdOrcamento únicos na query preview
-2026-05-21 10:34:02,034 - INFO - Tabela commercial.contracts truncada com sucesso
-2026-05-21 10:34:02,035 - INFO - Filtros aplicados: IdOrcamento=[13520], DataAvisoPrevio_min=2026-03-01, DataInicioOperacao_max=2026-05-20, StatusPedido=[], limit_rows=0, clear_data=True
-2026-05-21 10:34:02,111 - INFO - [ETAPA 1] Filtros aplicados: ['v.IdOrcamento IN (?)', '(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)', 'CONVERT(DATE, v.DataInicioOperacao) <= ?']
-2026-05-21 10:34:02,378 - INFO - [ETAPA 1] Query de coleta de IDs (estrutura simplificada)
-2026-05-21 10:34:02,378 - INFO - [ETAPA 1] Parâmetros da query: [13520, '2026-03-01', '2026-05-20']
-2026-05-21 10:34:02,378 - INFO - [ETAPA 1] Exemplo de query (IdEstabelecimento): 
+2026-06-01 10:18:52,959 - INFO - [ETAPA 4] Parâmetros da query: [349, 13075, 13305, '2026-05-01', '2026-05-31']
+2026-06-01 10:18:53,055 - INFO - [ETAPA 4] Carregados 92 IdEstabelecimento únicos da ViewOrcamentosLojas
+2026-06-01 10:18:53,056 - INFO - [ETAPA 4] Flag --clear-data ativo: usando TRUNCATE mesmo com filtros
+2026-06-01 10:18:54,696 - INFO - Tabela core.stores truncada com sucesso
+2026-06-01 10:18:56,016 - INFO - [ETAPA 4] Processando 92 IdEstabelecimento em 1 chunks
+2026-06-01 10:18:56,037 - INFO - [ETAPA 4] Chunk 1/1: 92 registros carregados
+2026-06-01 10:18:56,057 - INFO - [ETAPA 4] Total: 92 registros carregados
+2026-06-01 10:18:57,709 - INFO - [ETAPA 4] Chunk 1 processado: 92/92 registros inseridos
+2026-06-01 10:18:58,002 - INFO - ETAPA 4 concluida: 92 registros
+2026-06-01 10:18:58,003 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\stores\..\contracts\contracts_filter_main.json
+2026-06-01 10:18:59,406 - INFO - VALIDACAO ETAPA 4: OK - Origem: 92, Destino: 92
+2026-06-01 10:18:59,407 - INFO - ================================================================================
+2026-06-01 10:18:59,408 - INFO - ETAPA 5: Migrando store_cnpjs
+2026-06-01 10:18:59,408 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
+2026-06-01 10:18:59,408 - INFO - ================================================================================
+2026-06-01 10:18:59,408 - INFO - [ETAPA 5] Flag --clear-data ativo: usando TRUNCATE
+2026-06-01 10:19:00,875 - INFO - Tabela core.store_cnpjs truncada com sucesso
+2026-06-01 10:19:02,369 - INFO - [ETAPA 5] Chunk 1 processado: 92/92 registros inseridos
+2026-06-01 10:19:02,370 - INFO - ETAPA 5 concluida: 92 registros
+2026-06-01 10:19:03,743 - INFO - VALIDACAO ETAPA 5: OK - Origem: 92, Destino: 92
+2026-06-01 10:19:03,744 - INFO - ================================================================================
+2026-06-01 10:19:03,744 - INFO - ETAPA 6: Migrando addresses para stores
+2026-06-01 10:19:03,744 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
+2026-06-01 10:19:03,744 - INFO - ================================================================================
+2026-06-01 10:19:03,744 - INFO - [ETAPA 6] Flag --clear-data ativo: deletando TODOS os addresses de stores
+2026-06-01 10:19:05,251 - INFO - Tabela core.addresses: 24 registros deletados (tipo: Store)
+2026-06-01 10:19:07,082 - INFO - [ETAPA 6] Chunk 1 processado: 92/92 enderecos inseridos
+2026-06-01 10:19:07,083 - INFO - ETAPA 6 concluida: 92 registros
+2026-06-01 10:19:08,482 - INFO - VALIDACAO ETAPA 6: OK - Origem: 92, Destino: 92
+2026-06-01 10:19:08,483 - INFO - ================================================================================
+2026-06-01 10:19:08,484 - INFO - ETAPA 7: Migrando contacts para stores
+2026-06-01 10:19:08,484 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
+2026-06-01 10:19:08,484 - INFO - ================================================================================
+2026-06-01 10:19:08,484 - INFO - [ETAPA 7] Flag --clear-data ativo: deletando TODOS os contacts de stores
+2026-06-01 10:19:09,991 - INFO - Tabela core.contacts: 18 registros deletados (tipo: Store)
+2026-06-01 10:19:11,709 - INFO - [ETAPA 7] Chunk 1 processado: 84/84 contacts inseridos
+2026-06-01 10:19:11,710 - INFO - ETAPA 7 concluida: 84 registros
+2026-06-01 10:19:13,587 - INFO - VALIDACAO ETAPA 7: OK - Origem: 84, Destino: 84
+2026-06-01 10:19:13,589 - INFO - ================================================================================
+2026-06-01 10:19:13,589 - INFO - MIGRACAO CONCLUIDA COM SUCESSO!
+2026-06-01 10:19:13,589 - INFO - ================================================================================
+2026-06-01 10:19:13,589 - INFO - Duracao: 0:00:38.535551
+2026-06-01 10:19:13,590 - INFO - Store Segments: 2
+2026-06-01 10:19:13,590 - INFO - Retail Chains: 4
+2026-06-01 10:19:13,590 - INFO - Store Brands: 4
+2026-06-01 10:19:13,590 - INFO - Stores: 92
+2026-06-01 10:19:13,591 - INFO - Store CNPJs: 92
+2026-06-01 10:19:13,591 - INFO - Addresses: 92
+2026-06-01 10:19:13,591 - INFO - Contacts: 84
+2026-06-01 10:19:13,591 - INFO - Erros: 0
+2026-06-01 10:19:13,592 - INFO - Nenhum erro encontrado!
+2026-06-01 10:19:13,597 - INFO - [DESTINO] Destino recebido como parâmetro: PRD
+2026-06-01 10:19:13,598 - INFO - [DESTINO] Schema determinado: core (baseado em destino=PRD)
+2026-06-01 10:19:13,598 - INFO - [DESTINO] ✅ Schema final validado: core para destino: PRD
+2026-06-01 10:19:13,598 - INFO - ================================================================================
+2026-06-01 10:19:13,599 - INFO - ETAPA 1: Migrando users
+2026-06-01 10:19:13,599 - INFO - Ambiente: PRD | Schema: core | Limite: TODOS
+2026-06-01 10:19:13,599 - INFO - ================================================================================
+2026-06-01 10:19:15,061 - INFO - [ETAPA 1] clear_users=False: INSERT apenas legacy_id ainda inexistente no destino
+2026-06-01 10:19:16,650 - INFO - [VERIFICAÇÃO] Tabela 'core.users' existe e está acessível
+2026-06-01 10:19:16,963 - INFO - [ETAPA 1] incremental: existentes ignorados=318, novos=0
+2026-06-01 10:19:16,965 - INFO - [ETAPA 1] CONCLUIDA! Total: 0
+2026-06-01 10:19:18,449 - INFO - VALIDACAO ETAPA 1 (incremental): origem=318, destino=322
+2026-06-01 10:19:18,450 - INFO - [DESTINO] Destino recebido como parâmetro: PRD
+2026-06-01 10:19:18,450 - INFO - [DESTINO] Schema determinado: core (baseado em destino=PRD)
+2026-06-01 10:19:18,451 - INFO - ================================================================================
+2026-06-01 10:19:18,451 - INFO - ETAPA 2: Migrando user_roles
+2026-06-01 10:19:18,451 - INFO - Ambiente: PRD | Schema: core
+2026-06-01 10:19:18,451 - INFO - ================================================================================
+2026-06-01 10:19:19,894 - INFO - [VERIFICAÇÃO] Tabela 'core.user_roles' existe e está acessível
+2026-06-01 10:19:20,036 - INFO - [ETAPA 2] Tabela roles encontrada em schema: core
+2026-06-01 10:19:20,178 - INFO - [ETAPA 2] Role do registro manual encontrado: 10f04eee-b8ff-4aa2-9f8a-0f2531573d32
+2026-06-01 10:19:20,179 - INFO - [ETAPA 2] Role_id que será usado: 10f04eee-b8ff-4aa2-9f8a-0f2531573d32
+2026-06-01 10:19:20,462 - INFO - Tabela core.user_roles truncada com sucesso
+2026-06-01 10:19:21,027 - INFO - [ETAPA 2] Registro manual inserido: user_id=b1d3a1a3-580b-4db4-92e1-0b7cb66ffe9f, role_id=10f04eee-b8ff-4aa2-9f8a-0f2531573d32
+2026-06-01 10:19:21,888 - INFO - [ETAPA 2] Chunk 1 processado: 321/321 registros inseridos
+2026-06-01 10:19:21,889 - INFO - [ETAPA 2] CONCLUIDA! Total: 322 (1 manual + 321 demais)
+2026-06-01 10:19:21,895 - INFO - ================================================================================
+2026-06-01 10:19:21,895 - INFO - INICIANDO MIGRACAO COMPLETA
+2026-06-01 10:19:21,896 - INFO - ================================================================================
+2026-06-01 10:19:21,896 - INFO - Data/Hora: 2026-06-01 10:19:21.896331
+2026-06-01 10:19:21,896 - INFO - Ambiente Destino: PRD
+2026-06-01 10:19:21,897 - INFO - Schema Destino: commercial
+2026-06-01 10:19:21,897 - INFO - Limite de Linhas: TODOS
+2026-06-01 10:19:21,897 - INFO - Tamanho do Chunk: 20000
+2026-06-01 10:19:21,897 - INFO - Origem: SQL Server PRD (Database: FINANCEIRO)
+2026-06-01 10:19:21,897 - INFO - Destino: PostgreSQL PRD (Schema: commercial)
+2026-06-01 10:19:21,898 - INFO - ================================================================================
+2026-06-01 10:19:21,898 - INFO - ================================================================================
+2026-06-01 10:19:21,898 - INFO - ETAPA 1: Migrando contracts
+2026-06-01 10:19:21,898 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
+2026-06-01 10:19:21,898 - INFO - ================================================================================
+2026-06-01 10:19:23,346 - INFO - [ETAPA 1] id_orcamento_filter após ∩ XLSX: 3
+2026-06-01 10:19:23,346 - INFO - [ETAPA 1] Preview - Filtros: id_orcamento=[349, 13075, 13305], data_aviso=2026-05-01, data_inicio=2026-05-31, status_pedido=[]
+2026-06-01 10:19:23,347 - INFO - [ETAPA 1] Preview - WHERE conditions: ['v.IdOrcamento IN (?,?,?)', '(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)', 'CONVERT(DATE, v.DataInicioOperacao) <= ?', 'v.IdCliente IS NOT NULL']
+2026-06-01 10:19:23,347 - INFO - [ETAPA 1] Preview - Query params: [349, 13075, 13305, '2026-05-01', '2026-05-31']
+2026-06-01 10:19:23,445 - INFO - [ETAPA 1] Preview: Encontrados 3 IdOrcamento únicos na query preview
+2026-06-01 10:19:26,462 - INFO - Tabela commercial.contracts truncada com sucesso
+2026-06-01 10:19:26,463 - INFO - Filtros aplicados: IdOrcamento=[349, 13075, 13305], DataAvisoPrevio_min=2026-05-01, DataInicioOperacao_max=2026-05-31, StatusPedido=[], limit_rows=0, clear_data=True
+2026-06-01 10:19:26,562 - INFO - [ETAPA 1] Filtros aplicados: ['v.IdOrcamento IN (?,?,?)', '(CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL)', 'CONVERT(DATE, v.DataInicioOperacao) <= ?']
+2026-06-01 10:19:27,063 - INFO - [ETAPA 1] Query de coleta de IDs (estrutura simplificada)
+2026-06-01 10:19:27,064 - INFO - [ETAPA 1] Parâmetros da query: [349, 13075, 13305, '2026-05-01', '2026-05-31']
+2026-06-01 10:19:27,064 - INFO - [ETAPA 1] Exemplo de query (IdEstabelecimento): 
         SELECT DISTINCT
             v.IdEstabelecimento
         FROM ViewOrcamentosLojas v
         INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
-        WHERE v.IdOrcamento IN (?) AND (CONVERT(DATE,...
-2026-05-21 10:34:02,379 - INFO - [ETAPA 1] IDs únicos coletados - Contratos: 1, Clientes: 1, Segmentos produto: 1, Estabelecimentos: 21, Canais estabelecimento: 2, Bandeiras: 9, Redes: 9
-2026-05-21 10:34:02,379 - INFO - Arquivo de filtros salvo: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:02,379 - INFO - Total de IdOrcamento: 1
-2026-05-21 10:34:03,894 - INFO - [ETAPA 1] Chunk 1 processado: 1/1 registros inseridos
-2026-05-21 10:34:04,198 - INFO - [ETAPA 1] CONCLUIDA! Total inseridos: 1, Processados: 1, Erros: 0
-2026-05-21 10:34:05,327 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:05,622 - INFO - VALIDACAO ETAPA 1: OK - Origem: 1, Destino: 1
-2026-05-21 10:34:05,624 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:07,376 - INFO - Tabela financial.billings truncada com sucesso
-2026-05-21 10:34:09,094 - INFO - ================================================================================
-2026-05-21 10:34:09,095 - INFO - ETAPA 9: Migrando promoter_tasks
-2026-05-21 10:34:09,095 - INFO - Ambiente: PRD | Schema: pdv | Limite: TODOS
-2026-05-21 10:34:09,095 - INFO - ================================================================================
-2026-05-21 10:34:09,096 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:09,097 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:09,098 - INFO - [ETAPA 9] 1 IdOrcamento (escopo ∩ XLSX)
-2026-05-21 10:34:09,098 - INFO - [ETAPA 9] Flag --clear-data ativo: usando TRUNCATE
-2026-05-21 10:34:10,637 - INFO - Tabela pdv.promoter_tasks truncada com sucesso
-2026-05-21 10:34:10,650 - INFO - [ETAPA 9] Query: 
+        WHERE v.IdOrcamento IN (?,?,?) AND (CONVERT(D...
+2026-06-01 10:19:27,064 - INFO - [ETAPA 1] IDs únicos coletados - Contratos: 3, Clientes: 3, Segmentos produto: 2, Estabelecimentos: 92, Canais estabelecimento: 2, Bandeiras: 4, Redes: 4
+2026-06-01 10:19:27,065 - INFO - Arquivo de filtros salvo: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:19:27,066 - INFO - Total de IdOrcamento: 3
+2026-06-01 10:19:28,541 - INFO - [ETAPA 1] Chunk 1 processado: 3/3 registros inseridos
+2026-06-01 10:19:28,829 - INFO - [ETAPA 1] CONCLUIDA! Total inseridos: 3, Processados: 3, Erros: 0
+2026-06-01 10:19:29,949 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:19:30,244 - INFO - VALIDACAO ETAPA 1: OK - Origem: 3, Destino: 3
+2026-06-01 10:19:30,245 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:19:32,112 - INFO - Tabela financial.billings truncada com sucesso
+2026-06-01 10:19:34,285 - INFO - ================================================================================
+2026-06-01 10:19:34,286 - INFO - ETAPA 9: Migrando promoter_tasks
+2026-06-01 10:19:34,286 - INFO - Ambiente: PRD | Schema: pdv | Limite: TODOS
+2026-06-01 10:19:34,287 - INFO - ================================================================================
+2026-06-01 10:19:34,288 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:19:34,288 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:19:34,288 - INFO - [ETAPA 9] 3 IdOrcamento (escopo ∩ XLSX)
+2026-06-01 10:19:34,288 - INFO - [ETAPA 9] Flag --clear-data ativo: usando TRUNCATE
+2026-06-01 10:19:35,791 - INFO - Tabela pdv.promoter_tasks truncada com sucesso
+2026-06-01 10:19:35,799 - INFO - [ETAPA 9] Query: 
             SELECT DISTINCT
                 v.NomeTarefa
             FROM ViewOrcamentosLojas v
             INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
-            WHERE v.IdOrcamento IN (?) AND (CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= ?
+            WHERE v.IdOrcamento IN (?,?,?) AND (CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= ?
             AND v.NomeTarefa IS NOT NULL
             AND LTRIM(RTRIM(v.NomeTarefa)) != ''
             
-2026-05-21 10:34:10,651 - INFO - [ETAPA 9] Parâmetros: 3 parâmetros
-2026-05-21 10:34:10,669 - INFO - [ETAPA 9] Encontradas 1 tarefas únicas
-2026-05-21 10:34:11,752 - INFO - [ETAPA 9] Processando 1 promoter_tasks únicos
-2026-05-21 10:34:12,050 - INFO - [ETAPA 9] 1 novos promoter_tasks para inserir
-2026-05-21 10:34:12,644 - INFO - [ETAPA 9] 1 promoter_tasks mapeados
-2026-05-21 10:34:12,644 - INFO - ETAPA 9 concluida: 1 registros
-2026-05-21 10:34:12,671 - INFO - ================================================================================
-2026-05-21 10:34:12,671 - INFO - ETAPA 2: Migrando contract_scenarios
-2026-05-21 10:34:12,671 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
-2026-05-21 10:34:12,672 - INFO - ================================================================================
-2026-05-21 10:34:14,064 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:14,065 - INFO - [ETAPA 2] 1 IdOrcamento (escopo ∩ XLSX)
-2026-05-21 10:34:15,575 - INFO - Tabela commercial.contract_scenarios truncada com sucesso
-2026-05-21 10:34:15,580 - INFO - [ETAPA 2] Query SQL completa: 
+2026-06-01 10:19:35,800 - INFO - [ETAPA 9] Parâmetros: 5 parâmetros
+2026-06-01 10:19:35,837 - INFO - [ETAPA 9] Encontradas 1 tarefas únicas
+2026-06-01 10:19:36,876 - INFO - [ETAPA 9] Processando 1 promoter_tasks únicos
+2026-06-01 10:19:37,169 - INFO - [ETAPA 9] 1 novos promoter_tasks para inserir
+2026-06-01 10:19:37,753 - INFO - [ETAPA 9] 1 promoter_tasks mapeados
+2026-06-01 10:19:37,753 - INFO - ETAPA 9 concluida: 1 registros
+2026-06-01 10:19:37,774 - INFO - ================================================================================
+2026-06-01 10:19:37,774 - INFO - ETAPA 2: Migrando contract_scenarios
+2026-06-01 10:19:37,774 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
+2026-06-01 10:19:37,775 - INFO - ================================================================================
+2026-06-01 10:19:39,132 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:19:39,132 - INFO - [ETAPA 2] 3 IdOrcamento (escopo ∩ XLSX)
+2026-06-01 10:19:40,591 - INFO - Tabela commercial.contract_scenarios truncada com sucesso
+2026-06-01 10:19:40,593 - INFO - [ETAPA 2] Query SQL completa: 
         SELECT 
             v.IdOrcamento,
             v.Frequencia,
             v.Horas,
             v.ValorNegociado,
             MAX(CASE     WHEN ISNULL(CAST(v.Frequencia AS FLOAT), 0) * ISNULL(TRY_CAST(v.Horas AS FLOAT), 0) * 4.0 = 0         OR (ISNULL(CAST(v.Frequencia AS FLOAT), 0) * ISNULL(TRY_CAST(v.Horas AS FLOAT), 0) * 4.0) IS NULL         THEN CAST(0 AS DECIMAL(18, 2))     ELSE CAST(         ROUND(             ISNULL(v.ValorNegociado, 0) / NULLIF(                 CAST(v.Frequencia AS FLOAT) * ISNULL(TRY_CAST(v.Horas AS FLOAT), 0) * 4.0, 0             ),             2         ) AS DECIMAL(18, 2)) END) AS hour_value_calc,
-            CONVERT(DATE,v.DataInicioOperacao) AS DataInicioOperacao,
-            CONVERT(DATE,v.DataAvisoPrevio) AS DataAvisoPrevio,
+            MAX(CONVERT(DATE,v.DataInicioOperacao)) AS DataInicioOperacao,
+            MAX(CONVERT(DATE,v.DataAvisoPrevio)) AS DataAvisoPrevio,
             v.NomeTarefa,
             v.NomeCliente,
             v.StatusPedido,
@@ -420,14 +417,12 @@
             v.IdCliente
         FROM ViewOrcamentosLojas v
         INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
-         WHERE v.IdOrcamento IN (?) AND (CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= ? AND v.IdCliente IS NOT NULL
+         WHERE v.IdOrcamento IN (?,?,?) AND (CONVERT(DATE, v.DataAvisoPrevio) >= ? OR v.DataAvisoPrevio IS NULL) AND CONVERT(DATE, v.DataInicioOperacao) <= ? AND v.IdCliente IS NOT NULL
         GROUP BY 
             v.IdOrcamento,
             v.Frequencia,
             v.Horas,
             v.ValorNegociado,
-            CONVERT(DATE,v.DataInicioOperacao),
-            CONVERT(DATE,v.DataAvisoPrevio),
             v.NomeTarefa,
             v.NomeCliente,
             v.StatusPedido,
@@ -437,127 +432,124 @@
             v.IdOrcamento, 
             v.Frequencia, 
             v.Horas, 
-            v.ValorNegociado, 
-            CONVERT(DATE,v.DataInicioOperacao), 
-            CONVERT(DATE,v.DataAvisoPrevio)
+            v.ValorNegociado
         
-2026-05-21 10:34:15,581 - INFO - [ETAPA 2] Parâmetros: [13520, '2026-03-01', '2026-05-20']
-2026-05-21 10:34:15,634 - INFO - [ETAPA 2] Registros carregados do SQL: 9
-2026-05-21 10:34:15,641 - INFO - [ETAPA 2] Registros únicos após DISTINCT: 9 (de 9 carregados)
-2026-05-21 10:34:15,642 - INFO - [ETAPA 2] Tipos inferidos - IdTarefa: int64, Frequencia: object, ValorNegociado/hour_value_calc: object, StatusPedido: int64, DataAvisoPrevio: object
-2026-05-21 10:34:15,645 - INFO - [ETAPA 2] Normalizando promoter_task names usando função compartilhada
-2026-05-21 10:34:15,649 - INFO - [ETAPA 2] Mapeamento de promoter_task_id concluído para 9 registro(s)
-2026-05-21 10:34:15,654 - INFO - [ETAPA 2] hour_value - tipo: float64, NULLs: 0
-2026-05-21 10:34:17,196 - INFO - [ETAPA 2] Chunk 1 processado: 9/9 registros inseridos
-2026-05-21 10:34:17,197 - INFO - [ETAPA 2] Criando mapa de cenários para step3...
-2026-05-21 10:34:17,199 - INFO - [ETAPA 2] Criando mapa de scenarios: 9 chaves únicas
-2026-05-21 10:34:17,497 - INFO - [ETAPA 2] 9 cenários mapeados no scenario_id_map (de 9 esperados)
-2026-05-21 10:34:17,498 - INFO - [ETAPA 2] CONCLUIDA! Total: 9
-2026-05-21 10:34:17,499 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:18,945 - INFO - VALIDACAO ETAPA 2: OK - Origem: 9, Destino: 9
-2026-05-21 10:34:18,946 - INFO - ================================================================================
-2026-05-21 10:34:18,946 - INFO - ETAPA 3: Migrando contract_scenario_stores
-2026-05-21 10:34:18,946 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
-2026-05-21 10:34:18,947 - INFO - ================================================================================
-2026-05-21 10:34:18,948 - INFO - Usando 9 scenarios já mapeados do step2
-2026-05-21 10:34:20,425 - INFO - Carregados 21 stores para mapeamento
-2026-05-21 10:34:21,829 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:21,829 - INFO - [ETAPA 3] 1 IdOrcamento (escopo ∩ XLSX)
-2026-05-21 10:34:23,324 - INFO - Tabela commercial.contract_scenario_stores truncada com sucesso
-2026-05-21 10:34:23,403 - INFO - [ETAPA 3] Total de scenario_keys únicos criados: 9
-2026-05-21 10:34:23,403 - INFO - [ETAPA 3] Total de scenario_keys no mapa: 9
-2026-05-21 10:34:24,794 - WARNING - [ETAPA 3] VALIDACAO FALHOU para 21 IdOrcamentoLoja(s): [870964, 870965, 870966, 870967, 870969, 870971, 870972, 870973, 870974, 870975]...
-2026-05-21 10:34:24,797 - INFO - [ETAPA 3] Apos validacao: 22 registros validos de 22 carregados
-2026-05-21 10:34:26,291 - INFO - [ETAPA 3] Chunk 1 processado: 22/22 registros inseridos
-2026-05-21 10:34:26,293 - INFO - [ETAPA 3] CONCLUIDA! Total: 22
-2026-05-21 10:34:26,295 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:27,779 - INFO - VALIDACAO ETAPA 3: OK - Origem: 22, Destino: 22
-2026-05-21 10:34:27,779 - INFO - ================================================================================
-2026-05-21 10:34:27,779 - INFO - ETAPA 4: Migrando contract_sellers
-2026-05-21 10:34:27,780 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
-2026-05-21 10:34:27,780 - INFO - ================================================================================
-2026-05-21 10:34:29,259 - INFO - [ETAPA 4] login_to_user_id keys: 451
-2026-05-21 10:34:29,603 - INFO - [ETAPA 4] cpf_digits_to_user_id: 195
-2026-05-21 10:34:29,755 - INFO - [ETAPA 4] admin_user_id (sysadmin): b1d3a1a3-580b-4db4-92e1-0b7cb66ffe9f
-2026-05-21 10:34:31,322 - INFO - Tabela commercial.contract_sellers truncada com sucesso
-2026-05-21 10:34:31,324 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:31,325 - INFO - [ETAPA 4] 1 IdOrcamento (escopo ∩ XLSX)
-2026-05-21 10:34:31,532 - INFO - [ETAPA 4] IdOrcamento=13520: farmer/hunter sem login resolvido → admin
-2026-05-21 10:34:31,537 - INFO - [ETAPA 4] contract_sellers resolvidos para 1 orçamentos
-2026-05-21 10:34:33,040 - INFO - [ETAPA 4] Chunk 1 processado: 2/2 registros inseridos
-2026-05-21 10:34:33,041 - INFO - [ETAPA 4] CONCLUIDA! Total: 2
-2026-05-21 10:34:33,044 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:34,509 - WARNING - VALIDACAO ETAPA 4: Diferenca - Origem: 1, Destino: 2, Diferenca: -1
-2026-05-21 10:34:34,510 - INFO - ================================================================================
-2026-05-21 10:34:34,510 - INFO - ETAPA 5: Migrando contract_team_members
-2026-05-21 10:34:34,510 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
-2026-05-21 10:34:34,511 - INFO - ================================================================================
-2026-05-21 10:34:36,183 - INFO - Carregados 317 users para mapeamento
-2026-05-21 10:34:36,184 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:36,185 - INFO - [ETAPA 5] 1 IdOrcamento (escopo ∩ XLSX)
-2026-05-21 10:34:37,714 - INFO - Tabela commercial.contract_team_members: 0 registros deletados
-2026-05-21 10:34:39,275 - INFO - [ETAPA 5] Chunk 1 processado: 1/1 registros inseridos
-2026-05-21 10:34:39,276 - INFO - [ETAPA 5] CONCLUIDA! Total: 1
-2026-05-21 10:34:39,276 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:40,644 - INFO - VALIDACAO ETAPA 5: OK - Origem: 1, Destino: 1
-2026-05-21 10:34:40,645 - INFO - ================================================================================
-2026-05-21 10:34:40,645 - INFO - ETAPA 6: Migrando contract_contacts
-2026-05-21 10:34:40,646 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
-2026-05-21 10:34:40,646 - INFO - ================================================================================
-2026-05-21 10:34:40,648 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:40,648 - INFO - [ETAPA 6] 1 IdOrcamento (escopo ∩ XLSX)
-2026-05-21 10:34:42,165 - INFO - Tabela commercial.contract_contacts: 0 registros deletados
-2026-05-21 10:34:43,749 - INFO - [ETAPA 6] Chunk 1 processado: 1/1 registros inseridos
-2026-05-21 10:34:43,761 - INFO - [ETAPA 6] CONCLUIDA! Total: 1
-2026-05-21 10:34:43,766 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:45,261 - INFO - VALIDACAO ETAPA 6: OK - Origem: 1, Destino: 1
-2026-05-21 10:34:45,262 - INFO - ================================================================================
-2026-05-21 10:34:45,262 - INFO - ETAPA 7: Migrando contract_partners
-2026-05-21 10:34:45,262 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
-2026-05-21 10:34:45,263 - INFO - ================================================================================
-2026-05-21 10:34:45,263 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:45,264 - INFO - [ETAPA 7] 1 IdOrcamento (escopo ∩ XLSX)
-2026-05-21 10:34:46,713 - INFO - Tabela commercial.contract_partners: 0 registros deletados
-2026-05-21 10:34:48,163 - INFO - [ETAPA 7] person_id obtido de people: 019dcef1-a7d7-7d85-8615-04f669632eac
-2026-05-21 10:34:49,687 - INFO - [ETAPA 7] Chunk 1 processado: 1/1 registros inseridos
-2026-05-21 10:34:49,687 - INFO - [ETAPA 7] CONCLUIDA! Total: 1
-2026-05-21 10:34:49,688 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:51,062 - WARNING - VALIDACAO ETAPA 7: Diferenca - Origem: 28, Destino: 1, Diferenca: 27
-2026-05-21 10:34:51,062 - INFO - ================================================================================
-2026-05-21 10:34:51,064 - INFO - ETAPA 8: Migrando contract_additional_charges
-2026-05-21 10:34:51,064 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
-2026-05-21 10:34:51,064 - INFO - ================================================================================
-2026-05-21 10:34:51,064 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:51,065 - INFO - [ETAPA 8] 1 IdOrcamento (escopo ∩ XLSX)
-2026-05-21 10:34:53,029 - INFO - Tabela commercial.contract_additional_charges: 0 registros deletados
-2026-05-21 10:34:54,960 - INFO - [ETAPA 8] Chunk 1 processado: 1/1 registros inseridos
-2026-05-21 10:34:54,961 - INFO - [ETAPA 8] CONCLUIDA! Total: 1
-2026-05-21 10:34:54,961 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:56,395 - INFO - VALIDACAO ETAPA 8: OK - Origem: 1, Destino: 1
-2026-05-21 10:34:56,396 - INFO - ================================================================================
-2026-05-21 10:34:56,396 - INFO - ETAPA 10: Populando contract_scenarios_brands
-2026-05-21 10:34:56,397 - INFO - Ambiente: PRD | Schema commercial: commercial | Schema core: core
-2026-05-21 10:34:56,398 - INFO - ================================================================================
-2026-05-21 10:34:56,399 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:34:56,400 - INFO - [ETAPA 10] 1 IdOrcamento (escopo ∩ XLSX)
-2026-05-21 10:34:57,924 - INFO - Tabela commercial.contract_scenarios_brands truncada com sucesso
-2026-05-21 10:34:59,424 - INFO - [ETAPA 10] CONCLUIDA! contract_scenarios_brands inseridos: 9
-2026-05-21 10:35:00,967 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
-2026-05-21 10:35:00,975 - INFO - [STATS] migration_execution_stats.json atualizado
-2026-05-21 10:35:00,976 - INFO - ================================================================================
-2026-05-21 10:35:00,976 - INFO - MIGRACAO CONCLUIDA COM SUCESSO!
-2026-05-21 10:35:00,976 - INFO - ================================================================================
-2026-05-21 10:35:00,977 - INFO - Duracao: 0:01:02.056770
-2026-05-21 10:35:00,977 - INFO - Contracts: 1
-2026-05-21 10:35:00,977 - INFO - Billings (destino): 1
-2026-05-21 10:35:00,978 - INFO - Contract Scenarios: 9
-2026-05-21 10:35:00,978 - INFO - Contract Scenario Stores: 22
-2026-05-21 10:35:00,979 - INFO - Contract Sellers: 2
-2026-05-21 10:35:00,979 - INFO - Contract Team Members: 1
-2026-05-21 10:35:00,980 - INFO - Contract Contacts: 1
-2026-05-21 10:35:00,980 - INFO - Contract Partners: 1
-2026-05-21 10:35:00,981 - INFO - Contract Additional Charges: 1
-2026-05-21 10:35:00,981 - INFO - Contract Scenarios Brands: 9
-2026-05-21 10:35:00,982 - INFO - Promoter Tasks: 1
-2026-05-21 10:35:00,982 - INFO - Customers dedup/legacy: destino=1, legacy_ids_soma=1, extras_mesclados=0
-2026-05-21 10:35:00,983 - INFO - Erros: 0
+2026-06-01 10:19:40,594 - INFO - [ETAPA 2] Parâmetros: [349, 13075, 13305, '2026-05-01', '2026-05-31']
+2026-06-01 10:19:40,676 - INFO - [ETAPA 2] Registros carregados do SQL: 7
+2026-06-01 10:19:40,681 - INFO - [ETAPA 2] Registros únicos após DISTINCT: 7 (de 7 carregados)
+2026-06-01 10:19:40,683 - INFO - [ETAPA 2] Tipos inferidos - IdTarefa: int64, Frequencia: object, ValorNegociado/hour_value_calc: object, StatusPedido: int64, DataAvisoPrevio: object
+2026-06-01 10:19:40,686 - INFO - [ETAPA 2] Normalizando promoter_task names usando função compartilhada
+2026-06-01 10:19:40,688 - INFO - [ETAPA 2] Mapeamento de promoter_task_id concluído para 7 registro(s)
+2026-06-01 10:19:40,690 - INFO - [ETAPA 2] hour_value - tipo: float64, NULLs: 0
+2026-06-01 10:19:42,173 - INFO - [ETAPA 2] Chunk 1 processado: 7/7 registros inseridos
+2026-06-01 10:19:42,173 - INFO - [ETAPA 2] Criando mapa de cenários para step3...
+2026-06-01 10:19:42,174 - INFO - [ETAPA 2] Criando mapa de scenarios: 7 chaves únicas
+2026-06-01 10:19:42,466 - INFO - [ETAPA 2] 7 cenários mapeados no scenario_id_map (de 7 esperados)
+2026-06-01 10:19:42,467 - INFO - [ETAPA 2] CONCLUIDA! Total: 7
+2026-06-01 10:19:42,468 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:19:44,007 - WARNING - VALIDACAO ETAPA 2: Diferenca - Origem: 6, Destino: 7, Diferenca: -1
+2026-06-01 10:19:44,007 - INFO - ================================================================================
+2026-06-01 10:19:44,008 - INFO - ETAPA 3: Migrando contract_scenario_stores
+2026-06-01 10:19:44,008 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
+2026-06-01 10:19:44,008 - INFO - ================================================================================
+2026-06-01 10:19:44,009 - INFO - Usando 6 scenarios já mapeados do step2
+2026-06-01 10:19:45,534 - INFO - Carregados 92 stores para mapeamento
+2026-06-01 10:19:46,859 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:19:46,860 - INFO - [ETAPA 3] 3 IdOrcamento (escopo ∩ XLSX)
+2026-06-01 10:19:48,364 - INFO - Tabela commercial.contract_scenario_stores truncada com sucesso
+2026-06-01 10:19:48,465 - INFO - [ETAPA 3] Total de scenario_keys únicos criados: 6
+2026-06-01 10:19:48,465 - INFO - [ETAPA 3] Total de scenario_keys no mapa: 6
+2026-06-01 10:19:49,847 - WARNING - [ETAPA 3] VALIDACAO FALHOU para 126 IdOrcamentoLoja(s): [121256, 121257, 121258, 121259, 121260, 121261, 121263, 121265, 121266, 121269]...
+2026-06-01 10:19:49,848 - INFO - [ETAPA 3] Apos validacao: 126 registros validos de 126 carregados
+2026-06-01 10:19:51,519 - INFO - [ETAPA 3] Chunk 1 processado: 126/126 registros inseridos
+2026-06-01 10:19:51,519 - INFO - [ETAPA 3] CONCLUIDA! Total: 126
+2026-06-01 10:19:51,520 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:19:52,961 - INFO - VALIDACAO ETAPA 3: OK - Origem: 126, Destino: 126
+2026-06-01 10:19:52,962 - INFO - ================================================================================
+2026-06-01 10:19:52,963 - INFO - ETAPA 4: Migrando contract_sellers
+2026-06-01 10:19:52,963 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
+2026-06-01 10:19:52,963 - INFO - ================================================================================
+2026-06-01 10:19:54,506 - INFO - [ETAPA 4] login_to_user_id keys: 447
+2026-06-01 10:19:54,841 - INFO - [ETAPA 4] cpf_digits_to_user_id: 195
+2026-06-01 10:19:54,999 - INFO - [ETAPA 4] admin_user_id (sysadmin): b1d3a1a3-580b-4db4-92e1-0b7cb66ffe9f
+2026-06-01 10:19:56,484 - INFO - Tabela commercial.contract_sellers truncada com sucesso
+2026-06-01 10:19:56,485 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:19:56,486 - INFO - [ETAPA 4] 3 IdOrcamento (escopo ∩ XLSX)
+2026-06-01 10:19:56,551 - INFO - [ETAPA 4] IdOrcamento=13075: farmer/hunter sem login resolvido → admin
+2026-06-01 10:19:56,557 - INFO - [ETAPA 4] contract_sellers resolvidos para 3 orçamentos
+2026-06-01 10:19:58,029 - INFO - [ETAPA 4] Chunk 1 processado: 6/6 registros inseridos
+2026-06-01 10:19:58,030 - INFO - [ETAPA 4] CONCLUIDA! Total: 6
+2026-06-01 10:19:58,031 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:19:59,404 - WARNING - VALIDACAO ETAPA 4: Diferenca - Origem: 3, Destino: 6, Diferenca: -3
+2026-06-01 10:19:59,404 - INFO - ================================================================================
+2026-06-01 10:19:59,405 - INFO - ETAPA 5: Migrando contract_team_members
+2026-06-01 10:19:59,405 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
+2026-06-01 10:19:59,406 - INFO - ================================================================================
+2026-06-01 10:20:01,038 - INFO - Carregados 318 users para mapeamento
+2026-06-01 10:20:01,039 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:20:01,039 - INFO - [ETAPA 5] 3 IdOrcamento (escopo ∩ XLSX)
+2026-06-01 10:20:02,492 - INFO - Tabela commercial.contract_team_members: 0 registros deletados
+2026-06-01 10:20:04,347 - INFO - [ETAPA 5] Chunk 1 processado: 3/3 registros inseridos
+2026-06-01 10:20:04,348 - INFO - [ETAPA 5] CONCLUIDA! Total: 3
+2026-06-01 10:20:04,350 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:20:06,048 - INFO - VALIDACAO ETAPA 5: OK - Origem: 3, Destino: 3
+2026-06-01 10:20:06,048 - INFO - ================================================================================
+2026-06-01 10:20:06,049 - INFO - ETAPA 6: Migrando contract_contacts
+2026-06-01 10:20:06,049 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
+2026-06-01 10:20:06,049 - INFO - ================================================================================
+2026-06-01 10:20:06,050 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:20:06,050 - INFO - [ETAPA 6] 3 IdOrcamento (escopo ∩ XLSX)
+2026-06-01 10:20:07,476 - INFO - Tabela commercial.contract_contacts: 0 registros deletados
+2026-06-01 10:20:09,238 - INFO - [ETAPA 6] Chunk 1 processado: 3/3 registros inseridos
+2026-06-01 10:20:09,239 - INFO - [ETAPA 6] CONCLUIDA! Total: 3
+2026-06-01 10:20:09,239 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:20:11,012 - INFO - VALIDACAO ETAPA 6: OK - Origem: 3, Destino: 3
+2026-06-01 10:20:11,012 - INFO - ================================================================================
+2026-06-01 10:20:11,012 - INFO - ETAPA 7: Migrando contract_partners
+2026-06-01 10:20:11,013 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
+2026-06-01 10:20:11,013 - INFO - ================================================================================
+2026-06-01 10:20:11,014 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:20:11,014 - INFO - [ETAPA 7] 3 IdOrcamento (escopo ∩ XLSX)
+2026-06-01 10:20:12,550 - INFO - Tabela commercial.contract_partners: 0 registros deletados
+2026-06-01 10:20:14,013 - WARNING - [ETAPA 7] Tabela people vazia - contract_partners nao sera migrado (FK person_id)
+2026-06-01 10:20:15,026 - INFO - [ETAPA 7] CONCLUIDA! Total: 0
+2026-06-01 10:20:15,027 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:20:16,508 - WARNING - VALIDACAO ETAPA 7: Diferenca - Origem: 271, Destino: 0, Diferenca: 271
+2026-06-01 10:20:16,509 - INFO - ================================================================================
+2026-06-01 10:20:16,509 - INFO - ETAPA 8: Migrando contract_additional_charges
+2026-06-01 10:20:16,509 - INFO - Ambiente: PRD | Schema: commercial | Limite: TODOS
+2026-06-01 10:20:16,510 - INFO - ================================================================================
+2026-06-01 10:20:16,510 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:20:16,511 - INFO - [ETAPA 8] 3 IdOrcamento (escopo ∩ XLSX)
+2026-06-01 10:20:18,034 - INFO - Tabela commercial.contract_additional_charges: 0 registros deletados
+2026-06-01 10:20:19,591 - INFO - [ETAPA 8] Chunk 1 processado: 1/1 registros inseridos
+2026-06-01 10:20:19,592 - INFO - [ETAPA 8] CONCLUIDA! Total: 1
+2026-06-01 10:20:19,593 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:20:20,985 - INFO - VALIDACAO ETAPA 8: OK - Origem: 1, Destino: 1
+2026-06-01 10:20:20,985 - INFO - ================================================================================
+2026-06-01 10:20:20,985 - INFO - ETAPA 10: Populando contract_scenarios_brands
+2026-06-01 10:20:20,986 - INFO - Ambiente: PRD | Schema commercial: commercial | Schema core: core
+2026-06-01 10:20:20,986 - INFO - ================================================================================
+2026-06-01 10:20:20,986 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:20:20,987 - INFO - [ETAPA 10] 3 IdOrcamento (escopo ∩ XLSX)
+2026-06-01 10:20:22,511 - INFO - Tabela commercial.contract_scenarios_brands truncada com sucesso
+2026-06-01 10:20:24,030 - INFO - [ETAPA 10] CONCLUIDA! contract_scenarios_brands inseridos: 7
+2026-06-01 10:20:25,513 - INFO - Arquivo de filtros carregado: C:\Users\tarcisio.maciel\Documents\GM GROUP\Data Engineer\LakeHouse\Assuntos\Data Migration - CORE from ERP\app_migracao_core\contracts\contracts_filter_main.json
+2026-06-01 10:20:25,525 - INFO - [STATS] migration_execution_stats.json atualizado
+2026-06-01 10:20:25,525 - INFO - ================================================================================
+2026-06-01 10:20:25,525 - INFO - MIGRACAO CONCLUIDA COM SUCESSO!
+2026-06-01 10:20:25,526 - INFO - ================================================================================
+2026-06-01 10:20:25,526 - INFO - Duracao: 0:01:02.133004
+2026-06-01 10:20:25,526 - INFO - Contracts: 3
+2026-06-01 10:20:25,526 - INFO - Billings (destino): 3
+2026-06-01 10:20:25,526 - INFO - Contract Scenarios: 7
+2026-06-01 10:20:25,526 - INFO - Contract Scenario Stores: 126
+2026-06-01 10:20:25,526 - INFO - Contract Sellers: 6
+2026-06-01 10:20:25,526 - INFO - Contract Team Members: 3
+2026-06-01 10:20:25,527 - INFO - Contract Contacts: 3
+2026-06-01 10:20:25,527 - INFO - Contract Partners: 0
+2026-06-01 10:20:25,527 - INFO - Contract Additional Charges: 1
+2026-06-01 10:20:25,527 - INFO - Contract Scenarios Brands: 7
+2026-06-01 10:20:25,527 - INFO - Promoter Tasks: 1
+2026-06-01 10:20:25,527 - INFO - Customers dedup/legacy: destino=3, legacy_ids_soma=3, extras_mesclados=0
+2026-06-01 10:20:25,528 - INFO - Erros: 0

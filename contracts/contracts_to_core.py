@@ -1814,9 +1814,7 @@ class ContractsMigration:
                     CAST(v.IdOrcamento AS VARCHAR) + '|' + 
                     ISNULL(CAST(v.Frequencia AS VARCHAR), '') + '|' + 
                     ISNULL(CAST(v.Horas AS VARCHAR), '') + '|' + 
-                    {hour_key_sql} + '|' + 
-                    ISNULL(CONVERT(VARCHAR, v.DataInicioOperacao, 120), '') + '|' + 
-                    ISNULL(CONVERT(VARCHAR, v.DataAvisoPrevio, 120), '')
+                    {hour_key_sql}
                 )
                 FROM ViewOrcamentosLojas v
                 INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
@@ -1833,18 +1831,15 @@ class ContractsMigration:
                     CAST(limited.IdOrcamento AS VARCHAR) + '|' + 
                     ISNULL(CAST(limited.Frequencia AS VARCHAR), '') + '|' + 
                     ISNULL(CAST(limited.Horas AS VARCHAR), '') + '|' + 
-                    {hour_key_limited} + '|' + 
-                    ISNULL(CONVERT(VARCHAR, limited.DataInicioOperacao, 120), '') + '|' + 
-                    ISNULL(CONVERT(VARCHAR, limited.DataAvisoPrevio, 120), '')
+                    {hour_key_limited}
                 )
                 FROM (
                     SELECT DISTINCT TOP {self.limit_rows}
-                        v.IdOrcamento, v.Frequencia, v.Horas, v.ValorNegociado,
-                        v.DataInicioOperacao, v.DataAvisoPrevio
+                        v.IdOrcamento, v.Frequencia, v.Horas, v.ValorNegociado
                     FROM ViewOrcamentosLojas v
                     INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
                     WHERE v.IdCliente IS NOT NULL
-                    ORDER BY v.IdOrcamento, v.Frequencia, v.Horas, v.ValorNegociado, v.DataInicioOperacao, v.DataAvisoPrevio
+                    ORDER BY v.IdOrcamento, v.Frequencia, v.Horas, v.ValorNegociado
                 ) AS limited
                 """
                 cursor_sql.execute(count_query)
@@ -1855,9 +1850,7 @@ class ContractsMigration:
                     CAST(v.IdOrcamento AS VARCHAR) + '|' + 
                     ISNULL(CAST(v.Frequencia AS VARCHAR), '') + '|' + 
                     ISNULL(CAST(v.Horas AS VARCHAR), '') + '|' + 
-                    {hour_key_sql} + '|' + 
-                    ISNULL(CONVERT(VARCHAR, v.DataInicioOperacao, 120), '') + '|' + 
-                    ISNULL(CONVERT(VARCHAR, v.DataAvisoPrevio, 120), '')
+                    {hour_key_sql}
                 )
                 FROM ViewOrcamentosLojas v
                 INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
@@ -2469,7 +2462,7 @@ class ContractsMigration:
             print("\n[ETAPA 2] Preparando limpeza de contract_scenarios...")
         
         # Buscar dados do SQL Server usando ViewOrcamentosLojas
-        # CENÁRIOS ÚNICOS: IdOrcamento, Frequencia, Horas, ValorNegociado, datas (+ hour_value derivado da fórmula contract_dictionary)
+        # CENÁRIOS ÚNICOS: IdOrcamento, Frequencia, Horas, ValorNegociado (+ hour_value derivado da fórmula contract_dictionary)
         # MAX() para DataInclusao/DataAlteracao quando várias lojas compartilham o mesmo cenário
         print("[ETAPA 2] Buscando dados do SQL Server para criar cenários únicos...")
         sql_query = f"""
@@ -2479,8 +2472,8 @@ class ContractsMigration:
             v.Horas,
             v.ValorNegociado,
             MAX({SQL_VIEW_HOUR_VALUE_CALC}) AS hour_value_calc,
-            CONVERT(DATE,v.DataInicioOperacao) AS DataInicioOperacao,
-            CONVERT(DATE,v.DataAvisoPrevio) AS DataAvisoPrevio,
+            MAX(CONVERT(DATE,v.DataInicioOperacao)) AS DataInicioOperacao,
+            MAX(CONVERT(DATE,v.DataAvisoPrevio)) AS DataAvisoPrevio,
             v.NomeTarefa,
             v.NomeCliente,
             v.StatusPedido,
@@ -2541,8 +2534,6 @@ class ContractsMigration:
             v.Frequencia,
             v.Horas,
             v.ValorNegociado,
-            CONVERT(DATE,v.DataInicioOperacao),
-            CONVERT(DATE,v.DataAvisoPrevio),
             v.NomeTarefa,
             v.NomeCliente,
             v.StatusPedido,
@@ -2552,16 +2543,14 @@ class ContractsMigration:
             v.IdOrcamento, 
             v.Frequencia, 
             v.Horas, 
-            v.ValorNegociado, 
-            CONVERT(DATE,v.DataInicioOperacao), 
-            CONVERT(DATE,v.DataAvisoPrevio)
+            v.ValorNegociado
         """
         
         # Adicionar LIMIT se especificado
         if self.limit_rows > 0:
             sql_query = sql_query.replace(
-                "ORDER BY \n            v.IdOrcamento, \n            v.Frequencia, \n            v.Horas, \n            v.ValorNegociado, \n            CONVERT(DATE,v.DataInicioOperacao), \n            CONVERT(DATE,v.DataAvisoPrevio)\n        ",
-                f"ORDER BY \n            v.IdOrcamento, \n            v.Frequencia, \n            v.Horas, \n            v.ValorNegociado, \n            CONVERT(DATE,v.DataInicioOperacao), \n            CONVERT(DATE,v.DataAvisoPrevio)\n        OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY",
+                "ORDER BY \n            v.IdOrcamento, \n            v.Frequencia, \n            v.Horas, \n            v.ValorNegociado\n        ",
+                f"ORDER BY \n            v.IdOrcamento, \n            v.Frequencia, \n            v.Horas, \n            v.ValorNegociado\n        OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY",
             )
         
         # Log da query completa para debug/teste no SSMS
@@ -2645,18 +2634,13 @@ class ContractsMigration:
             # Colunas para fazer DISTINCT (combinação única)
             distinct_cols = [
                 'IdOrcamento', 'Frequencia', 'Horas', 'ValorNegociado', 'hour_value_calc',
-                'DataInicioOperacao', 'DataAvisoPrevio',
             ]
             
             # Normalizar valores antes de fazer DISTINCT para garantir match correto
             # Criar colunas temporárias normalizadas para comparação (no próprio df)
             total_before = len(df)
             for col in distinct_cols:
-                if col in ['DataInicioOperacao', 'DataAvisoPrevio']:
-                    # Para datas, converter para string no formato YYYY-MM-DD (tratando NULL)
-                    df[f'{col}_norm'] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d')
-                    df[f'{col}_norm'] = df[f'{col}_norm'].fillna('')
-                elif col == 'ValorNegociado':
+                if col == 'ValorNegociado':
                     df[f'{col}_norm'] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).astype(float).astype(str)
                 elif col == 'hour_value_calc':
                     df[f'{col}_norm'] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).astype(float).astype(str)
@@ -3068,7 +3052,7 @@ class ContractsMigration:
                         continue
             
             # ⚠️ IMPORTANTE: Criar mapa de cenários baseado na combinação única
-            # Chave: (IdOrcamento, Frequencia, Horas, hour_value calculado, DataInicioOperacao, DataAvisoPrevio)
+            # Chave: (IdOrcamento, Frequencia, Horas, hour_value calculado)
             # Valor: UUID do scenario
             # ⚠️ IMPORTANTE: Usar os valores brutos do DataFrame original (mesma normalização do step3)
             print(f"[ETAPA 2] Criando mapa de cenários baseado na combinação única...")
@@ -3123,17 +3107,11 @@ class ContractsMigration:
                     row['ValorNegociado'], row['Frequencia'], row['Horas']
                 )
                 valor_hora_str = format_hour_value_key(hv)
-                start_date_str = row['DataInicioOperacao'].strftime('%Y-%m-%d') if pd.notna(row['DataInicioOperacao']) else ''
-                # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do step3)
-                end_date_str = row['DataAvisoPrevio'].strftime('%Y-%m-%d') if pd.notna(row['DataAvisoPrevio']) else None
-                
                 return (
                     int(row['IdOrcamento']),
                     freq_str,
                     horas_str,
-                    valor_hora_str,
-                    start_date_str,
-                    end_date_str
+                    valor_hora_str
                 )
             
             # Criar chaves únicas usando o DataFrame original (valores brutos)
@@ -3207,9 +3185,6 @@ class ContractsMigration:
                     horas_str = ''
                 valor_hora_str = format_hour_value_key(hour_value)
                 start_date_str = start_date.strftime('%Y-%m-%d') if start_date else ''
-                # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do create_scenario_key_from_df)
-                end_date_str = end_date.strftime('%Y-%m-%d') if end_date else None
-                
                 # Tentar mapear para cada valor de frequência possível
                 # Se encontrar match com qualquer valor, adicionar ao mapa
                 # ⚠️ IMPORTANTE: Normalizar cada valor da lista usando a mesma função de normalização
@@ -3221,9 +3196,7 @@ class ContractsMigration:
                         int(id_orcamento),
                         freq_str_normalized,
                         horas_str,
-                        valor_hora_str,
-                        start_date_str,
-                        end_date_str
+                        valor_hora_str
                     )
                     
                     # Verificar se esta chave está na lista de chaves esperadas
@@ -3238,7 +3211,7 @@ class ContractsMigration:
                         f"[ETAPA 2] Scenario do banco nao corresponde a nenhuma chave esperada: "
                         f"scenario_id={scenario_uuid}, IdOrcamento={id_orcamento}, "
                         f"frequency={freq_enum_str}, freq_values_list={freq_values_list}, hours={horas_str}, hour_value={valor_hora_str}, "
-                        f"start_date={start_date_str}, end_date={end_date_str}"
+                        f"start_date={start_date_str}, end_date={end_date}"
                     )
             
             print(f"[ETAPA 2] {scenarios_mapped} cenários mapeados para step3 (de {len(scenario_keys_list)} esperados)")
@@ -3445,16 +3418,12 @@ class ContractsMigration:
                         freq_str = str(frequency) if frequency else ''
                         horas_str = str(hours) if hours else ''
                         valor_hora_str = format_hour_value_key(hour_value)
-                        start_date_str = start_date.strftime('%Y-%m-%d') if start_date else ''
-                        end_date_str = end_date.strftime('%Y-%m-%d') if end_date else None
                         
                         scenario_key = (
                             int(id_orcamento),
                             freq_str,
                             horas_str,
-                            valor_hora_str,
-                            start_date_str,
-                            end_date_str
+                            valor_hora_str
                         )
                         self.scenario_id_map[scenario_key] = str(scenario_uuid)
                 
@@ -3698,17 +3667,12 @@ class ContractsMigration:
                 row['ValorNegociado'], row['Frequencia'], row['Horas']
             )
             valor_hora_str = format_hour_value_key(hv)
-            start_date_str = row['DataInicioOperacao'].strftime('%Y-%m-%d') if pd.notna(row['DataInicioOperacao']) else ''
-            # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do step2)
-            end_date_str = row['DataAvisoPrevio'].strftime('%Y-%m-%d') if pd.notna(row['DataAvisoPrevio']) else None
             
             return (
                 int(row['IdOrcamento']),
                 freq_str,
                 horas_str,
-                valor_hora_str,
-                start_date_str,
-                end_date_str
+                valor_hora_str
             )
         
         # Criar chaves únicas para cada registro
@@ -3779,17 +3743,12 @@ class ContractsMigration:
             except (ValueError, TypeError):
                 hours_val = ''
             hour_value_val = format_hour_value_key(hour_value)
-            start_date_val = start_date.strftime('%Y-%m-%d') if start_date else ''
-            # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do create_scenario_key)
-            end_date_val = end_date.strftime('%Y-%m-%d') if end_date else None
             
             scenario_validation_map[str(scenario_uuid)] = {
                 'legacy_id': legacy_id,  # IdOrcamento para validação
                 'frequency': freq_values_list,  # Lista de valores possíveis para comparação flexível
                 'hours': hours_val,
-                'hour_value': hour_value_val,
-                'start_date': start_date_val,
-                'end_date': end_date_val
+                'hour_value': hour_value_val
             }
         
         cursor_validate.close()
@@ -3821,17 +3780,6 @@ class ContractsMigration:
                 row['ValorNegociado'], row['Frequencia'], row['Horas']
             )
             valor_hora_reg = format_hour_value_key(hv_reg)
-            start_date_reg = row['DataInicioOperacao'].strftime('%Y-%m-%d') if pd.notna(row['DataInicioOperacao']) else ''
-            # ⚠️ IMPORTANTE: end_date pode ser None (mesmo do create_scenario_key)
-            end_date_reg = row['DataAvisoPrevio'].strftime('%Y-%m-%d') if pd.notna(row['DataAvisoPrevio']) else None
-            
-            # Comparar valores normalizados
-            # ⚠️ IMPORTANTE: Comparar end_date considerando None e string vazia como equivalentes
-            end_date_match = (
-                end_date_reg == scenario_data['end_date'] or
-                (end_date_reg == '' and scenario_data['end_date'] is None) or
-                (end_date_reg is None and scenario_data['end_date'] == '')
-            )
             
             # ⚠️ IMPORTANTE: Comparar frequency considerando múltiplos valores possíveis (inteiros e decimais)
             # scenario_data['frequency'] agora é uma lista de valores possíveis
@@ -3844,9 +3792,7 @@ class ContractsMigration:
                 legacy_id_match and
                 freq_match and
                 horas_reg == scenario_data['hours'] and
-                valor_hora_reg == scenario_data['hour_value'] and
-                start_date_reg == scenario_data['start_date'] and
-                end_date_match
+                valor_hora_reg == scenario_data['hour_value']
             )
             
             if not match:
@@ -3854,10 +3800,9 @@ class ContractsMigration:
                     f"[ETAPA 3] VALIDACAO FALHOU para IdOrcamentoLoja={row['IdOrcamentoLoja']}, "
                     f"IdOrcamento={row['IdOrcamento']}, scenario_id={scenario_uuid}. "
                     f"Registro: IdOrcamento={row['IdOrcamento']}, Frequencia={freq_reg}, Horas={horas_reg}, hour_value={valor_hora_reg}, "
-                    f"DataInicio={start_date_reg}, DataAviso={end_date_reg}. "
+                    f"DataInicio={row['DataInicioOperacao']}, DataAviso={row['DataAvisoPrevio']}. "
                     f"Scenario: legacy_id={scenario_data.get('legacy_id')}, frequency={scenario_data['frequency']}, hours={scenario_data['hours']}, "
-                    f"hour_value={scenario_data['hour_value']}, start_date={scenario_data['start_date']}, "
-                    f"end_date={scenario_data['end_date']}"
+                    f"hour_value={scenario_data['hour_value']}"
                 )
             
             return match

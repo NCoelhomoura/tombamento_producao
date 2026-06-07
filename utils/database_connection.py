@@ -11,6 +11,10 @@ from psycopg2 import pool
 from typing import Optional
 import os
 
+# inserir 
+# 1 para PRD
+# 0 para DEV
+env_prd_gm_core = 0
 
 class DatabaseConnection:
     """Classe para gerenciar conexões com os databases"""
@@ -25,15 +29,33 @@ class DatabaseConnection:
     }
     
     # Configurações PostgreSQL PRD (Origem Schemas/Tabelas - APENAS LEITURA)
-    
-    # # CONN AMBIENTE DEV GMCORE
-    POSTGRESQL_PRD_CONFIG = {
-        'host': 'gmcore-eks-dev-postgres.ckksg9kcwfzj.us-east-2.rds.amazonaws.com',
-        'database': 'gmcoredb',
-        'port': 5432,
-        'user': 'postgres',
-        'password': 'lmlVyIGz8eWT6iBtzLJU'
-    }
+    if env_prd_gm_core == 1:
+        # # CONN AMBIENTE PRD GMCORE
+        POSTGRESQL_PRD_CONFIG = {
+            'host': 'gmcore-eks-prod-postgres.cxlocls22sp7.sa-east-1.rds.amazonaws.com',
+            'database': 'gmcoredb_prod',
+            'port': 5432,
+            'user': 'postgres_prod',
+            'password': 'WUWElD0ne2vAUpzNxfRe'
+        }
+    else:
+        # # CONN AMBIENTE DEV GMCORE
+        POSTGRESQL_PRD_CONFIG = {
+            'host': 'gmcore-eks-dev-postgres.ckksg9kcwfzj.us-east-2.rds.amazonaws.com',
+            'database': 'gmcoredb',
+            'port': 5432,
+            'user': 'postgres',
+            'password': 'lmlVyIGz8eWT6iBtzLJU'
+        }
+
+    # # # CONN AMBIENTE DEV GMCORE
+    # POSTGRESQL_PRD_CONFIG = {
+    #     'host': 'gmcore-eks-dev-postgres.ckksg9kcwfzj.us-east-2.rds.amazonaws.com',
+    #     'database': 'gmcoredb',
+    #     'port': 5432,
+    #     'user': 'postgres',
+    #     'password': 'lmlVyIGz8eWT6iBtzLJU'
+    # }
 
     # # # CONN AMBIENTE PRD GMCORE
     # POSTGRESQL_PRD_CONFIG = {
@@ -43,7 +65,7 @@ class DatabaseConnection:
     #     'user': 'postgres_prod',
     #     'password': 'J8sdmqz1TQbbu7F9sO4B'
     # }
-    
+
     # Configurações PostgreSQL HML (Destino - Leitura/Escrita, schema gmcore)
     POSTGRESQL_HML_DESTINO_CONFIG = {
         'host': 'apgsql-gmpromo-prd.eastus.cloudapp.azure.com',
@@ -57,15 +79,36 @@ class DatabaseConnection:
     # Configurações PostgreSQL PRD AWS (Destino - Leitura/Escrita, schema core)
     # Credenciais do DESTINO SCHEMAS TABELAS PRD (diretrizes_migracao.txt)
 
-    # # CONN AMBIENTE DEV GMCORE
-    POSTGRESQL_PRD_DESTINO_CONFIG = {
-        'host': 'gmcore-eks-dev-postgres.ckksg9kcwfzj.us-east-2.rds.amazonaws.com',
-        'database': 'gmcoredb',
-        'schema': 'core',
-        'port': 5432,
-        'user': 'postgres',
-        'password': 'lmlVyIGz8eWT6iBtzLJU'
-    }
+    
+    if env_prd_gm_core == 1:
+        # # CONN AMBIENTE PRD GMCORE
+        POSTGRESQL_PRD_DESTINO_CONFIG = {        
+            'host': 'gmcore-eks-prod-postgres.cxlocls22sp7.sa-east-1.rds.amazonaws.com',
+            'database': 'gmcoredb_prod',
+            'port': 5432,
+            'user': 'postgres_prod',
+            'password': 'WUWElD0ne2vAUpzNxfRe'
+        }
+    else:
+        # # CONN AMBIENTE DEV GMCORE
+        POSTGRESQL_PRD_DESTINO_CONFIG = {
+            'host': 'gmcore-eks-dev-postgres.ckksg9kcwfzj.us-east-2.rds.amazonaws.com',
+            'database': 'gmcoredb',
+            'schema': 'core',
+            'port': 5432,
+            'user': 'postgres',
+            'password': 'lmlVyIGz8eWT6iBtzLJU'
+        }
+
+    # # # CONN AMBIENTE DEV GMCORE
+    # POSTGRESQL_PRD_DESTINO_CONFIG = {
+    #     'host': 'gmcore-eks-dev-postgres.ckksg9kcwfzj.us-east-2.rds.amazonaws.com',
+    #     'database': 'gmcoredb',
+    #     'schema': 'core',
+    #     'port': 5432,
+    #     'user': 'postgres',
+    #     'password': 'lmlVyIGz8eWT6iBtzLJU'
+    # }
     
     # # # CONN AMBIENTE PRD GMCORE
     # POSTGRESQL_PRD_DESTINO_CONFIG = {        

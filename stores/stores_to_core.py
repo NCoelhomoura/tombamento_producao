@@ -500,86 +500,86 @@ class StoresMigration:
             logger.error(f"Erro ao atualizar arquivo de filtros: {e}")
             print(f"AVISO - Erro ao atualizar arquivo de filtros: {e}")
     
-    def _get_or_create_default_store_brand(self, schema: str, include_legacy: bool):
-        """Obtém ou cria um store_brand padrão chamado 'Teste store_brands'"""
-        conn_pg = DatabaseConnection.get_postgresql_destino_connection()
-        cursor_pg = conn_pg.cursor()
-        
-        try:
-            # Tentar buscar store_brand padrão por descrição
-            cursor_pg.execute(f"SELECT id FROM {schema}.store_brands WHERE description = %s", ('Teste store_brands',))
-            result = cursor_pg.fetchone()
-            
-            if result:
-                # Já existe, retornar o ID
-                default_id = result[0]
-                cursor_pg.close()
-                conn_pg.close()
-                print(f"[ETAPA 4] Store brand padrão encontrado: {default_id}")
-                return default_id
-            
-            # Não existe, criar um novo
-            default_id = uuid.uuid4()
-            now = datetime.now()
-            
-            # Buscar um retail_chain_id padrão (primeiro disponível ou None)
-            cursor_pg.execute(f"SELECT id FROM {schema}.retail_chains LIMIT 1")
-            retail_chain_result = cursor_pg.fetchone()
-            retail_chain_id = str(retail_chain_result[0]) if retail_chain_result else None
-            
-            # Buscar um store_segment_id padrão (primeiro disponível ou None)
-            cursor_pg.execute(f"SELECT id FROM {schema}.store_segments LIMIT 1")
-            store_segment_result = cursor_pg.fetchone()
-            store_segment_id = str(store_segment_result[0]) if store_segment_result else None
-            
-            if include_legacy:
-                insert_query = f"""
-                INSERT INTO {schema}.store_brands (
-                    id, description, abras_code, retail_chain_id, store_segment_id,
-                    is_active, created_at, updated_at, legacy_id
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """
-                cursor_pg.execute(insert_query, (
-                    str(default_id),
-                    'Teste store_brands',
-                    'empty',
-                    retail_chain_id,
-                    store_segment_id,
-                    True,
-                    now,
-                    now,
-                    0  # legacy_id padrão = 0
-                ))
-            else:
-                insert_query = f"""
-                INSERT INTO {schema}.store_brands (
-                    id, description, abras_code, retail_chain_id, store_segment_id,
-                    is_active, created_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """
-                cursor_pg.execute(insert_query, (
-                    str(default_id),
-                    'Teste store_brands',
-                    'empty',
-                    retail_chain_id,
-                    store_segment_id,
-                    True,
-                    now,
-                    now
-                ))
-            
-            conn_pg.commit()
-            cursor_pg.close()
-            conn_pg.close()
-            print(f"[ETAPA 4] Store brand padrão criado: {default_id}")
-            logger.info(f"Store brand padrão 'Teste store_brands' criado: {default_id}")
-            return default_id
-            
-        except Exception as e:
-            logger.error(f"Erro ao criar/buscar store_brand padrão: {e}")
-            cursor_pg.close()
-            conn_pg.close()
-            raise
+    # def _get_or_create_default_store_brand(self, schema: str, include_legacy: bool):
+    #     """Obtém ou cria um store_brand padrão chamado 'Teste store_brands'"""
+    #     conn_pg = DatabaseConnection.get_postgresql_destino_connection()
+    #     cursor_pg = conn_pg.cursor()
+    #
+    #     try:
+    #         # Tentar buscar store_brand padrão por descrição
+    #         cursor_pg.execute(f"SELECT id FROM {schema}.store_brands WHERE description = %s", ('Teste store_brands',))
+    #         result = cursor_pg.fetchone()
+    #
+    #         if result:
+    #             # Já existe, retornar o ID
+    #             default_id = result[0]
+    #             cursor_pg.close()
+    #             conn_pg.close()
+    #             print(f"[ETAPA 4] Store brand padrão encontrado: {default_id}")
+    #             return default_id
+    #
+    #         # Não existe, criar um novo
+    #         default_id = uuid.uuid4()
+    #         now = datetime.now()
+    #
+    #         # Buscar um retail_chain_id padrão (primeiro disponível ou None)
+    #         cursor_pg.execute(f"SELECT id FROM {schema}.retail_chains LIMIT 1")
+    #         retail_chain_result = cursor_pg.fetchone()
+    #         retail_chain_id = str(retail_chain_result[0]) if retail_chain_result else None
+    #
+    #         # Buscar um store_segment_id padrão (primeiro disponível ou None)
+    #         cursor_pg.execute(f"SELECT id FROM {schema}.store_segments LIMIT 1")
+    #         store_segment_result = cursor_pg.fetchone()
+    #         store_segment_id = str(store_segment_result[0]) if store_segment_result else None
+    #
+    #         if include_legacy:
+    #             insert_query = f"""
+    #             INSERT INTO {schema}.store_brands (
+    #                 id, description, abras_code, retail_chain_id, store_segment_id,
+    #                 is_active, created_at, updated_at, legacy_id
+    #             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    #             """
+    #             cursor_pg.execute(insert_query, (
+    #                 str(default_id),
+    #                 'Teste store_brands',
+    #                 'empty',
+    #                 retail_chain_id,
+    #                 store_segment_id,
+    #                 True,
+    #                 now,
+    #                 now,
+    #                 0  # legacy_id padrão = 0
+    #             ))
+    #         else:
+    #             insert_query = f"""
+    #             INSERT INTO {schema}.store_brands (
+    #                 id, description, abras_code, retail_chain_id, store_segment_id,
+    #                 is_active, created_at, updated_at
+    #             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    #             """
+    #             cursor_pg.execute(insert_query, (
+    #                 str(default_id),
+    #                 'Teste store_brands',
+    #                 'empty',
+    #                 retail_chain_id,
+    #                 store_segment_id,
+    #                 True,
+    #                 now,
+    #                 now
+    #             ))
+    #
+    #         conn_pg.commit()
+    #         cursor_pg.close()
+    #         conn_pg.close()
+    #         print(f"[ETAPA 4] Store brand padrão criado: {default_id}")
+    #         logger.info(f"Store brand padrão 'Teste store_brands' criado: {default_id}")
+    #         return default_id
+    #
+    #     except Exception as e:
+    #         logger.error(f"Erro ao criar/buscar store_brand padrão: {e}")
+    #         cursor_pg.close()
+    #         conn_pg.close()
+    #         raise
     
     def clean_string(self, value: Optional[str], max_length: Optional[int] = None) -> Optional[str]:
         """Limpa e trunca string"""
@@ -2396,12 +2396,16 @@ class StoresMigration:
         
         print(f"[ETAPA 4] {len(store_brand_map)} store_brands carregados")
         
-        # Obter ou criar store_brand padrão
-        default_store_brand_id = self._get_or_create_default_store_brand(schema, include_legacy)
+        # # Obter ou criar store_brand padrão
+        # default_store_brand_id = self._get_or_create_default_store_brand(schema, include_legacy)
+        #
+        # if not store_brand_map:
+        #     print(f"AVISO: Nenhum store_brand encontrado no mapeamento. Usando store_brand padrão 'Teste store_brands'.")
+        #     logger.warning("Nenhum store_brand encontrado no mapeamento. Usando padrão.")
         
         if not store_brand_map:
-            print(f"AVISO: Nenhum store_brand encontrado no mapeamento. Usando store_brand padrão 'Teste store_brands'.")
-            logger.warning("Nenhum store_brand encontrado no mapeamento. Usando padrão.")
+            print("[ETAPA 4] AVISO: Nenhum store_brand encontrado no mapeamento.")
+            logger.warning("Nenhum store_brand encontrado no mapeamento.")
         
         # Buscar dados do SQL Server aplicando filtro de IdEstabelecimento
         print("[ETAPA 4] Buscando dados do SQL Server...")
@@ -2467,28 +2471,36 @@ class StoresMigration:
                 ORDER BY e.Id
                 OFFSET 0 ROWS FETCH NEXT {self.limit_rows} ROWS ONLY
                 """
+                conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+                cursor_sql = conn_sql.cursor()
+                cursor_sql.execute(sql_query)
+                all_rows = cursor_sql.fetchall()
+                cursor_sql.close()
+                conn_sql.close()
+                print(f"[ETAPA 4] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
             else:
-                # Se não há store_brands no mapeamento, buscar todos (usará padrão)
-                sql_query = f"""
-                SELECT TOP {self.limit_rows}
-                    Id,
-                    NomeFantasia,
-                    IdBandeira,
-                    Ativo,
-                    DataInclusao,
-                    DataAlteracao,
-                    codigo
-                FROM Estabelecimento
-                ORDER BY Id
-                """
-            
-            conn_sql = DatabaseConnection.get_sql_server_prd_connection()
-            cursor_sql = conn_sql.cursor()
-            cursor_sql.execute(sql_query)
-            all_rows = cursor_sql.fetchall()
-            cursor_sql.close()
-            conn_sql.close()
-            print(f"[ETAPA 4] {len(all_rows)} registros carregados. Processando conversões em massa (vetorizado)...")
+                # # Se não há store_brands no mapeamento, buscar todos (usará padrão)
+                # sql_query = f"""
+                # SELECT TOP {self.limit_rows}
+                #     Id,
+                #     NomeFantasia,
+                #     IdBandeira,
+                #     Ativo,
+                #     DataInclusao,
+                #     DataAlteracao,
+                #     codigo
+                # FROM Estabelecimento
+                # ORDER BY Id
+                # """
+                # conn_sql = DatabaseConnection.get_sql_server_prd_connection()
+                # cursor_sql = conn_sql.cursor()
+                # cursor_sql.execute(sql_query)
+                # all_rows = cursor_sql.fetchall()
+                # cursor_sql.close()
+                # conn_sql.close()
+                print("[ETAPA 4] AVISO: Nenhum store_brand no mapeamento; nenhum estabelecimento carregado.")
+                logger.warning("Nenhum store_brand no mapeamento; etapa 4 sem registros (limit_rows).")
+                all_rows = []
         else:
             # Sem filtros e sem limite: buscar apenas da ViewOrcamentosLojas (mesmo em full load)
             sql_query = """
@@ -2529,12 +2541,18 @@ class StoresMigration:
         df['store_brand_id'] = df['IdBandeira'].map(store_brand_map)
         df['code'] = df['codigo'].fillna('')  # Preencher None/NaN com string vazia
         
-        # Preencher store_brand_id padrão onde está None
+        # # Preencher store_brand_id padrão onde está None
+        # mask_missing = df['store_brand_id'].isna()
+        # df.loc[mask_missing, 'store_brand_id'] = default_store_brand_id
+        # warnings_count = mask_missing.sum()
+        # if warnings_count > 0:
+        #     logger.warning(f"Store brand não encontrado para {warnings_count} IdBandeiras. Usando store_brand padrão 'Teste store_brands'")
         mask_missing = df['store_brand_id'].isna()
-        df.loc[mask_missing, 'store_brand_id'] = default_store_brand_id
         warnings_count = mask_missing.sum()
         if warnings_count > 0:
-            logger.warning(f"Store brand não encontrado para {warnings_count} IdBandeiras. Usando store_brand padrão 'Teste store_brands'")
+            logger.warning(f"Store brand não encontrado para {warnings_count} estabelecimentos; registros excluídos da migração.")
+            print(f"[ETAPA 4] AVISO: {warnings_count} estabelecimentos sem store_brand mapeado serão excluídos.")
+        df = df[~mask_missing]
         
         # Outras transformações
         df['ativo'] = df['Ativo'].fillna(False).astype(bool)

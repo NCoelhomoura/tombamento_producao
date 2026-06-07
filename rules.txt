@@ -266,7 +266,7 @@ WHERE t.Id = ? (quando IdTarefa disponível)
 O campo promoter_task_id (UUID) requer que promoter_tasks já esteja migrado e mapeado.
 
 ⚠️ IMPORTANTE: Este step cria CENÁRIOS ÚNICOS usando DISTINCT baseado na combinação:
-IdOrcamento + Frequencia + Horas + ValorHora + DataInicioOperacao + DataAvisoPrevio
+IdOrcamento + Frequencia + Horas + hour_value(calculado)
 
 Tabela Origem: ViewOrcamentosLojas + Orcamento (INNER JOIN)
 Tabela Destino: contract_scenarios
@@ -284,9 +284,7 @@ LÓGICA DE CENÁRIOS ÚNICOS:
    - IdOrcamento
    - Frequencia
    - Horas
-   - ValorHora
-   - DataInicioOperacao
-   - DataAvisoPrevio
+   - hour_value calculado = Round(ValorNegociado / (Frequencia * Horas * 4), 2)
 2. Cada combinação única gera um único registro em contract_scenarios
 3. A associação entre cenários e lojas é feita posteriormente na tabela contract_scenario_stores (step3)
 
@@ -300,9 +298,7 @@ SELECT DISTINCT
     v.IdOrcamento,
     v.Frequencia,
     v.Horas,
-    v.ValorHora,
-    v.DataInicioOperacao,
-    v.DataAvisoPrevio,
+    Round(v.ValorNegociado / (v.Frequencia * CAST(v.Horas AS FLOAT) * 4), 2) AS hour_value_calc,
     v.NomeTarefa,
     v.NomeCliente,
     v.StatusPedido,
@@ -317,7 +313,7 @@ WHERE v.IdOrcamento IN (valores de contracts/contracts_filter_main.json -> aggre
     AND CONVERT(DATE, v.DataInicioOperacao) <= ?  -- se filtro aplicado
     AND v.StatusPedido IN (?)  -- se filtro aplicado
     AND v.IdCliente IS NOT NULL
-ORDER BY v.IdOrcamento, v.Frequencia, v.Horas, v.ValorHora, v.DataInicioOperacao, v.DataAvisoPrevio
+ORDER BY v.IdOrcamento, v.Frequencia, v.Horas, Round(v.ValorNegociado / (v.Frequencia * CAST(v.Horas AS FLOAT) * 4), 2)
 
 LÓGICA DE MAPEAMENTO DE promoter_task_id (UUID):
 1. Antes de inserir contract_scenarios, garantir que promoter_tasks foi migrado (step1.5)
@@ -348,7 +344,7 @@ LÓGICA DE MAPEAMENTO DE frequency (INT → VARCHAR):
 
 MAPEAMENTO DE CENÁRIOS PARA STEP3:
 Após inserir contract_scenarios, criar um mapeamento (scenario_id_map):
-- Chave: Tupla (IdOrcamento, Frequencia, Horas, ValorHora, DataInicioOperacao, DataAvisoPrevio) normalizada
+- Chave: Tupla (IdOrcamento, Frequencia, Horas, hour_value_calculado) normalizada
 - Valor: UUID de contract_scenarios.id
 - Este mapeamento será usado no step3 para buscar scenario_id baseado na combinação única
 - Normalização: Usar valores brutos do DataFrame ANTES das conversões para garantir match correto
@@ -363,7 +359,7 @@ VALIDAÇÃO:
 
 ⚠️ IMPORTANTE: Este step associa os cenários únicos (criados no step2) com as lojas específicas.
 Cada registro de ViewOrcamentosLojas/OrcamentoLojas deve ser associado ao cenário correspondente baseado na combinação única:
-IdOrcamento + Frequencia + Horas + ValorHora + DataInicioOperacao + DataAvisoPrevio
+IdOrcamento + Frequencia + Horas + hour_value(calculado)
 
 Tabela Origem: ViewOrcamentosLojas + Orcamento (INNER JOIN) + OrcamentoLojas (LEFT JOIN)
 Tabela Destino: contract_scenario_stores
@@ -381,9 +377,7 @@ LÓGICA DE MAPEAMENTO DE scenario_id:
    - IdOrcamento
    - Frequencia
    - Horas
-   - ValorHora
-   - DataInicioOperacao
-   - DataAvisoPrevio
+   - hour_value calculado = Round(ValorNegociado / (Frequencia * Horas * 4), 2)
 2. Buscar scenario_id usando scenario_id_map criado no step2 (chave -> UUID)
 3. Se scenario_id não for encontrado: logar warning e pular registro
 4. Associar scenario_id com store_id (via IdEstabelecimento -> stores.legacy_id -> stores.id)
@@ -581,7 +575,7 @@ STEP 2 (step2_migrate_contract_scenarios):
 - DEPENDE DE: STEP 1 e STEP 9 (promoter_tasks)
 - Filtros: IdOrcamento, DataAvisoPrevio, DataInicioOperacao, StatusPedido (mesmos do step1)
 - Usa: promoter_task_map do step9 para preencher promoter_task_id (UUID)
-- Lógica: Cria CENÁRIOS ÚNICOS usando DISTINCT baseado em IdOrcamento+Frequencia+Horas+ValorHora+DataInicioOperacao+DataAvisoPrevio
+- Lógica: Cria CENÁRIOS ÚNICOS usando DISTINCT baseado em IdOrcamento+Frequencia+Horas+hour_value(calculado)
 - Gera: contract_scenarios com legacy_id = 0 (sempre)
 - Gera: end_date mapeado de DataAvisoPrevio (pode ser NULL)
 - Gera: scenario_id_map (chave: combinação única -> valor: UUID) para uso no step3

@@ -440,17 +440,14 @@ LÓGICA DE CRIAÇÃO DOS CENÁRIOS:
   - Frequencia (inteiro na view, antes do mapeamento para frequency varchar)
   - Horas (nvarchar, convertido para número — mesmo valor usado em contract_scenarios.hours)
   - hour_value = Round(ValorNegociado / (Frequencia * Horas * 4), 2)  — ver detalhe em MIGRACAO CONTRACT_SCENARIOS
-  - DataInicioOperacao
-  - DataAvisoPrevio
+  ⚠️ DataInicioOperacao e DataAvisoPrevio NÃO participam da unicidade do cenário.
   
   Query base para gerar os cenários únicos (conceitual; hour_value calculado por linha):
   SELECT DISTINCT 
       v.IdOrcamento,
       v.Frequencia,
       v.Horas,
-      Round(v.ValorNegociado / (v.Frequencia * CAST(v.Horas AS FLOAT) * 4), 2) AS hour_value_calc,
-      v.DataInicioOperacao,
-      v.DataAvisoPrevio
+      Round(v.ValorNegociado / (v.Frequencia * CAST(v.Horas AS FLOAT) * 4), 2) AS hour_value_calc
   FROM ViewOrcamentosLojas v
   INNER JOIN Orcamento o ON o.Id = v.IdOrcamento
   WHERE v.IdOrcamento IN (lista de IdOrcamento do filtro)
@@ -523,8 +520,8 @@ CAMPOS DISPONIVEIS:
     - Frequencia (usado para buscar o scenario_id correspondente)
     - Horas (usado para buscar o scenario_id correspondente)
     - ValorNegociado (usado junto com Frequencia e Horas para calcular hour_value e buscar o scenario_id)
-    - DataInicioOperacao (mapeado para start_date e usado para buscar o scenario_id correspondente)
-    - DataAvisoPrevio (usado para buscar o scenario_id correspondente)
+    - DataInicioOperacao (mapeado para start_date no destino; NÃO usado para buscar o scenario_id)
+    - DataAvisoPrevio (usado para end_date em contract_scenarios; NÃO usado para buscar o scenario_id)
     - Ativo (mapeado para status)
     - DataExclusao (mapeado para closed_at/removed_at)
     - DataInclusaoOrcamentoLojas (mapeado para created_at)
@@ -544,8 +541,6 @@ LÓGICA DE ASSOCIAÇÃO:
   - Frequencia
   - Horas
   - hour_value (mesmo cálculo: Round(ValorNegociado / (Frequencia * Horas * 4), 2) — não usar ValorHora da view)
-  - DataInicioOperacao
-  - DataAvisoPrevio
   
   O scenario_id será obtido através de um JOIN ou lookup usando esses campos como chave de busca.
 
@@ -935,7 +930,8 @@ MIGRACAO: ORCAMENTO (ViewOrcamentosLojas + Orcamento) : CONTRACTS
 MIGRACAO: ORCAMENTOLOJAS (ViewOrcamentosLojas + OrcamentoLojas) : CONTRACT_SCENARIOS
 ----------------------------------------------------------------------------------------------------
   ⚠️ IMPORTANTE: Esta migração cria CENÁRIOS ÚNICOS usando DISTINCT baseado em IdOrcamento, Frequencia, Horas,
-  hour_value (calculado), DataInicioOperacao e DataAvisoPrevio — não usar ValorHora da view para unicidade nem para gravar hour_value.
+  hour_value (calculado) — não usar ValorHora da view para unicidade nem para gravar hour_value.
+  DataInicioOperacao e DataAvisoPrevio continuam mapeados para start_date e end_date, respectivamente, mas NÃO fazem parte da chave única.
   A associação entre cenários e lojas é feita posteriormente na tabela contract_scenario_stores.
   
   REGRA hour_value (contract_scenarios.hour_value = valor hora na origem lógica):
@@ -1018,7 +1014,7 @@ MIGRACAO: ORCAMENTOLOJAS (ViewOrcamentosLojas + OrcamentoLojas) : CONTRACT_SCENA
 ----------------------------------------------------------------------------------------------------
   ⚠️ IMPORTANTE: Esta migração associa os cenários únicos (criados em contract_scenarios) com as lojas específicas.
   Cada registro de ViewOrcamentosLojas/OrcamentoLojas deve ser associado ao cenário correspondente baseado na combinação:
-  IdOrcamento + Frequencia + Horas + hour_value (Round(ValorNegociado / (Frequencia * Horas * 4), 2)) + DataInicioOperacao + DataAvisoPrevio
+  IdOrcamento + Frequencia + Horas + hour_value (Round(ValorNegociado / (Frequencia * Horas * 4), 2))
   
   [GERADO AUTOMATICAMENTE] : gmcoredb.commercial.contract_scenario_stores.id
   FINANCEIRO.dbo.ViewOrcamentosLojas.IdOrcamentoLoja : gmcoredb.commercial.contract_scenario_stores.legacy_id

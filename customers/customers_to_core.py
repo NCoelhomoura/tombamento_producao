@@ -1371,6 +1371,7 @@ class CustomersMigration:
                     # Não definir filter_data = None aqui, pois precisamos dos filtros do JSON
         
         id_cliente_filter_list = []
+        id_cliente_resolved_from_view = False
         
         # ⚠️ IMPORTANTE: Se os filtros não correspondem mas CMD não especificou filtros, usar os IdCliente do JSON
         # Isso garante consistência quando o JSON tem filtros mas o CMD não especificou nenhum
@@ -1523,6 +1524,7 @@ class CustomersMigration:
             
             # Carregar resultados (já são únicos devido ao DISTINCT na query externa)
             id_cliente_filter_list = [row[0] for row in cursor_sql_view.fetchall()]
+            id_cliente_resolved_from_view = True
             cursor_sql_view.close()
             conn_sql_view.close()
             
@@ -1653,6 +1655,10 @@ class CustomersMigration:
                     unique_ids = set(row[0] for row in all_rows)
                     print(f"[ETAPA 2] AVISO: {len(all_rows)} registros carregados, mas apenas {len(unique_ids)} IdCliente únicos. Possíveis duplicatas na tabela Cliente!")
                     logger.warning(f"[ETAPA 2] AVISO: {len(all_rows)} registros carregados, mas apenas {len(unique_ids)} IdCliente únicos. Possíveis duplicatas na tabela Cliente!")
+        elif id_cliente_resolved_from_view and not id_cliente_filter_list:
+            print("[ETAPA 2] AVISO: ViewOrcamentosLojas retornou 0 IdCliente no escopo; nenhum customer será migrado.")
+            logger.warning("[ETAPA 2] ViewOrcamentosLojas retornou 0 IdCliente no escopo; nenhum customer será migrado.")
+            all_rows = []
         else:
             sql_query += " ORDER BY Id"
             
@@ -2907,6 +2913,16 @@ class CustomersMigration:
                 raise Exception(error_msg)
             
             if not self.customer_brands_id_map:
+                if self.stats.get('customer_brands', 0) == 0:
+                    msg = (
+                        "AVISO: Nenhum customer_brand no escopo (etapa 5 inseriu 0); "
+                        "etapa 6 ignorada."
+                    )
+                    print(f"[ETAPA 6] {msg}")
+                    logger.warning(msg)
+                    print("\n[ETAPA 6] CONCLUIDA! Total de customer_customer_brand migrados: 0")
+                    logger.info("ETAPA 6 concluida: 0 registros (escopo vazio)")
+                    return
                 error_msg = "ERRO: customer_brands não está preenchida. Execute step5 primeiro."
                 logger.error(error_msg)
                 print(f"ERRO - {error_msg}")
