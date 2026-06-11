@@ -27,7 +27,7 @@ class DatabaseConnection:
         'password': 'CFcoY5oDtduRsKWO1f',
         'driver': '{ODBC Driver 17 for SQL Server}'  # Ajuste conforme necessário
     }
-    
+"""
     # Configurações PostgreSQL PRD (Origem Schemas/Tabelas - APENAS LEITURA)
     if env_prd_gm_core == 1:
         # # CONN AMBIENTE PRD GMCORE
@@ -118,7 +118,7 @@ class DatabaseConnection:
     #     'user': 'postgres_prod',
     #     'password': 'J8sdmqz1TQbbu7F9sO4B'
     # }
-    
+"""    
     # Chaveador de destino: 'HML' ou 'PRD'
     # Pode ser alterado via variável de ambiente MIGRATION_DESTINO ou método set_destino()
     _destino_atual = 'HML'  # Padrão: HML (será sobrescrito por set_destino() ou variável de ambiente)
